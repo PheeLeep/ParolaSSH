@@ -278,14 +278,16 @@ fn take(
 }
 
 /// Reassembles UTF-8 across packet boundaries.
+///
+/// Shared with `stream.rs`, which has the same problem on command output.
 #[derive(Default)]
-struct Decoder {
+pub(crate) struct Decoder {
     pending: Vec<u8>,
 }
 
 impl Decoder {
     /// Append bytes and return whatever is now completely decodable.
-    fn push(&mut self, bytes: &[u8]) -> Option<String> {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Option<String> {
         self.pending.extend_from_slice(bytes);
 
         let (text, consumed) = match std::str::from_utf8(&self.pending) {

@@ -10,13 +10,23 @@ import type {
   ConnectionInfo,
   HostDraft,
   HostHealth,
+  HostMetrics,
   PowerOutcome,
   PowerPlan,
   PowerRequest,
   ProbeResult,
+  RemoteAuditReport,
+  ServiceActionRequest,
+  ServiceEntry,
+  ServiceLog,
+  ServiceOutcome,
+  ServicePlan,
   SshHost,
+  StreamClosed,
+  StreamOutput,
   TerminalClosed,
   TerminalOutput,
+  UpdateReport,
 } from "./types";
 
 /* ── Saved connections ─────────────────────────────────────────────────── */
@@ -155,6 +165,92 @@ export function onTerminalClosed(
     if (payload.hostId === hostId && isMine(payload.shellId)) handler(payload);
   });
 }
+
+/* ── Services ──────────────────────────────────────────────────────────── */
+
+export const listServices = (hostId: string) =>
+  invoke<ServiceEntry[]>("list_services", { hostId });
+
+/** The exact command an action would run, without running it. */
+export const previewServiceAction = (
+  hostId: string,
+  request: ServiceActionRequest,
+) => invoke<ServicePlan>("preview_service_action", { hostId, request });
+
+export const serviceAction = (
+  hostId: string,
+  request: ServiceActionRequest,
+  password?: string | null,
+) =>
+  invoke<ServiceOutcome>("service_action", {
+    hostId,
+    request,
+    password: password ?? null,
+  });
+
+/**
+ * The last journal lines (Linux) or SCM events (Windows) for a service.
+ * `displayName` matters only on Windows, where events name services by their
+ * display name.
+ */
+export const serviceLog = (
+  hostId: string,
+  unit: string,
+  displayName?: string | null,
+) => invoke<ServiceLog>("service_log", { hostId, unit, displayName: displayName ?? null });
+
+/** Follow a journal. Output arrives as `stream://output` events. */
+export const followServiceLog = (hostId: string, unit: string) =>
+  invoke<number>("follow_service_log", { hostId, unit });
+
+/** Close one stream. An id already gone is a no-op, not an error. */
+export const closeStream = (hostId: string, streamId: number) =>
+  invoke<void>("close_stream", { hostId, streamId });
+
+/** Same double filter as the terminal events, for the same reason. */
+export function onStreamOutput(
+  hostId: string,
+  isMine: (streamId: number) => boolean,
+  handler: (event: StreamOutput) => void,
+): Promise<UnlistenFn> {
+  return listen<StreamOutput>("stream://output", ({ payload }) => {
+    if (payload.hostId === hostId && isMine(payload.streamId)) handler(payload);
+  });
+}
+
+export function onStreamClosed(
+  hostId: string,
+  isMine: (streamId: number) => boolean,
+  handler: (event: StreamClosed) => void,
+): Promise<UnlistenFn> {
+  return listen<StreamClosed>("stream://closed", ({ payload }) => {
+    if (payload.hostId === hostId && isMine(payload.streamId)) handler(payload);
+  });
+}
+
+/* ── Performance ───────────────────────────────────────────────────────── */
+
+/** One sample. The pane polls this only while it is visible. */
+export const sampleMetrics = (hostId: string) =>
+  invoke<HostMetrics>("sample_metrics", { hostId });
+
+/* ── Updates ───────────────────────────────────────────────────────────── */
+
+/** Read-only, always — there is no install command to call. */
+export const checkUpdates = (hostId: string) =>
+  invoke<UpdateReport>("check_updates", { hostId });
+
+/* ── Remote audit ──────────────────────────────────────────────────────── */
+
+/** Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only. */
+export const remoteAudit = (hostId: string, password?: string | null) =>
+  invoke<RemoteAuditReport>("remote_audit", { hostId, password: password ?? null });
+
+export const setRemoteFindingSuppressed = (
+  hostId: string,
+  findingId: string,
+  suppressed: boolean,
+) => invoke<void>("set_remote_finding_suppressed", { hostId, findingId, suppressed });
 
 /* ── Errors ────────────────────────────────────────────────────────────── */
 

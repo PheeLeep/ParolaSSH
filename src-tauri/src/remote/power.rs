@@ -412,14 +412,15 @@ fn summarise(os: OsFamily, request: &PowerRequest) -> String {
 
 /// Wrap for a POSIX shell. An embedded `'` is closed, escaped, and reopened —
 /// the standard trick, and the reason a message cannot break out of the quotes.
-fn single_quote(value: &str) -> String {
+/// Shared with `services`, which quotes unit names the same way.
+pub(crate) fn single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
 /// Wrap for cmd.exe, which has no escape for `"` inside a quoted string.
 /// Dropping the character is the only safe option; `&`, `|` and friends are
 /// inert once quoted.
-fn double_quote(value: &str) -> String {
+pub(crate) fn double_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "'"))
 }
 

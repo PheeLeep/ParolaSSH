@@ -25,20 +25,31 @@ pub struct Suppressions {
 
 impl Suppressions {
     pub fn read(config_dir: &Path) -> Self {
-        std::fs::read_to_string(config_dir.join(FILE_NAME))
+        Self::read_named(config_dir, FILE_NAME)
+    }
+
+    pub fn write(&self, config_dir: &Path) -> SshResult<()> {
+        self.write_named(config_dir, FILE_NAME)
+    }
+
+    /// The same store under another file name — the remote audit keeps its
+    /// dismissals separate from the local one so the two reports cannot
+    /// silence each other.
+    pub fn read_named(config_dir: &Path, file_name: &str) -> Self {
+        std::fs::read_to_string(config_dir.join(file_name))
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default()
     }
 
-    pub fn write(&self, config_dir: &Path) -> SshResult<()> {
+    pub fn write_named(&self, config_dir: &Path, file_name: &str) -> SshResult<()> {
         std::fs::create_dir_all(config_dir)
             .map_err(|error| SshError::io("Could not create the settings directory", error))?;
 
         let text = serde_json::to_string_pretty(self)
             .map_err(|error| SshError::invalid(format!("Could not encode settings: {error}")))?;
 
-        std::fs::write(config_dir.join(FILE_NAME), text)
+        std::fs::write(config_dir.join(file_name), text)
             .map_err(|error| SshError::io("Could not save settings", error))
     }
 

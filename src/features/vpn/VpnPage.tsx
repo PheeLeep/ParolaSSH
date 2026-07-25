@@ -131,7 +131,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
                 title={`${VPN_LABELS[status.kind]} — ${status.detail}`}
               >
                 <span
-                  className={`status-dot status-dot--${status.up ? "online" : "offline"}`}
+                  className={`status-dot status-dot--${status.up ? "connected" : "offline"}`}
                   aria-hidden="true"
                 />
                 {VPN_LABELS[status.kind]}
@@ -208,7 +208,7 @@ function OverviewPane({
               className="d-flex align-items-center gap-2"
             >
               <StatusDot
-                status={status.up ? "online" : "offline"}
+                status={status.up ? "connected" : "offline"}
                 title={`${VPN_LABELS[status.kind]} — ${status.detail}`}
               />
               <span className="fw-semibold">{VPN_LABELS[status.kind]}</span>
@@ -249,7 +249,7 @@ function ClientPane({
       <Card body className="mb-4">
         <div className="d-flex align-items-center gap-2">
           <span
-            className={`status-dot status-dot--${status.up ? "online" : "offline"}`}
+            className={`status-dot status-dot--${status.up ? "connected" : "offline"}`}
             aria-hidden="true"
           />
           <span className="fw-semibold">{VPN_LABELS[status.kind]}</span>
@@ -375,7 +375,7 @@ function AuthPill({ resource }: { resource: VpnResource }) {
   } else {
     const remaining = resource.authStatus.match(/expires in (.+)/i);
     if (remaining) {
-      variant = " status-badge--online";
+      variant = " status-badge--connected";
       text = remaining[1];
     }
   }

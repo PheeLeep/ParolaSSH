@@ -111,7 +111,7 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<HostRow, a
       meta: { width: "8.5rem", cellClassName: "text-end" },
       cell: (info) => {
         const host = info.row.original;
-        const connected = host.status === "online";
+        const connected = host.status === "connected";
 
         return (
           <div className="d-flex justify-content-end gap-1">

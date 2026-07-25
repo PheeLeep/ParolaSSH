@@ -65,6 +65,25 @@ struct KeyVerdict {
     accepted_fingerprint: Option<String>,
 }
 
+/// What the key exchange actually negotiated, kept for the audit tab's
+/// tier-0 checks — these facts are free, the handshake already happened.
+///
+/// Note that with russh's default `Preferred` lists no SHA-1 kex and no CBC
+/// cipher can ever be negotiated (a server offering only those fails the
+/// connection instead), so the checks that can really fire today are the
+/// host key algorithm and strict-kex support. The rest are kept because the
+/// preference lists may someday be widened for legacy devices.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NegotiatedCrypto {
+    pub kex: String,
+    pub host_key_algorithm: String,
+    pub cipher: String,
+    pub client_mac: String,
+    pub server_mac: String,
+    pub strict_kex: bool,
+}
+
 struct Handler {
     hostname: String,
     port: u16,
@@ -72,6 +91,8 @@ struct Handler {
     /// Set when the user has already seen and accepted this host's key.
     trust_unknown: bool,
     verdict: Arc<Mutex<KeyVerdict>>,
+    /// Filled by `kex_done`, read by `connect` — same shape as `verdict`.
+    crypto: Arc<Mutex<Option<NegotiatedCrypto>>>,
 }
 
 impl client::Handler for Handler {
@@ -148,12 +169,41 @@ impl client::Handler for Handler {
 
         Ok(accepted)
     }
+
+    /// Record what the key exchange settled on.
+    ///
+    /// This fires again on every rekey, but only the *first* observation is
+    /// kept: russh does not re-signal strict-kex during a rekey, so the
+    /// initial handshake is the one whose negotiation is fully described.
+    async fn kex_done(
+        &mut self,
+        _shared_secret: Option<&[u8]>,
+        names: &russh::Names,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Ok(mut slot) = self.crypto.lock() {
+            if slot.is_none() {
+                *slot = Some(NegotiatedCrypto {
+                    kex: names.kex.as_ref().to_string(),
+                    host_key_algorithm: names.key.to_string(),
+                    cipher: names.cipher.as_ref().to_string(),
+                    client_mac: names.client_mac.as_ref().to_string(),
+                    server_mac: names.server_mac.as_ref().to_string(),
+                    strict_kex: names.strict_kex(),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 /// An authenticated connection.
 pub struct Session {
     handle: Handle<Handler>,
     pub fingerprint: Option<String>,
+    /// What the first key exchange negotiated. `None` only if russh never
+    /// called `kex_done`, which would mean no handshake happened at all.
+    pub negotiated: Option<NegotiatedCrypto>,
 }
 
 impl Session {
@@ -165,6 +215,7 @@ impl Session {
     ) -> SshResult<Self> {
         let known_hosts = SshPaths::discover()?.known_hosts();
         let verdict = Arc::new(Mutex::new(KeyVerdict::default()));
+        let crypto = Arc::new(Mutex::new(None));
 
         let handler = Handler {
             hostname: target.hostname.clone(),
@@ -172,6 +223,7 @@ impl Session {
             known_hosts,
             trust_unknown,
             verdict: Arc::clone(&verdict),
+            crypto: Arc::clone(&crypto),
         };
 
         let config = Arc::new(client::Config {
@@ -214,8 +266,9 @@ impl Session {
             .lock()
             .ok()
             .and_then(|verdict| verdict.accepted_fingerprint.clone());
+        let negotiated = crypto.lock().ok().and_then(|slot| slot.clone());
 
-        Ok(Self { handle, fingerprint })
+        Ok(Self { handle, fingerprint, negotiated })
     }
 
     /// Run one command, optionally feeding it stdin, and collect its output.
@@ -224,12 +277,24 @@ impl Session {
     /// than onto the command line, where it would be visible in the remote
     /// process list to every other user on the box.
     pub async fn exec(&self, command: &str, stdin: Option<&[u8]>) -> SshResult<CommandOutput> {
+        self.exec_with_timeout(command, stdin, COMMAND_TIMEOUT).await
+    }
+
+    /// `exec` with a caller-chosen ceiling, for the rare command that is
+    /// legitimately slow (a Windows Update query can take minutes). Anything
+    /// open-ended belongs on the `stream` path instead.
+    pub async fn exec_with_timeout(
+        &self,
+        command: &str,
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+    ) -> SshResult<CommandOutput> {
         let run = self.exec_inner(command, stdin);
-        match tokio::time::timeout(COMMAND_TIMEOUT, run).await {
+        match tokio::time::timeout(timeout, run).await {
             Ok(result) => result,
             Err(_) => Err(SshError::Io(format!(
                 "The remote command did not finish within {} seconds.",
-                COMMAND_TIMEOUT.as_secs()
+                timeout.as_secs()
             ))),
         }
     }

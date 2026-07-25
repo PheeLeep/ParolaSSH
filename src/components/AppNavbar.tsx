@@ -1,7 +1,8 @@
-import { PanelLeft, Settings, SquareTerminal } from "lucide-react";
+import { PanelLeft, Settings } from "lucide-react";
 import { VpnIndicator } from "../features/vpn/VpnIndicator";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { isMacOS } from "../lib/appWindow";
+import { BrandMark } from "./BrandMark";
 import { WindowControls } from "./WindowControls";
 import type { Navigate } from "../navigation";
 
@@ -40,7 +41,7 @@ export function AppNavbar({
 
       <span className="app-brand" data-tauri-drag-region>
         <span className="app-brand__mark" aria-hidden="true" data-tauri-drag-region>
-          <SquareTerminal className="icon-lg" data-tauri-drag-region />
+          <BrandMark data-tauri-drag-region />
         </span>
         ParolaSSH
       </span>

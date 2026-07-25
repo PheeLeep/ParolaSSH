@@ -11,15 +11,25 @@
 //!   * `registry` — keeps authenticated sessions alive between commands.
 //!   * `power`    — builds shutdown/reboot commands per remote OS.
 //!   * `shell`    — interactive PTY, streamed to the webview as events.
+//!   * `stream`   — long-running command output, streamed without a PTY.
+//!   * `services` — list, act on, and read logs of system services.
+//!   * `metrics`  — one-round-trip performance sampling.
+//!   * `updates`  — read-only pending-update queries per package manager.
+//!   * `audit`    — remote security posture, tiered by cost.
 //!   * `probe`    — is the port even open, before we try anything else.
 
+pub mod audit;
 pub mod client;
 pub mod commands;
+pub mod metrics;
 pub mod power;
 pub mod probe;
 pub mod registry;
 pub mod secrets;
+pub mod services;
 pub mod shell;
+pub mod stream;
+pub mod updates;
 
 use serde::Serialize;
 

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="squircle"><rect width="256" height="256" rx="58"/></clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="256" height="256" fill="#0D0B16"/>
+    <g transform="translate(-4,16)">
+      <polyline points="72,16 148,58 72,100" fill="none" stroke="#A78BFA" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+      <polygon points="132,214 152,74 186,74 206,214" fill="#EDEBF4"/>
+      <rect x="142" y="60" width="54" height="14" rx="5" fill="#EDEBF4"/>
+      <rect x="153" y="34" width="32" height="26" rx="5" fill="#A78BFA"/>
+      <polygon points="142,35 196,35 169,10" fill="#EDEBF4"/>
+    </g>
+  </g>
+</svg>

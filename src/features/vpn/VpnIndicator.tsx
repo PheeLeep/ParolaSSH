@@ -26,7 +26,7 @@ export function VpnIndicator({ onOpen }: { onOpen: () => void }) {
     .join(" · ");
 
   if (up.length === 1) {
-    variant = " status-badge--online";
+    variant = " status-badge--connected";
     text = VPN_LABELS[up[0].kind];
   } else if (up.length >= 2) {
     variant = " status-badge--warning";

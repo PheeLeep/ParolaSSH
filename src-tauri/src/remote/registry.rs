@@ -18,11 +18,19 @@ use std::sync::{Arc, Mutex};
 
 use zeroize::Zeroizing;
 
-use super::client::Session;
+use super::client::{NegotiatedCrypto, Session};
+use super::metrics::CpuTimes;
 use super::power::Elevation;
 use super::shell::ShellHandle;
+use super::stream::StreamHandle;
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
+
+/// How many long-running streams one host may hold at once.
+///
+/// The real use is one followed log per visible pane, so this is headroom,
+/// not a budget — its job is to stop a leak from accumulating quietly.
+pub const MAX_STREAMS_PER_HOST: usize = 4;
 
 /// A connected host: the session, what we learned about it, and its terminal.
 pub struct LiveSession {
@@ -32,6 +40,8 @@ pub struct LiveSession {
     pub os_detail: String,
     pub elevation: Elevation,
     pub fingerprint: Option<String>,
+    /// What the first key exchange negotiated — the audit tab's tier 0.
+    pub negotiated: Option<NegotiatedCrypto>,
     pub connected_at: String,
     /// Every open shell on this host, keyed by shell id.
     ///
@@ -40,6 +50,11 @@ pub struct LiveSession {
     /// separate channels. That is what OpenSSH's `ControlMaster` does, and it
     /// means the second terminal costs no handshake and no second password.
     shells: Mutex<HashMap<u64, Arc<ShellHandle>>>,
+    /// Long-running command streams (a followed log, for now), keyed by
+    /// stream id. Separate from `shells` because they have no PTY and no
+    /// input, but they are drained at the same four moments so a followed
+    /// journal cannot outlive its session.
+    streams: Mutex<HashMap<u64, Arc<StreamHandle>>>,
     /// Serialises opening a shell, so the cap below cannot be raced past.
     /// A tokio mutex because it is held across `await`.
     shell_open: tokio::sync::Mutex<()>,
@@ -49,6 +64,10 @@ pub struct LiveSession {
     /// second time. Scoped to the session rather than the app: disconnecting
     /// drops it, which is a narrower lifetime than the "remember me" vault.
     login_password: Mutex<Option<Zeroizing<String>>>,
+    /// The last `/proc/stat` reading, so CPU percentage can be a delta
+    /// between polls. Read and written only after an exec completes — never
+    /// held across an await. Naturally reset by reconnection.
+    prev_cpu: Mutex<Option<CpuTimes>>,
 }
 
 impl LiveSession {
@@ -61,6 +80,7 @@ impl LiveSession {
         connected_at: String,
     ) -> Self {
         let fingerprint = session.fingerprint.clone();
+        let negotiated = session.negotiated.clone();
         Self {
             host_id,
             session,
@@ -68,10 +88,13 @@ impl LiveSession {
             os_detail,
             elevation,
             fingerprint,
+            negotiated,
             connected_at,
             shells: Mutex::new(HashMap::new()),
+            streams: Mutex::new(HashMap::new()),
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
+            prev_cpu: Mutex::new(None),
         }
     }
 
@@ -91,6 +114,17 @@ impl LiveSession {
             .lock()
             .map(|slot| slot.is_some())
             .unwrap_or(false)
+    }
+
+    /// The CPU reading from the previous metrics sample, if any.
+    pub fn prev_cpu(&self) -> Option<CpuTimes> {
+        self.prev_cpu.lock().ok().and_then(|slot| *slot)
+    }
+
+    pub fn set_prev_cpu(&self, times: CpuTimes) {
+        if let Ok(mut slot) = self.prev_cpu.lock() {
+            *slot = Some(times);
+        }
     }
 
     /// Hold this for the duration of an open, so the cap is enforced atomically.
@@ -151,6 +185,39 @@ impl LiveSession {
     pub fn shell_count(&self) -> usize {
         self.shells.lock().map(|shells| shells.len()).unwrap_or(0)
     }
+
+    /// Park a stream. The cap is checked by the caller *before* the channel
+    /// is opened — refusing after would mean closing a command already
+    /// running remotely. A race between two opens can overshoot by one,
+    /// which a leak-stop (unlike a security boundary) can tolerate.
+    pub fn add_stream(&self, handle: StreamHandle) -> Arc<StreamHandle> {
+        let handle = Arc::new(handle);
+        if let Ok(mut streams) = self.streams.lock() {
+            streams.insert(handle.id, Arc::clone(&handle));
+        }
+        handle
+    }
+
+    pub fn stream_count(&self) -> usize {
+        self.streams.lock().map(|streams| streams.len()).unwrap_or(0)
+    }
+
+    /// Remove one stream, returning it so the caller can close the channel.
+    /// An unknown id is a no-op, for the same reason as `remove_shell`.
+    pub fn remove_stream(&self, stream_id: u64) -> Option<Arc<StreamHandle>> {
+        self.streams
+            .lock()
+            .ok()
+            .and_then(|mut streams| streams.remove(&stream_id))
+    }
+
+    /// Empty the map, returning everything that was in it.
+    pub fn drain_streams(&self) -> Vec<Arc<StreamHandle>> {
+        self.streams
+            .lock()
+            .map(|mut streams| streams.drain().map(|(_, stream)| stream).collect())
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Default)]
@@ -177,6 +244,9 @@ impl SessionRegistry {
             tokio::spawn(async move {
                 for shell in previous.drain_shells() {
                     shell.close().await;
+                }
+                for stream in previous.drain_streams() {
+                    stream.close().await;
                 }
                 previous.session.close().await;
             });
@@ -229,6 +299,9 @@ impl SessionRegistry {
                 // holds a channel handle for the lifetime of the app.
                 for shell in live.drain_shells() {
                     shell.close().await;
+                }
+                for stream in live.drain_streams() {
+                    stream.close().await;
                 }
                 live.session.close().await;
                 true

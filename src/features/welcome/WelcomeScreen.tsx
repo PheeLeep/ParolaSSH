@@ -19,7 +19,7 @@ import type { Navigate } from "../../navigation";
 const RECENT_LIMIT = 6;
 
 export function WelcomeScreen({ onNavigate }: { onNavigate: Navigate }) {
-  const { hosts, groups, recent, onlineCount } = useHosts();
+  const { hosts, groups, recent, connectedCount } = useHosts();
   const recentHosts = recent.slice(0, RECENT_LIMIT);
 
   // Connecting needs a password dialog, so it goes through the shared
@@ -34,7 +34,7 @@ export function WelcomeScreen({ onNavigate }: { onNavigate: Navigate }) {
         <h1 className="welcome-hero__title">{greeting()}</h1>
         <p className="text-body-secondary mb-0">
           {hosts.length} saved {hosts.length === 1 ? "host" : "hosts"} ·{" "}
-          {onlineCount} connected · {groups.length}{" "}
+          {connectedCount} connected · {groups.length}{" "}
           {groups.length === 1 ? "group" : "groups"}
         </p>
       </header>

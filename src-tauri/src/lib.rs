@@ -136,6 +136,21 @@ pub fn run() {
             remote::commands::write_shell,
             remote::commands::resize_shell,
             remote::commands::close_shell,
+            // Long-running streams (followed logs)
+            remote::commands::close_stream,
+            // Services
+            remote::commands::list_services,
+            remote::commands::preview_service_action,
+            remote::commands::service_action,
+            remote::commands::service_log,
+            remote::commands::follow_service_log,
+            // Performance
+            remote::commands::sample_metrics,
+            // Updates
+            remote::commands::check_updates,
+            // Remote audit
+            remote::commands::remote_audit,
+            remote::commands::set_remote_finding_suppressed,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

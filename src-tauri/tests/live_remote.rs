@@ -15,7 +15,7 @@
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
-use parolassh_lib::remote::{probe, OsFamily};
+use parolassh_lib::remote::{audit, metrics, probe, services, updates, OsFamily};
 use zeroize::Zeroizing;
 
 struct LiveConfig {
@@ -140,6 +140,163 @@ async fn runs_a_command_and_captures_both_streams() {
     assert_eq!(output.stderr.trim(), "to-stderr");
     assert_eq!(output.exit_code, Some(3));
     assert!(!output.succeeded());
+
+    session.close().await;
+}
+
+#[tokio::test]
+async fn lists_services_and_finds_sshd_among_them() {
+    let Some(config) = config() else {
+        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
+        return;
+    };
+
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+
+    let command = services::list_command(report.os).unwrap();
+    let output = session.exec(command, None).await.unwrap();
+    assert!(output.succeeded(), "{}", output.failure_text());
+
+    let entries = services::parse_list(report.os, &output.stdout);
+    println!("{} services; first: {:?}", entries.len(), entries.first().map(|e| &e.name));
+    assert!(!entries.is_empty(), "a live host has services");
+
+    // The one service guaranteed present: the daemon we are talking through.
+    assert!(
+        entries.iter().any(|entry| entry.name.contains("ssh")),
+        "sshd should appear in its own service list"
+    );
+
+    session.close().await;
+}
+
+#[tokio::test]
+async fn samples_metrics_twice_and_reads_a_cpu_delta() {
+    let Some(config) = config() else {
+        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
+        return;
+    };
+
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+    if report.os != OsFamily::Linux {
+        eprintln!("skipping: the CPU-delta path is Linux-specific");
+        session.close().await;
+        return;
+    }
+
+    let command = metrics::sample_command(report.os).unwrap();
+
+    let first = session.exec(command, None).await.unwrap();
+    let (sample, previous) = metrics::parse_linux(&first.stdout, None, 0);
+    assert!(sample.cpu_percent.is_none(), "the first sample has no delta yet");
+    assert!(sample.memory.is_some(), "meminfo should parse");
+    assert!(!sample.disks.is_empty(), "df should report at least the root disk");
+
+    tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+
+    let second = session.exec(command, None).await.unwrap();
+    let (sample, _) = metrics::parse_linux(&second.stdout, previous, 0);
+    println!("cpu={:?} load={:?} uptime={:?}", sample.cpu_percent, sample.load, sample.uptime_seconds);
+    assert!(sample.cpu_percent.is_some(), "the second sample should carry a CPU figure");
+
+    session.close().await;
+}
+
+#[tokio::test]
+async fn checks_updates_without_installing_anything() {
+    let Some(config) = config() else {
+        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
+        return;
+    };
+
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+    if report.os != OsFamily::Linux {
+        eprintln!("skipping: the live VM path covers Linux");
+        session.close().await;
+        return;
+    }
+
+    let output = session
+        .exec(updates::check_command(report.os).unwrap(), None)
+        .await
+        .unwrap();
+    let parsed = updates::parse_linux(&output);
+    println!("updates: {parsed:?}");
+
+    // Any of the honest outcomes is fine; a crash or a lie is not.
+    match parsed {
+        updates::UpdateReport::List { updates, .. } => assert!(!updates.is_empty()),
+        updates::UpdateReport::UpToDate { .. }
+        | updates::UpdateReport::ManagerMissing { .. } => {}
+        updates::UpdateReport::ModuleMissing { .. } => {
+            panic!("a Linux host cannot be missing a PowerShell module")
+        }
+    }
+
+    session.close().await;
+}
+
+#[tokio::test]
+async fn tier1_audit_reads_sshd_posture_with_sudo() {
+    let Some(config) = config() else {
+        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
+        return;
+    };
+
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+    if !report.os.is_unix() {
+        eprintln!("skipping: tier 1 is Unix-only");
+        session.close().await;
+        return;
+    }
+
+    let unprivileged = session.exec(audit::TIER1_COMMAND, None).await.unwrap();
+
+    let privileged = if audit::needs_privileged_retry(&unprivileged)
+        && report.elevation.is_usable()
+    {
+        let stdin = format!("{}\n", config.password).into_bytes();
+        Some(
+            session
+                .exec(audit::TIER1_PRIVILEGED_COMMAND, Some(&stdin))
+                .await
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+
+    let gathered = audit::gather_tier1(
+        &unprivileged,
+        privileged.as_ref(),
+        report.elevation.is_usable(),
+    );
+    println!(
+        "sshd config: {} · lynis: {:?} · note: {:?}",
+        gathered.sshd_config.is_some(),
+        gathered.lynis,
+        gathered.note
+    );
+
+    // With working sudo the posture must actually be read, not degraded away.
+    assert!(
+        gathered.sshd_config.is_some(),
+        "sshd -T should answer once sudo is available: {:?}",
+        gathered.note
+    );
+
+    let assembled = audit::assemble(
+        "live-test",
+        session.negotiated.as_ref(),
+        Some(&gathered),
+        &std::collections::HashSet::new(),
+    );
+    println!("score={} findings={}", assembled.score, assembled.findings.len());
+    assert!(assembled.tier1_ran);
 
     session.close().await;
 }

@@ -1,5 +1,5 @@
 import { Card } from "react-bootstrap";
-import { Boxes, FolderOpen, Gauge, Package, ShieldCheck, type LucideIcon } from "lucide-react";
+import { FolderOpen, type LucideIcon } from "lucide-react";
 import type { HostFeature } from "../HostFeatureNav";
 import type { OsFamily } from "../types";
 
@@ -12,49 +12,6 @@ type Plan = {
 };
 
 const PLANS: Partial<Record<HostFeature, Plan>> = {
-  services: {
-    Icon: Boxes,
-    title: "Services",
-    blurb:
-      "Running units with their state and memory, and start, stop or restart — elevating the same way Power does.",
-    commands: {
-      unix: ["systemctl list-units --type=service", "journalctl -u <unit> -n 200"],
-      windows: ["sc query type= service state= all", "wevtutil qe System /c:50"],
-    },
-    caveat:
-      "Windows has no per-service log: provider names rarely match service names, and most services log to their own files. It will show Service Control Manager start, stop and crash events instead.",
-  },
-  performance: {
-    Icon: Gauge,
-    title: "Performance",
-    blurb:
-      "CPU, memory, disk and load, sampled on the heartbeat you already run rather than on a timer of its own.",
-    commands: {
-      unix: ["/proc/stat", "/proc/meminfo", "df -P"],
-      windows: ["Get-CimInstance Win32_OperatingSystem", "Get-Counter"],
-    },
-  },
-  updates: {
-    Icon: Package,
-    title: "Updates",
-    blurb:
-      "Pending packages with security ones marked. Read-only — installing anything stays a decision you make in the terminal.",
-    commands: {
-      unix: ["apt list --upgradable", "dnf check-update"],
-      windows: ["Get-WindowsUpdate"],
-    },
-  },
-  audit: {
-    Icon: ShieldCheck,
-    title: "Audit",
-    blurb:
-      "The remote half of the key audit: sshd posture, authorized_keys permissions, empty passwords, world-writable PATH entries.",
-    commands: {
-      unix: ["sshd -T", "stat ~/.ssh/authorized_keys", "awk -F: '($2==\"\")' /etc/shadow"],
-    },
-    caveat:
-      "Weak ciphers and key exchange come free — russh already negotiated them during the handshake, so that check costs no remote command at all. Lynis stays opt-in and is never installed for you.",
-  },
   files: {
     Icon: FolderOpen,
     title: "Files",

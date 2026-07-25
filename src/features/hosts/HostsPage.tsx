@@ -8,7 +8,7 @@ import { useHostActions } from "./useHostActions";
 import type { Navigate } from "../../navigation";
 
 export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
-  const { hosts, onlineCount, loading, error } = useHosts();
+  const { hosts, connectedCount, loading, error } = useHosts();
   const [selected, setSelected] = useState<HostRow[]>([]);
 
   const { actions, add, dialogs } = useHostActions({
@@ -25,7 +25,7 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
           <h1 className="page-title">All hosts</h1>
           <p className="text-body-secondary mb-0">
             {hosts.length} saved {hosts.length === 1 ? "host" : "hosts"} ·{" "}
-            {onlineCount} connected
+            {connectedCount} connected
           </p>
         </div>
       </header>

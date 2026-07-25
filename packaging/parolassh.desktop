@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ParolaSSH
+Comment=A desktop SSH console — saved hosts, key management, and terminals in one window.
+Exec=parolassh
+Icon=parolassh
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=SSH;Terminal;Remote;Console;
+StartupWMClass=parolassh

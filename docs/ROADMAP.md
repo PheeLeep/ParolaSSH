@@ -31,6 +31,8 @@ Where things stand. Updated as work lands.
 | Output batched (~16 ms / 64 KB) | `yes` would otherwise wedge the UI |
 | Passwords `Zeroizing` at the IPC boundary | Plaintext wiped on drop |
 | Shell ids on every event | A stale shell's output can't render in a newer pane |
+| Followed logs inherit all three rules | Addressed events, batching, stream ids — a journal contains whatever the machine logs |
+| No generic stream-open verb | Each feature opens its own typed command; only `close_stream(id)` is generic |
 
 ---
 
@@ -41,17 +43,17 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 
 | Tab | State | Notes |
 |---|---|---|
-| Overview | 👀 | OS, elevation, host key, heartbeat — all from `connect_host`; icons landed |
-| Terminal | 👀 | Multi-shell tabs, cap 8 per host |
-| Services | 📋 | Pane explains the plan and the exact commands |
-| Performance | 📋 | Same |
-| Updates | 📋 | Same |
-| Audit | 📋 | Same; tiers below |
+| Overview | ✅ | OS, elevation, host key, heartbeat — all from `connect_host`; reviewed |
+| Terminal | ✅ | Multi-shell tabs, cap 8 per host; reviewed, cap stays at 8 |
+| Services | ✅ | List, start/stop/restart with the sudo/UAC route, journal + follow / SCM events |
+| Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
+| Updates | ✅ | apt/dnf pending list; Windows shows hotfix history when PSWindowsUpdate is absent |
+| Audit | ✅ | Tiers 0–1 built, tier 2 is detect-only; details below |
 | Files | 💭 | SFTP via `russh-sftp`; a real UI on its own |
 
-Unbuilt tabs are reachable and state what they will run, per OS. An empty pane
-saying only "coming soon" is worse than no tab — you cannot tell a missing
-feature from one that found nothing.
+The Files tab still states what it will run rather than showing an empty
+"coming soon" pane — you cannot tell a missing feature from one that found
+nothing.
 
 ### Terminal — leak prevention ✅
 
@@ -128,14 +130,53 @@ of tiles scans as a column of numbers: `UserRound`, `Clock`, `Activity`,
 
 **Audit is tiered — Lynis is not the starting point.**
 
-| Tier | What | Cost |
+| Tier | What | State |
 |---|---|---|
-| 0 | Crypto from the handshake russh already did — weak kex, CBC ciphers, `ssh-rsa`+SHA-1 | Free; no remote command, no privileges |
-| 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH | A handful of read-only commands |
-| 2 | Lynis, **opt-in only** — detect `command -v lynis`, never install | Minutes, pegs a core |
+| 0 | Crypto from the handshake russh already did — weak kex, CBC ciphers, `ssh-rsa`+SHA-1, strict-kex | ✅ via `Handler::kex_done`; no remote command, no privileges |
+| 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH | ✅ read-only; degrades honestly without root |
+| 2 | Lynis, **opt-in only** — detect `command -v lynis`, never install | Detection shipped; the run itself is deferred |
 
 Verified: Lynis is not installed on the test VM, which is the normal case.
 Silently installing a package on someone's server from a GUI is out.
+
+Tier-0 honesty: russh's default preference lists contain no SHA-1 kex and no
+CBC cipher, so those two rules can never fire against the current client — a
+server offering only weak algorithms fails to connect instead. They are kept
+as guards in case the lists are ever widened for legacy devices; the checks
+that bite today are the `ssh-rsa` host key and missing strict kex.
+
+Remote findings score with the same weights and diminishing returns as the
+local key audit, and dismissals persist per host
+(`remote-audit-suppressions.json`, keyed `host|rule|target`) — silencing a
+finding on one box never hides it on another.
+
+**Streaming exec exists now, separately from the terminal.** `Session::exec`
+keeps its deliberate 30-second ceiling; `journalctl -f` runs on a new
+`stream` path — a PTY-less copy of the shell plumbing with the same 16 ms /
+64 KB batching, the same UTF-8 reassembly, and the same addressed
+(`emit_to`) events, because a followed log contains whatever the machine
+writes to it. Streams live in the registry beside shells (cap 4 per host)
+and are drained at the same four moments, so a followed journal cannot
+outlive its session. The one slow-but-bounded exception is
+`Get-WindowsUpdate`, which gets `exec_with_timeout(120 s)`.
+
+**Performance samples on a pane-scoped timer, not the heartbeat.** The
+earlier plan said "sample on the heartbeat", but 30 s is uselessly coarse
+for watching a load spike, and sampling every saved host forever is the
+wrong default. The cadence is the user's to pick (1/2/5/10/30 s, default
+1 s), and the pane polls only while mounted and visible; one compound exec
+per sample. CPU% is the delta between successive `/proc/stat` readings,
+with the previous reading held on the Rust session — the first sample
+honestly shows "—" rather than sleeping a second inside the command. The
+figure is the whole-machine aggregate across all cores (a process pegging
+one core of four reads as 25%), shown as a whole number.
+
+**Windows updates are reported honestly.** Querying *pending* updates from
+the CLI needs the PSWindowsUpdate module, which most machines lack. Absent
+module, the pane says so and lists recent installed hotfixes instead — and
+never installs the module to improve its own answer. Nothing on any
+platform is ever installed from the Updates pane; it reports, the operator
+decides in a terminal.
 
 ---
 
@@ -143,11 +184,11 @@ Silently installing a package on someone's server from a GUI is out.
 
 | Question | State |
 |---|---|
-| Status dot — "reachable" (current) or "we have a session"? | 💭 Your call |
-| Per-host shell cap of 8 — right number? | 👀 Shipped at 8; easy to change |
-| Does Services ship Linux-first, or both platforms together? | 💭 Asked, unanswered |
+| Status dot semantics | ✅ Decided: four states. Green + halo = live session, amber = reachable but no session, red = unreachable, grey = never probed. Fixing this also fixed a real bug: the hosts table treated "reachable" as "connected" and showed a Disconnect button for hosts we held no session on. `onlineCount` became `connectedCount` and counts sessions only. |
+| Per-host shell cap of 8 — right number? | ✅ Reviewed; stays at 8 |
+| Does Services ship Linux-first, or both platforms together? | ✅ Both shipped together (cross-platform parity is the rule) |
 | Should tab titles be renameable? `rename()` exists, no UI yet | 💭 |
-| Two rows of tabs (feature nav + shell tabs) — acceptable? | 👀 Built; judge it live |
+| Two rows of tabs (feature nav + shell tabs) — acceptable? | ✅ Reviewed; kept |
 
 ---
 
@@ -155,9 +196,17 @@ Silently installing a package on someone's server from a GUI is out.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 69 |
+| Rust unit | `cargo test --lib` | 142 |
+| Rust fixtures | `cargo test --test audit_fixtures` | 36 |
 | Rust live (needs the VM) | see below | 7 |
 | Frontend | `npx tsc --noEmit` | typecheck only |
+
+The new feature modules follow the `power.rs` testing shape: command
+construction is pure and asserted as exact strings per OS (including the
+quoting/injection cases), and parsers are fed captured-or-invented fixture
+literals — `systemctl --plain`, `sc query` CRLF blocks, `wevtutil /f:text`,
+`/proc` files, apt/dnf output (dnf's exit 100 included), CIM JSON, `sshd -T`.
+No test runs a real CLI, and no fixture contains real tenant data.
 
 ```sh
 PAROLASSH_LIVE_HOST=192.168.56.10 \

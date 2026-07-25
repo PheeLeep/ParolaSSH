@@ -29,7 +29,7 @@ export type HostRow = SshHost & { status: HostStatus };
 export type HostGroup = {
   name: string;
   hosts: HostRow[];
-  onlineCount: number;
+  connectedCount: number;
 };
 
 type ConnectOptions = {
@@ -42,7 +42,7 @@ type HostsContextValue = {
   hosts: HostRow[];
   groups: HostGroup[];
   recent: HostRow[];
-  onlineCount: number;
+  connectedCount: number;
   loading: boolean;
   error: string | null;
 
@@ -243,7 +243,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
       .map(([name, groupHosts]) => ({
         name,
         hosts: [...groupHosts].sort((a, b) => a.label.localeCompare(b.label)),
-        onlineCount: groupHosts.filter((host) => host.status === "online").length,
+        connectedCount: groupHosts.filter((host) => host.status === "connected").length,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -255,7 +255,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
       hosts: rows,
       groups,
       recent,
-      onlineCount: rows.filter((host) => host.status === "online").length,
+      connectedCount: rows.filter((host) => host.status === "connected").length,
       loading,
       error,
       getHost: (id) => rows.find((host) => host.id === id),
@@ -292,11 +292,13 @@ function statusFor(
   connections: Record<string, ConnectionInfo>,
   health: Record<string, HostHealth>,
 ): HostStatus {
-  if (connections[id]) return "online";
+  // `connections` first: right after connect() the health entry is stale
+  // until the next heartbeat, and would read "reachable" for up to 30 s.
+  if (connections[id] || health[id]?.connected) return "connected";
 
   const last = health[id];
   if (!last) return "unknown";
-  return last.reachable ? "online" : "offline";
+  return last.reachable ? "reachable" : "offline";
 }
 
 export function useHosts(): HostsContextValue {

@@ -14,7 +14,10 @@ use super::power::{self, Elevation, PowerOutcome, PowerRequest, PowerPlan, Privi
 use super::probe::{self, ProbeResult};
 use super::registry::{LiveSession, SessionRegistry};
 use super::secrets::SecretVault;
-use super::{shell, OsFamily};
+use super::services::{
+    self, ServiceActionRequest, ServiceEntry, ServiceLog, ServiceOutcome, ServicePlan,
+};
+use super::{shell, stream, OsFamily};
 use crate::app_paths::config_dir;
 use crate::hosts::model::{AuthMethod, HostRecord};
 use crate::hosts::store::{now_iso8601, HostStore};
@@ -34,6 +37,8 @@ pub struct ConnectionInfo {
     pub supports_force: bool,
     pub supports_cancel: bool,
     pub fingerprint: Option<String>,
+    /// What the key exchange negotiated, for the audit tab's free tier.
+    pub negotiated: Option<super::client::NegotiatedCrypto>,
     pub connected_at: String,
     /// Shells already open on this host — empty for a fresh connection.
     pub shell_ids: Vec<u64>,
@@ -153,6 +158,7 @@ pub async fn connect_host(
         supports_force: report.supports_force,
         supports_cancel: report.supports_cancel,
         fingerprint: live.fingerprint.clone(),
+        negotiated: live.negotiated.clone(),
         connected_at,
         shell_ids: Vec::new(),
         has_login_password: live.has_login_password(),
@@ -444,6 +450,309 @@ pub async fn close_shell(
     }
 
     Ok(())
+}
+
+/// Close one long-running stream (a followed log) and drop it.
+///
+/// Closing by id is safe for the same reason `close_shell` is: a pane can
+/// only ever close its own stream, and an id already gone is a no-op. There
+/// is deliberately no matching generic *open*: each stream-producing feature
+/// exposes its own typed command, so nothing here becomes a run-anything verb.
+#[tauri::command]
+pub async fn close_stream(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    stream_id: u64,
+) -> SshResult<()> {
+    let Some(live) = registry.get(&host_id) else {
+        return Ok(());
+    };
+
+    if let Some(stream) = live.remove_stream(stream_id) {
+        stream.close().await;
+    }
+
+    Ok(())
+}
+
+/// List the services on a connected host.
+#[tauri::command]
+pub async fn list_services(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<Vec<ServiceEntry>> {
+    let live = registry.require(&host_id)?;
+    let command = services::list_command(live.os)?;
+    let output = live.session.exec(command, None).await?;
+
+    if !output.succeeded() {
+        return Err(SshError::Io(format!(
+            "Could not list services: {}",
+            output.failure_text()
+        )));
+    }
+
+    Ok(services::parse_list(live.os, &output.stdout))
+}
+
+/// The exact command a service action would run, without running it.
+#[tauri::command]
+pub fn preview_service_action(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    request: ServiceActionRequest,
+) -> SshResult<ServicePlan> {
+    let live = registry.require(&host_id)?;
+    services::plan_action(live.os, &live.elevation, &request)
+}
+
+/// Start, stop, or restart one service.
+#[tauri::command]
+pub async fn service_action(
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    request: ServiceActionRequest,
+    password: Option<String>,
+) -> SshResult<ServiceOutcome> {
+    let live = registry.require(&host_id)?;
+    let plan = services::plan_action(live.os, &live.elevation, &request)?;
+
+    // Same precedence as power: the dialog's password, then the one this
+    // session logged in with, then the remembered one.
+    let sudo_password: Option<Zeroizing<String>> = password
+        .map(Zeroizing::new)
+        .or_else(|| live.login_password())
+        .or_else(|| vault.recall(&host_id));
+
+    let stdin = if plan.needs_password {
+        let password = sudo_password.ok_or_else(|| {
+            SshError::invalid("This host needs your account password for sudo.")
+        })?;
+        Some(format!("{}\n", password.as_str()).into_bytes())
+    } else {
+        None
+    };
+
+    let output = live.session.exec(&plan.command, stdin.as_deref()).await?;
+    Ok(services::interpret_action(&plan, output))
+}
+
+/// A service's recent history: the last journal lines, or SCM events.
+///
+/// `display_name` matters only on Windows, where SCM events name services by
+/// display name rather than service name; the filter runs in Rust, never in
+/// the remote query.
+#[tauri::command]
+pub async fn service_log(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    unit: String,
+    display_name: Option<String>,
+) -> SshResult<ServiceLog> {
+    let live = registry.require(&host_id)?;
+    let command = services::log_command(live.os, &unit)?;
+    let output = live.session.exec(&command, None).await?;
+
+    let filter = match live.os {
+        OsFamily::Windows => Some(display_name.as_deref().unwrap_or(unit.as_str())),
+        _ => None,
+    };
+
+    Ok(services::parse_log(live.os, &output, filter))
+}
+
+/// Follow a service's journal. Output arrives as `stream://output` events
+/// addressed to the calling window; the returned id is quoted back to
+/// `close_stream` when the pane is done.
+#[tauri::command]
+pub async fn follow_service_log(
+    app: AppHandle,
+    webview: tauri::Webview,
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    unit: String,
+) -> SshResult<u64> {
+    let live = registry.require(&host_id)?;
+    let command = services::follow_command(live.os, &unit)?;
+
+    // Checked before the channel opens, so a refusal never leaves a command
+    // already running remotely with nothing tracking it.
+    if live.stream_count() >= super::registry::MAX_STREAMS_PER_HOST {
+        return Err(SshError::invalid(
+            "This host already has too many followed logs open. Close one before \
+             opening another.",
+        ));
+    }
+
+    // Addressed like terminal output, and for the same reason: a followed
+    // log contains whatever the machine writes to it.
+    let label = webview.label().to_string();
+
+    let handle = stream::open(&live.session, app, label, host_id, &command).await?;
+    let stream_id = handle.id;
+    live.add_stream(handle);
+
+    Ok(stream_id)
+}
+
+/// One performance sample from a connected host.
+///
+/// Called on a short timer by the Performance pane while it is visible, and
+/// only then — the pane owns the cadence, so an unopened tab costs nothing.
+#[tauri::command]
+pub async fn sample_metrics(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<super::metrics::HostMetrics> {
+    let live = registry.require(&host_id)?;
+    super::metrics::sample(&live).await
+}
+
+/// What updates a host is waiting on. Read-only — there is no install verb.
+#[tauri::command]
+pub async fn check_updates(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<super::updates::UpdateReport> {
+    use super::updates;
+
+    let live = registry.require(&host_id)?;
+    let command = updates::check_command(live.os)?;
+    let output = live.session.exec(command, None).await?;
+
+    match live.os {
+        OsFamily::Windows => {
+            let (module_present, history) = updates::parse_windows_first_round(&output);
+            if !module_present {
+                return Ok(updates::UpdateReport::ModuleMissing {
+                    detail: updates::module_missing_detail(),
+                    installed_history: history,
+                });
+            }
+            // The module exists, so the real query is worth its slow round
+            // trip — it goes out to Microsoft's servers.
+            let pending = live
+                .session
+                .exec_with_timeout(
+                    updates::windows_pending_command(),
+                    None,
+                    updates::WINDOWS_PENDING_TIMEOUT,
+                )
+                .await?;
+            Ok(updates::parse_windows_pending(&pending))
+        }
+        _ => Ok(updates::parse_linux(&output)),
+    }
+}
+
+/// Audit a connected host: tier 0 from the handshake, tier 1 from read-only
+/// commands, tier 2 as Lynis detection only.
+///
+/// `password` follows the sudo chain and is used only for the privileged
+/// retry when the unprivileged `sshd -T` was refused.
+#[tauri::command]
+pub async fn remote_audit(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    password: Option<String>,
+) -> SshResult<super::audit::RemoteAuditReport> {
+    use super::audit;
+
+    let live = registry.require(&host_id)?;
+
+    let tier1 = if live.os.is_unix() {
+        let unprivileged = live.session.exec(audit::TIER1_COMMAND, None).await?;
+
+        let privileged = if audit::needs_privileged_retry(&unprivileged)
+            && live.elevation.is_usable()
+            && !matches!(live.elevation, Elevation::WindowsAdminToken)
+        {
+            let sudo_password: Option<Zeroizing<String>> = password
+                .map(Zeroizing::new)
+                .or_else(|| live.login_password())
+                .or_else(|| vault.recall(&host_id));
+
+            let stdin = match &live.elevation {
+                Elevation::SudoPassword => match sudo_password {
+                    Some(password) => Some(format!("{}\n", password.as_str()).into_bytes()),
+                    // No password to offer: skip the retry and let the note
+                    // explain, rather than watching sudo fail.
+                    None => None,
+                },
+                _ => Some(Vec::new()),
+            };
+
+            match stdin {
+                Some(stdin) => Some(
+                    live.session
+                        .exec(audit::TIER1_PRIVILEGED_COMMAND, Some(&stdin))
+                        .await?,
+                ),
+                None => None,
+            }
+        } else {
+            None
+        };
+
+        Some(audit::gather_tier1(
+            &unprivileged,
+            privileged.as_ref(),
+            live.elevation.is_usable(),
+        ))
+    } else {
+        None
+    };
+
+    let suppressed = crate::ssh::store::Suppressions::read_named(
+        &config_dir(&app)?,
+        audit::SUPPRESSIONS_FILE,
+    )
+    .as_set();
+
+    let mut report = audit::assemble(
+        &host_id,
+        live.negotiated.as_ref(),
+        tier1.as_ref(),
+        &suppressed,
+    );
+
+    // A Windows host runs no tier-1 commands; say so instead of showing an
+    // unexplained half-report.
+    if !live.os.is_unix() {
+        report.tier1_note = Some(
+            "Posture checks are implemented for Unix sshd; Windows posture checks \
+             are planned."
+                .to_string(),
+        );
+    }
+
+    Ok(report)
+}
+
+/// Dismiss or restore one remote finding, per host.
+#[tauri::command]
+pub fn set_remote_finding_suppressed(
+    app: AppHandle,
+    host_id: String,
+    finding_id: String,
+    suppressed: bool,
+) -> SshResult<()> {
+    use super::audit;
+
+    let dir = config_dir(&app)?;
+    let mut store = crate::ssh::store::Suppressions::read_named(&dir, audit::SUPPRESSIONS_FILE);
+
+    let key = format!("{host_id}|{finding_id}");
+    if suppressed {
+        store.insert(key);
+    } else {
+        store.remove(&key);
+    }
+
+    store.write_named(&dir, audit::SUPPRESSIONS_FILE)
 }
 
 /// Decide what to authenticate with, given the record and what the UI sent.

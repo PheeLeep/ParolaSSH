@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="squircle"><rect width="256" height="256" rx="58"/></clipPath>
+    <linearGradient id="beam" x1="150" y1="57" x2="76" y2="57" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D6BCFF" stop-opacity="1"/>
+      <stop offset="1" stop-color="#7C3AED" stop-opacity="0.75"/>
+    </linearGradient>
+    <radialGradient id="lanternGlow" cx="168" cy="56" r="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="256" height="256" fill="#0D0B16"/>
+    <g transform="translate(-2,18)">
+      <rect y="216" width="256" height="40" fill="#08060F"/>
+      <circle cx="168" cy="56" r="84" fill="url(#lanternGlow)"/>
+      <polyline points="76,14 150,57 76,100" fill="none" stroke="url(#beam)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+      <polygon points="141,216 155,75 181,75 195,216" fill="#EDEBF4"/>
+      <polygon points="151.5,110 184.5,110 186.3,128 149.7,128" fill="#0D0B16"/>
+      <polygon points="147.4,152 188.6,152 190.4,170 145.6,170" fill="#0D0B16"/>
+      <rect x="148" y="66" width="40" height="9" rx="3.5" fill="#EDEBF4"/>
+      <rect x="156" y="46" width="24" height="20" rx="3.5" fill="#A78BFA"/>
+      <polygon points="150,46 186,46 168,26" fill="#EDEBF4"/>
+    </g>
+  </g>
+</svg>

@@ -77,7 +77,7 @@ export function DeleteHostDialog({
           </div>
         </dl>
 
-        {host.status === "online" && (
+        {host.status === "connected" && (
           <Alert variant="warning" className="mt-3 mb-0 d-flex gap-2 py-2 small">
             <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
             <div>

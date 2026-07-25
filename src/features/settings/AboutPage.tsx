@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button, Card } from "react-bootstrap";
 // lucide v1 dropped brand icons, so no GitHub mark — GitBranch stands in.
 import {
@@ -5,10 +6,10 @@ import {
   ChevronLeft,
   ExternalLink,
   GitBranch,
-  SquareTerminal,
   User,
   type LucideIcon,
 } from "lucide-react";
+import { BrandMark } from "../../components/BrandMark";
 import { openExternal } from "../../lib/openExternal";
 import type { Navigate } from "../../navigation";
 
@@ -16,6 +17,8 @@ const AUTHOR = "PheeLeep";
 const AUTHOR_URL = "https://github.com/PheeLeep";
 const REPO_URL = "https://github.com/PheeLeep/ParolaSSH";
 const ISSUES_URL = `${REPO_URL}/issues`;
+/** Redirects to avatars.githubusercontent.com; both hosts are in the CSP. */
+const AUTHOR_AVATAR = `${AUTHOR_URL}.png?size=160`;
 
 const BUILT_WITH = [
   "Tauri 2",
@@ -43,7 +46,7 @@ export function AboutPage({ onNavigate }: { onNavigate: Navigate }) {
 
       <header className="about-hero">
         <span className="about-hero__mark" aria-hidden="true">
-          <SquareTerminal className="icon-xl" />
+          <BrandMark />
         </span>
         <h1 className="about-hero__title">ParolaSSH</h1>
         <p className="about-hero__version">Version {__APP_VERSION__}</p>
@@ -57,6 +60,7 @@ export function AboutPage({ onNavigate }: { onNavigate: Navigate }) {
         <Card.Body className="p-2">
           <LinkRow
             Icon={User}
+            avatarUrl={AUTHOR_AVATAR}
             title={AUTHOR}
             hint="Author"
             onClick={() => openExternal(AUTHOR_URL)}
@@ -94,19 +98,35 @@ export function AboutPage({ onNavigate }: { onNavigate: Navigate }) {
 
 function LinkRow({
   Icon,
+  avatarUrl,
   title,
   hint,
   onClick,
 }: {
   Icon: LucideIcon;
+  avatarUrl?: string;
   title: string;
   hint: string;
   onClick: () => void;
 }) {
+  // The avatar is the one thing here that needs the network. Offline or if
+  // GitHub is unreachable, fall back to the icon rather than a broken image.
+  const [avatarBroken, setAvatarBroken] = useState(false);
+
   return (
     <button type="button" className="link-row" onClick={onClick}>
       <span className="link-row__icon" aria-hidden="true">
-        <Icon />
+        {avatarUrl && !avatarBroken ? (
+          <img
+            className="link-row__avatar"
+            src={avatarUrl}
+            alt=""
+            loading="lazy"
+            onError={() => setAvatarBroken(true)}
+          />
+        ) : (
+          <Icon />
+        )}
       </span>
       <span className="link-row__text">
         <span className="link-row__title">{title}</span>

@@ -101,6 +101,11 @@
   --parola-online: #15a34a;
   --parola-online-soft: rgba(21, 163, 74, 0.11);
   --parola-online-ring: rgba(21, 163, 74, 0.2);
+  /* "Reachable" borrows the audit-medium amber: the machine answers but we
+     hold no session — caution-adjacent, deliberately not a success green. */
+  --parola-reachable: #b54708;
+  --parola-reachable-soft: rgba(181, 71, 8, 0.1);
+  --parola-reachable-ring: rgba(181, 71, 8, 0.2);
   --parola-offline: #d92d20;
   --parola-offline-soft: rgba(217, 45, 32, 0.1);
   --parola-unknown: #8a94a6;
@@ -168,6 +173,9 @@
   --parola-online: #2fbf60;
   --parola-online-soft: rgba(47, 191, 96, 0.14);
   --parola-online-ring: rgba(47, 191, 96, 0.22);
+  --parola-reachable: #f79009;
+  --parola-reachable-soft: rgba(247, 144, 9, 0.14);
+  --parola-reachable-ring: rgba(247, 144, 9, 0.22);
   --parola-offline: #f0564a;
   --parola-offline-soft: rgba(240, 86, 74, 0.14);
   --parola-unknown: #6b7688;

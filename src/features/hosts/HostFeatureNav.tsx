@@ -30,10 +30,10 @@ type FeatureDef = {
 export const HOST_FEATURES: FeatureDef[] = [
   { id: "overview", label: "Overview", Icon: Server, ready: true, needsSession: false },
   { id: "terminal", label: "Terminal", Icon: SquareTerminal, ready: true, needsSession: true },
-  { id: "services", label: "Services", Icon: Boxes, ready: false, needsSession: true },
-  { id: "performance", label: "Performance", Icon: Gauge, ready: false, needsSession: true },
-  { id: "updates", label: "Updates", Icon: Package, ready: false, needsSession: true },
-  { id: "audit", label: "Audit", Icon: ShieldCheck, ready: false, needsSession: true },
+  { id: "services", label: "Services", Icon: Boxes, ready: true, needsSession: true },
+  { id: "performance", label: "Performance", Icon: Gauge, ready: true, needsSession: true },
+  { id: "updates", label: "Updates", Icon: Package, ready: true, needsSession: true },
+  { id: "audit", label: "Audit", Icon: ShieldCheck, ready: true, needsSession: true },
   { id: "files", label: "Files", Icon: FolderOpen, ready: false, needsSession: true },
 ];
 

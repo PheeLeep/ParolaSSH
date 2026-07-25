@@ -5,8 +5,12 @@ import { useHosts } from "./HostsProvider";
 import { HostFeatureNav, HOST_FEATURES, type HostFeature } from "./HostFeatureNav";
 import { StatusBadge } from "./StatusIndicator";
 import { TerminalTabs } from "./TerminalTabs";
+import { AuditPane } from "./panes/AuditPane";
 import { OsBadge, OverviewPane } from "./panes/OverviewPane";
+import { PerformancePane } from "./panes/PerformancePane";
 import { PlannedPane } from "./panes/PlannedPane";
+import { ServicesPane } from "./panes/ServicesPane";
+import { UpdatesPane } from "./panes/UpdatesPane";
 import { useHostActions } from "./useHostActions";
 import { VpnGlyph } from "../vpn/VpnGlyph";
 import type { Navigate } from "../../navigation";
@@ -136,6 +140,14 @@ export function HostDetail({
           />
         ) : feature === "terminal" ? (
           <TerminalTabs hostId={hostId} />
+        ) : feature === "services" ? (
+          <ServicesPane hostId={hostId} />
+        ) : feature === "performance" ? (
+          <PerformancePane hostId={hostId} />
+        ) : feature === "updates" ? (
+          <UpdatesPane hostId={hostId} />
+        ) : feature === "audit" ? (
+          <AuditPane hostId={hostId} />
         ) : (
           <PlannedPane feature={feature} os={connection?.os} />
         )}

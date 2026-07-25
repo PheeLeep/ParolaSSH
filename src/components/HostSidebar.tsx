@@ -32,7 +32,7 @@ type HostSidebarProps = {
 };
 
 export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
-  const { hosts, groups, onlineCount } = useHosts();
+  const { hosts, groups, connectedCount } = useHosts();
   const { report } = useKeys();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -107,7 +107,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         <div className="sidebar-label">
           <span className="flex-grow-1">Hosts</span>
           <span className="fw-normal text-body-secondary">
-            <AnimatedValue value={onlineCount} />/{hosts.length} online
+            <AnimatedValue value={connectedCount} />/{hosts.length} connected
           </span>
         </div>
 
@@ -138,7 +138,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
                   {group.name}
                 </span>
                 <span className="sidebar-item__meta">
-                  <AnimatedValue value={group.onlineCount} />/{group.hosts.length}
+                  <AnimatedValue value={group.connectedCount} />/{group.hosts.length}
                 </span>
               </button>
 

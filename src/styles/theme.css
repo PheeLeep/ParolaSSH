@@ -1,0 +1,264 @@
+/* =============================================================
+   ParolaSSH design tokens
+
+   Bootstrap 5.3 switches themes from [data-bs-theme] on <html>,
+   which ThemeProvider keeps in sync. We ride on that and restate
+   Bootstrap's own CSS variables per theme, so every component
+   (buttons, cards, dropdowns, tables) follows without patching
+   each one individually.
+   ============================================================= */
+
+:root {
+  --parola-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --parola-mono: ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code",
+    "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --parola-sidebar-width: 16.5rem;
+  --parola-navbar-height: 3.25rem;
+  --parola-radius: 0.625rem;
+  --parola-radius-sm: 0.4375rem;
+
+  --bs-body-font-family: var(--parola-sans);
+  --bs-body-font-size: 0.9375rem;
+  --bs-border-radius: var(--parola-radius);
+  --bs-border-radius-sm: var(--parola-radius-sm);
+  --bs-border-radius-lg: 0.875rem;
+}
+
+/* ---------------------------------------------- Light ------- */
+
+:root,
+[data-bs-theme="light"] {
+  color-scheme: light;
+
+  --parola-accent: #2563eb;
+  --parola-accent-hover: #1d4ed8;
+  --parola-accent-active: #1e40af;
+  --parola-accent-soft: rgba(37, 99, 235, 0.09);
+
+  --parola-app-bg: #f4f5f7;
+  --parola-surface: #ffffff;
+  --parola-sidebar-bg: #fafbfc;
+  --parola-header-bg: rgba(255, 255, 255, 0.82);
+  --parola-hover: rgba(15, 23, 42, 0.05);
+  --parola-selected: rgba(37, 99, 235, 0.1);
+  --parola-line: #e3e6ea;
+  --parola-line-strong: #d3d8de;
+
+  --parola-online: #15a34a;
+  --parola-online-soft: rgba(21, 163, 74, 0.11);
+  --parola-online-ring: rgba(21, 163, 74, 0.2);
+  --parola-offline: #d92d20;
+  --parola-offline-soft: rgba(217, 45, 32, 0.1);
+  --parola-unknown: #8a94a6;
+  --parola-unknown-soft: rgba(138, 148, 166, 0.14);
+
+  --parola-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 1px 3px rgba(16, 24, 40, 0.06);
+  --parola-shadow-lg: 0 8px 28px rgba(16, 24, 40, 0.12);
+
+  --bs-body-bg: var(--parola-app-bg);
+  --bs-body-bg-rgb: 244, 245, 247;
+  --bs-body-color: #1b2430;
+  --bs-body-color-rgb: 27, 36, 48;
+  --bs-secondary-color: rgba(27, 36, 48, 0.62);
+  --bs-emphasis-color: #0b1220;
+  --bs-emphasis-color-rgb: 11, 18, 32;
+  --bs-border-color: var(--parola-line);
+  --bs-secondary-bg: #eceef1;
+  --bs-secondary-bg-rgb: 236, 238, 241;
+  --bs-tertiary-bg: #f7f8fa;
+  --bs-tertiary-bg-rgb: 247, 248, 250;
+  --bs-primary: var(--parola-accent);
+  --bs-primary-rgb: 37, 99, 235;
+  --bs-link-color: var(--parola-accent);
+  --bs-link-hover-color: var(--parola-accent-hover);
+  --bs-focus-ring-color: rgba(37, 99, 235, 0.25);
+}
+
+/* ---------------------------------------------- Dark -------- */
+/* Near-black with a cool tint — deeper than Bootstrap's default
+   charcoal, but not flat #000, which crushes elevation. */
+
+[data-bs-theme="dark"] {
+  color-scheme: dark;
+
+  --parola-accent: #3b82f6;
+  --parola-accent-hover: #5b9bfa;
+  --parola-accent-active: #2563eb;
+  --parola-accent-soft: rgba(59, 130, 246, 0.15);
+
+  --parola-app-bg: #0a0c10;
+  --parola-surface: #101319;
+  --parola-sidebar-bg: #0c0e13;
+  --parola-header-bg: rgba(12, 14, 19, 0.85);
+  --parola-hover: rgba(255, 255, 255, 0.055);
+  --parola-selected: rgba(59, 130, 246, 0.16);
+  --parola-line: #1d222b;
+  --parola-line-strong: #2a313d;
+
+  --parola-online: #2fbf60;
+  --parola-online-soft: rgba(47, 191, 96, 0.14);
+  --parola-online-ring: rgba(47, 191, 96, 0.22);
+  --parola-offline: #f0564a;
+  --parola-offline-soft: rgba(240, 86, 74, 0.14);
+  --parola-unknown: #6b7688;
+  --parola-unknown-soft: rgba(107, 118, 136, 0.16);
+
+  --parola-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --parola-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+
+  --bs-body-bg: var(--parola-app-bg);
+  --bs-body-bg-rgb: 10, 12, 16;
+  --bs-body-color: #d3d8e0;
+  --bs-body-color-rgb: 211, 216, 224;
+  --bs-secondary-color: rgba(211, 216, 224, 0.58);
+  --bs-emphasis-color: #f1f4f9;
+  --bs-emphasis-color-rgb: 241, 244, 249;
+  --bs-border-color: var(--parola-line);
+  --bs-secondary-bg: #171b22;
+  --bs-secondary-bg-rgb: 23, 27, 34;
+  --bs-tertiary-bg: #12161c;
+  --bs-tertiary-bg-rgb: 18, 22, 28;
+  --bs-primary: var(--parola-accent);
+  --bs-primary-rgb: 59, 130, 246;
+  --bs-link-color: #7aa9f7;
+  --bs-link-hover-color: #9cc0f9;
+  --bs-focus-ring-color: rgba(59, 130, 246, 0.35);
+}
+
+/* --------------------------- Bootstrap component tuning ----- */
+
+/* Lucide baseline. lucide-react stamps `.lucide` on every svg, so one rule
+   keeps stroke weight and optical size consistent app-wide; CSS beats the
+   presentation attributes the component sets. Use the modifier classes
+   rather than the `size` prop, which these rules would override anyway. */
+.lucide {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  stroke-width: 1.75;
+}
+
+.lucide.icon-sm {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.lucide.icon-lg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.lucide.icon-xl {
+  width: 1.75rem;
+  height: 1.75rem;
+  stroke-width: 1.5;
+}
+
+.btn {
+  --bs-btn-font-size: 0.875rem;
+  --bs-btn-font-weight: 500;
+  font-weight: 500;
+  /* Line up icon + label without per-call-site margin utilities. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+}
+
+.dropdown-toggle.no-caret::after {
+  display: none;
+}
+
+.btn-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--parola-accent);
+  --bs-btn-border-color: var(--parola-accent);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--parola-accent-hover);
+  --bs-btn-hover-border-color: var(--parola-accent-hover);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--parola-accent-active);
+  --bs-btn-active-border-color: var(--parola-accent-active);
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: var(--parola-accent);
+  --bs-btn-disabled-border-color: var(--parola-accent);
+}
+
+.btn-outline-secondary {
+  --bs-btn-color: var(--bs-body-color);
+  --bs-btn-border-color: var(--parola-line-strong);
+  --bs-btn-hover-color: var(--bs-emphasis-color);
+  --bs-btn-hover-bg: var(--parola-hover);
+  --bs-btn-hover-border-color: var(--parola-line-strong);
+  --bs-btn-active-color: var(--bs-emphasis-color);
+  --bs-btn-active-bg: var(--parola-hover);
+  --bs-btn-active-border-color: var(--parola-line-strong);
+  --bs-btn-disabled-color: var(--bs-secondary-color);
+  --bs-btn-disabled-border-color: var(--parola-line);
+}
+
+.card {
+  --bs-card-bg: var(--parola-surface);
+  --bs-card-border-color: var(--parola-line);
+  --bs-card-cap-bg: transparent;
+  box-shadow: var(--parola-shadow);
+}
+
+.dropdown-menu {
+  --bs-dropdown-bg: var(--parola-surface);
+  --bs-dropdown-border-color: var(--parola-line);
+  --bs-dropdown-link-hover-bg: var(--parola-hover);
+  --bs-dropdown-link-active-bg: var(--parola-accent);
+  --bs-dropdown-font-size: 0.875rem;
+  padding: 0.3125rem;
+  box-shadow: var(--parola-shadow-lg);
+}
+
+.dropdown-item {
+  border-radius: var(--parola-radius-sm);
+}
+
+.form-control,
+.form-select {
+  background-color: var(--parola-surface);
+  border-color: var(--parola-line-strong);
+  font-size: 0.875rem;
+}
+
+.input-group-text {
+  background-color: var(--parola-surface);
+  border-color: var(--parola-line-strong);
+  color: var(--bs-secondary-color);
+}
+
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-hover-bg: var(--parola-hover);
+  --bs-table-border-color: var(--parola-line);
+  --bs-table-active-bg: var(--parola-accent-soft);
+}
+
+/* Thin, unobtrusive scrollbars — the default GTK ones are heavy. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--parola-line-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--parola-line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}

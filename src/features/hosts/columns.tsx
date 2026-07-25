@@ -1,20 +1,11 @@
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Badge, Button, Dropdown } from "react-bootstrap";
+import { Button, Dropdown } from "react-bootstrap";
+import { Ellipsis, Pencil, Plug, Trash2 } from "lucide-react";
 import { formatAbsolute, formatRelative } from "../../lib/format";
-import {
-  AUTH_METHOD_LABELS,
-  STATUS_LABELS,
-  type HostStatus,
-  type SshHost,
-} from "./types";
+import { StatusBadge, StatusDot } from "./StatusIndicator";
+import { AUTH_METHOD_LABELS, type SshHost } from "./types";
 
 const column = createColumnHelper<SshHost>();
-
-const STATUS_VARIANT: Record<HostStatus, string> = {
-  online: "success",
-  offline: "danger",
-  unknown: "secondary",
-};
 
 export type HostRowActions = {
   onConnect: (host: SshHost) => void;
@@ -30,11 +21,14 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
       header: "Name",
       meta: { title: "Name" },
       cell: (info) => (
-        <div className="d-flex flex-column">
-          <span className="fw-semibold">{info.getValue()}</span>
-          <span className="text-body-secondary small">
-            {info.row.original.username}@{info.row.original.hostname}
-          </span>
+        <div className="d-flex align-items-center gap-2">
+          <StatusDot status={info.row.original.status} />
+          <div className="d-flex flex-column">
+            <span className="fw-semibold">{info.getValue()}</span>
+            <span className="text-body-secondary small">
+              {info.row.original.username}@{info.row.original.hostname}
+            </span>
+          </div>
         </div>
       ),
     }),
@@ -78,9 +72,9 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
       cell: (info) => (
         <div className="d-flex flex-wrap gap-1">
           {info.row.original.tags.map((tag) => (
-            <Badge key={tag} bg="secondary-subtle" text="secondary-emphasis" pill>
+            <span key={tag} className="tag-chip">
               {tag}
-            </Badge>
+            </span>
           ))}
         </div>
       ),
@@ -89,14 +83,7 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
     column.accessor("status", {
       header: "Status",
       meta: { title: "Status", width: "8rem" },
-      cell: (info) => {
-        const status = info.getValue();
-        return (
-          <Badge bg={STATUS_VARIANT[status]} className="fw-normal">
-            {STATUS_LABELS[status]}
-          </Badge>
-        );
-      },
+      cell: (info) => <StatusBadge status={info.getValue()} />,
     }),
 
     // Sort on the raw timestamp, display a friendly string.
@@ -121,19 +108,22 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
         return (
           <div className="d-flex justify-content-end gap-1">
             <Button size="sm" variant="primary" onClick={() => actions.onConnect(host)}>
-              <i className="bi bi-plug-fill me-1" aria-hidden="true" />
+              <Plug aria-hidden="true" />
               Connect
             </Button>
             <Dropdown align="end">
               <Dropdown.Toggle
                 size="sm"
                 variant="outline-secondary"
+                className="no-caret"
                 id={`host-actions-${host.id}`}
                 aria-label={`More actions for ${host.label}`}
-              />
+              >
+                <Ellipsis aria-hidden="true" />
+              </Dropdown.Toggle>
               <Dropdown.Menu>
                 <Dropdown.Item onClick={() => actions.onEdit(host)}>
-                  <i className="bi bi-pencil me-2" aria-hidden="true" />
+                  <Pencil className="icon-sm" aria-hidden="true" />
                   Edit
                 </Dropdown.Item>
                 <Dropdown.Divider />
@@ -141,7 +131,7 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
                   className="text-danger"
                   onClick={() => actions.onDelete(host)}
                 >
-                  <i className="bi bi-trash me-2" aria-hidden="true" />
+                  <Trash2 className="icon-sm" aria-hidden="true" />
                   Delete
                 </Dropdown.Item>
               </Dropdown.Menu>

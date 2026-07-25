@@ -14,7 +14,7 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "bootstrap": "^5.3.8",
-    "bootstrap-icons": "^1.13.1",
+    "lucide-react": "^1.26.0",
     "react": "^19.1.0",
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.0"

@@ -1,10 +1,11 @@
 import { Dropdown } from "react-bootstrap";
+import { Check, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useTheme, type ThemeMode } from "./ThemeProvider";
 
-const OPTIONS: { mode: ThemeMode; label: string; icon: string }[] = [
-  { mode: "light", label: "Light", icon: "bi-sun-fill" },
-  { mode: "dark", label: "Dark", icon: "bi-moon-stars-fill" },
-  { mode: "system", label: "System", icon: "bi-circle-half" },
+const OPTIONS: { mode: ThemeMode; label: string; Icon: LucideIcon }[] = [
+  { mode: "light", label: "Light", Icon: Sun },
+  { mode: "dark", label: "Dark", Icon: Moon },
+  { mode: "system", label: "System", Icon: Monitor },
 ];
 
 export function ThemeToggle() {
@@ -19,7 +20,7 @@ export function ThemeToggle() {
         id="theme-toggle"
         aria-label={`Theme: ${active.label}`}
       >
-        <i className={`bi ${active.icon}`} aria-hidden="true" />
+        <active.Icon aria-hidden="true" />
       </Dropdown.Toggle>
 
       <Dropdown.Menu>
@@ -28,13 +29,10 @@ export function ThemeToggle() {
             key={option.mode}
             active={option.mode === mode}
             onClick={() => setMode(option.mode)}
-            className="d-flex align-items-center gap-2"
           >
-            <i className={`bi ${option.icon}`} aria-hidden="true" />
+            <option.Icon aria-hidden="true" />
             <span className="flex-grow-1">{option.label}</span>
-            {option.mode === mode && (
-              <i className="bi bi-check2" aria-hidden="true" />
-            )}
+            {option.mode === mode && <Check aria-hidden="true" />}
           </Dropdown.Item>
         ))}
       </Dropdown.Menu>

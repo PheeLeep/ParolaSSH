@@ -14,6 +14,20 @@ import {
   type VisibilityState,
 } from "@tanstack/react-table";
 import { Button, Dropdown, Form, InputGroup, Table } from "react-bootstrap";
+import {
+  ArrowDownWideNarrow,
+  ArrowUpDown,
+  ArrowUpNarrowWide,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Columns3,
+  Inbox,
+  Search,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData extends RowData, TValue> {
@@ -136,7 +150,7 @@ export function DataTable<TData>({
 
         <InputGroup size="sm" className="ms-auto" style={{ maxWidth: "18rem" }}>
           <InputGroup.Text>
-            <i className="bi bi-search" aria-hidden="true" />
+            <Search className="icon-sm" aria-hidden="true" />
           </InputGroup.Text>
           <Form.Control
             value={globalFilter}
@@ -150,14 +164,14 @@ export function DataTable<TData>({
               onClick={() => setGlobalFilter("")}
               aria-label="Clear search"
             >
-              <i className="bi bi-x-lg" aria-hidden="true" />
+              <X className="icon-sm" aria-hidden="true" />
             </Button>
           )}
         </InputGroup>
 
         <Dropdown align="end" autoClose="outside">
           <Dropdown.Toggle variant="outline-secondary" size="sm" id="column-visibility">
-            <i className="bi bi-layout-three-columns me-1" aria-hidden="true" />
+            <Columns3 aria-hidden="true" />
             Columns
           </Dropdown.Toggle>
           <Dropdown.Menu>
@@ -178,7 +192,9 @@ export function DataTable<TData>({
 
       <div className="table-responsive border rounded">
         <Table hover className="mb-0 align-middle">
-          <thead className="table-light">
+          {/* No `.table-light` here — it paints an inset box-shadow that would
+              cover the themed header background from app.css. */}
+          <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
@@ -203,14 +219,11 @@ export function DataTable<TData>({
                       {header.isPlaceholder ? null : sortable ? (
                         <button
                           type="button"
-                          className="btn btn-link btn-sm p-0 text-decoration-none text-body fw-semibold d-inline-flex align-items-center gap-1"
+                          className="btn btn-link btn-sm p-0 text-decoration-none text-body fw-semibold"
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(header.column.columnDef.header, header.getContext())}
-                          <i
-                            className={`bi ${sortIcon(sorted)} ${sorted ? "" : "opacity-25"}`}
-                            aria-hidden="true"
-                          />
+                          <SortIcon sorted={sorted} />
                         </button>
                       ) : (
                         flexRender(header.column.columnDef.header, header.getContext())
@@ -229,8 +242,10 @@ export function DataTable<TData>({
                   colSpan={table.getVisibleLeafColumns().length}
                   className="text-center text-body-secondary py-5"
                 >
-                  <i className="bi bi-inbox fs-3 d-block mb-2" aria-hidden="true" />
-                  {globalFilter ? `No matches for “${globalFilter}”.` : emptyMessage}
+                  <Inbox className="icon-xl mb-2" aria-hidden="true" />
+                  <div>
+                    {globalFilter ? `No matches for “${globalFilter}”.` : emptyMessage}
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -273,7 +288,7 @@ export function DataTable<TData>({
             disabled={!table.getCanPreviousPage()}
             aria-label="First page"
           >
-            <i className="bi bi-chevron-double-left" aria-hidden="true" />
+            <ChevronsLeft aria-hidden="true" />
           </Button>
           <Button
             variant="outline-secondary"
@@ -281,7 +296,7 @@ export function DataTable<TData>({
             disabled={!table.getCanPreviousPage()}
             aria-label="Previous page"
           >
-            <i className="bi bi-chevron-left" aria-hidden="true" />
+            <ChevronLeft aria-hidden="true" />
           </Button>
           <Button variant="outline-secondary" disabled style={{ pointerEvents: "none" }}>
             {pageIndex + 1} / {Math.max(table.getPageCount(), 1)}
@@ -292,7 +307,7 @@ export function DataTable<TData>({
             disabled={!table.getCanNextPage()}
             aria-label="Next page"
           >
-            <i className="bi bi-chevron-right" aria-hidden="true" />
+            <ChevronRight aria-hidden="true" />
           </Button>
           <Button
             variant="outline-secondary"
@@ -300,7 +315,7 @@ export function DataTable<TData>({
             disabled={!table.getCanNextPage()}
             aria-label="Last page"
           >
-            <i className="bi bi-chevron-double-right" aria-hidden="true" />
+            <ChevronsRight aria-hidden="true" />
           </Button>
         </div>
       </div>
@@ -371,10 +386,18 @@ function SelectCheckbox({
   );
 }
 
-function sortIcon(sorted: false | "asc" | "desc") {
-  if (sorted === "asc") return "bi-sort-up-alt";
-  if (sorted === "desc") return "bi-sort-down";
-  return "bi-arrow-down-up";
+/** Unsorted columns keep the affordance visible but dimmed. */
+function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
+  const Icon: LucideIcon =
+    sorted === "asc"
+      ? ArrowUpNarrowWide
+      : sorted === "desc"
+        ? ArrowDownWideNarrow
+        : ArrowUpDown;
+
+  return (
+    <Icon className={`icon-sm ${sorted ? "" : "opacity-25"}`} aria-hidden="true" />
+  );
 }
 
 /** `lastConnected` -> "Last Connected" for the column menu. */

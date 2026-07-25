@@ -1,29 +1,40 @@
-import { Container, Nav, Navbar } from "react-bootstrap";
+import { PanelLeft, Settings, SquareTerminal } from "lucide-react";
 import { ThemeToggle } from "../theme/ThemeToggle";
 
-export function AppNavbar() {
+export function AppNavbar({
+  sidebarHidden,
+  onToggleSidebar,
+}: {
+  sidebarHidden: boolean;
+  onToggleSidebar: () => void;
+}) {
   return (
-    <Navbar expand="md" className="bg-body-tertiary border-bottom" sticky="top">
-      <Container fluid>
-        <Navbar.Brand className="d-flex align-items-center gap-2 fw-semibold">
-          <i className="bi bi-terminal-fill text-primary" aria-hidden="true" />
-          ParolaSSH
-        </Navbar.Brand>
+    <header className="app-navbar">
+      <button
+        type="button"
+        className="icon-button"
+        onClick={onToggleSidebar}
+        aria-pressed={!sidebarHidden}
+        aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+        title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+      >
+        <PanelLeft aria-hidden="true" />
+      </button>
 
-        <Navbar.Toggle aria-controls="main-nav" />
-        <Navbar.Collapse id="main-nav">
-          <Nav className="me-auto">
-            <Nav.Link active>Hosts</Nav.Link>
-            <Nav.Link disabled>Sessions</Nav.Link>
-            <Nav.Link disabled>Keys</Nav.Link>
-            <Nav.Link disabled>Settings</Nav.Link>
-          </Nav>
+      <span className="app-brand">
+        <span className="app-brand__mark" aria-hidden="true">
+          <SquareTerminal className="icon-lg" />
+        </span>
+        ParolaSSH
+      </span>
 
-          <div className="d-flex align-items-center gap-2">
-            <ThemeToggle />
-          </div>
-        </Navbar.Collapse>
-      </Container>
-    </Navbar>
+      <div className="ms-auto d-flex align-items-center gap-1">
+        <button type="button" className="icon-button" disabled title="Settings">
+          <Settings aria-hidden="true" />
+          <span className="visually-hidden">Settings</span>
+        </button>
+        <ThemeToggle />
+      </div>
+    </header>
   );
 }

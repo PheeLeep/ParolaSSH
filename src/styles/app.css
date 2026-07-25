@@ -1,18 +1,18 @@
-/* App-wide overrides. Bootstrap handles light/dark via `data-bs-theme`
-   on <html>, which ThemeProvider keeps in sync. */
+/* Layout and app-specific components. Tokens live in theme.css. */
 
-:root {
-  --parola-mono: ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code",
-    Menlo, Consolas, monospace;
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   /* Desktop chrome shouldn't feel like a web page. */
   user-select: none;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Text the user actually wants to copy stays selectable. */
 input,
 textarea,
 code,
@@ -26,26 +26,379 @@ code,
   font-family: var(--parola-mono);
 }
 
-/* `.table-light` on <thead> stays light in dark mode; follow the theme. */
-[data-bs-theme="dark"] .table > thead.table-light {
-  --bs-table-bg: var(--bs-tertiary-bg);
-  --bs-table-color: var(--bs-body-color);
+/* ------------------------------------------------ Shell ----- */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.table > thead th {
-  white-space: nowrap;
+.app-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.app-navbar {
+  height: var(--parola-navbar-height);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 0.75rem;
+  background: var(--parola-header-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--parola-line);
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--bs-emphasis-color);
+}
+
+.app-brand__mark {
+  display: grid;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-accent);
+  color: #fff;
   font-size: 0.875rem;
 }
 
-/* Sortable header buttons: no focus ring inside table cells. */
+/* Square, quiet icon button used in the navbar and sidebar. */
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: var(--parola-radius-sm);
+  background: transparent;
+  color: var(--bs-secondary-color);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--parola-hover);
+  color: var(--bs-emphasis-color);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+}
+
+/* ---------------------------------------------- Sidebar ----- */
+
+.app-sidebar {
+  width: var(--parola-sidebar-width);
+  flex: 0 0 var(--parola-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--parola-sidebar-bg);
+  border-right: 1px solid var(--parola-line);
+  transition: margin-left 0.18s ease;
+}
+
+.app-sidebar.is-hidden {
+  margin-left: calc(-1 * var(--parola-sidebar-width));
+}
+
+.app-sidebar__header {
+  padding: 0.75rem 0.75rem 0.5rem;
+}
+
+.app-sidebar__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0.5rem 0.75rem;
+}
+
+.app-sidebar__footer {
+  flex: 0 0 auto;
+  padding: 0.5rem;
+  border-top: 1px solid var(--parola-line);
+}
+
+.sidebar-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 0.5rem 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: var(--parola-radius-sm);
+  background: transparent;
+  color: var(--bs-body-color);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.sidebar-item:hover:not(:disabled) {
+  background: var(--parola-hover);
+}
+
+.sidebar-item.is-active {
+  background: var(--parola-selected);
+  color: var(--bs-emphasis-color);
+  font-weight: 550;
+}
+
+.sidebar-item:disabled {
+  opacity: 0.45;
+}
+
+.sidebar-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-item__meta {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--bs-secondary-color);
+}
+
+/* Group headers indent their children by one step. */
+.sidebar-group__items {
+  padding-left: 0.5rem;
+}
+
+.sidebar-host__sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-caret {
+  flex: 0 0 auto;
+  font-size: 0.625rem;
+  color: var(--bs-secondary-color);
+  transition: transform 0.15s ease;
+}
+
+.sidebar-caret.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+/* ------------------------------------------- Status bits ---- */
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--parola-unknown);
+}
+
+.status-dot--online {
+  background: var(--parola-online);
+  box-shadow: 0 0 0 3px var(--parola-online-ring);
+}
+
+.status-dot--offline {
+  background: var(--parola-offline);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.4375rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  background: var(--parola-unknown-soft);
+  color: var(--bs-secondary-color);
+}
+
+.status-badge--online {
+  background: var(--parola-online-soft);
+  color: var(--parola-online);
+}
+
+.status-badge--offline {
+  background: var(--parola-offline-soft);
+  color: var(--parola-offline);
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-hover);
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------- Content ----- */
+
+.page {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 2.5rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--bs-emphasis-color);
+  margin: 0;
+}
+
+.section-title {
+  font-size: 0.9375rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--bs-emphasis-color);
+  margin: 0;
+}
+
+/* ---------------------------------------------- Welcome ----- */
+
+.welcome-hero__title {
+  font-size: 1.875rem;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  color: var(--bs-emphasis-color);
+  margin: 0 0 0.375rem;
+}
+
+.host-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 100%;
+  height: 100%;
+  padding: 0.875rem;
+  border: 1px solid var(--parola-line);
+  border-radius: var(--parola-radius);
+  background: var(--parola-surface);
+  box-shadow: var(--parola-shadow);
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.host-card:hover {
+  border-color: var(--parola-accent);
+  box-shadow: var(--parola-shadow-lg);
+  transform: translateY(-1px);
+}
+
+.host-card__name {
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-card__target {
+  font-family: var(--parola-mono);
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------ Host detail ----- */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1.25rem 2rem;
+}
+
+.detail-grid dt {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.25rem;
+}
+
+.detail-grid dd {
+  margin: 0;
+  color: var(--bs-emphasis-color);
+}
+
+/* ------------------------------------------------ Table ----- */
+
+.table > thead th {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+  border-bottom-color: var(--parola-line);
+}
+
+.table thead .btn-link {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--bs-secondary-color) !important;
+}
+
+.table thead .btn-link:hover {
+  color: var(--bs-emphasis-color) !important;
+}
+
 .table thead .btn-link:focus-visible {
   outline: 2px solid var(--bs-focus-ring-color);
   outline-offset: 2px;
   box-shadow: none;
 }
 
-/* Dropdown toggles rendered without children still need a caret. */
-.dropdown-toggle-split,
-.btn.dropdown-toggle:empty::after {
-  margin-left: 0;
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }

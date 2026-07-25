@@ -1,0 +1,51 @@
+/* App-wide overrides. Bootstrap handles light/dark via `data-bs-theme`
+   on <html>, which ThemeProvider keeps in sync. */
+
+:root {
+  --parola-mono: ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code",
+    Menlo, Consolas, monospace;
+}
+
+body {
+  /* Desktop chrome shouldn't feel like a web page. */
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Text the user actually wants to copy stays selectable. */
+input,
+textarea,
+code,
+pre,
+.user-select-auto {
+  user-select: text;
+}
+
+code,
+.font-monospace {
+  font-family: var(--parola-mono);
+}
+
+/* `.table-light` on <thead> stays light in dark mode; follow the theme. */
+[data-bs-theme="dark"] .table > thead.table-light {
+  --bs-table-bg: var(--bs-tertiary-bg);
+  --bs-table-color: var(--bs-body-color);
+}
+
+.table > thead th {
+  white-space: nowrap;
+  font-size: 0.875rem;
+}
+
+/* Sortable header buttons: no focus ring inside table cells. */
+.table thead .btn-link:focus-visible {
+  outline: 2px solid var(--bs-focus-ring-color);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* Dropdown toggles rendered without children still need a caret. */
+.dropdown-toggle-split,
+.btn.dropdown-toggle:empty::after {
+  margin-left: 0;
+}

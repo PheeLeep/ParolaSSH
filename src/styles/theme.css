@@ -54,6 +54,19 @@
   --parola-unknown: #8a94a6;
   --parola-unknown-soft: rgba(138, 148, 166, 0.14);
 
+  /* Audit severities. Critical and high stay in the red family so they read
+     as one escalating band; medium and low step down through amber. */
+  --parola-critical: #b42318;
+  --parola-critical-soft: rgba(180, 35, 24, 0.1);
+  --parola-high: #d92d20;
+  --parola-high-soft: rgba(217, 45, 32, 0.1);
+  --parola-medium: #b54708;
+  --parola-medium-soft: rgba(181, 71, 8, 0.1);
+  --parola-low: #a16207;
+  --parola-low-soft: rgba(161, 98, 7, 0.1);
+  --parola-info: #5a6579;
+  --parola-info-soft: rgba(90, 101, 121, 0.11);
+
   --parola-shadow: 0 1px 2px rgba(16, 24, 40, 0.04),
     0 1px 3px rgba(16, 24, 40, 0.06);
   --parola-shadow-lg: 0 8px 28px rgba(16, 24, 40, 0.12);
@@ -105,6 +118,19 @@
   --parola-offline-soft: rgba(240, 86, 74, 0.14);
   --parola-unknown: #6b7688;
   --parola-unknown-soft: rgba(107, 118, 136, 0.16);
+
+  /* Lifted and desaturated for dark: the light-mode reds go muddy against
+     a near-black surface. */
+  --parola-critical: #ff6b5e;
+  --parola-critical-soft: rgba(255, 107, 94, 0.15);
+  --parola-high: #f0564a;
+  --parola-high-soft: rgba(240, 86, 74, 0.14);
+  --parola-medium: #f79009;
+  --parola-medium-soft: rgba(247, 144, 9, 0.14);
+  --parola-low: #eab308;
+  --parola-low-soft: rgba(234, 179, 8, 0.13);
+  --parola-info: #8b95a7;
+  --parola-info-soft: rgba(139, 149, 167, 0.14);
 
   --parola-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
   --parola-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);

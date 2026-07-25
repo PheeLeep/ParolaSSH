@@ -1,8 +1,18 @@
 import { Button, Col, Row } from "react-bootstrap";
-import { ChevronRight, Download, History, Plus, Server } from "lucide-react";
+import {
+  ChevronRight,
+  Download,
+  History,
+  KeyRound,
+  Plus,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
 import { useHosts } from "../hosts/HostsProvider";
 import { StatusDot } from "../hosts/StatusIndicator";
 import type { SshHost } from "../hosts/types";
+import { useKeys } from "../keys/KeysProvider";
 import { formatRelative } from "../../lib/format";
 import type { Navigate } from "../../navigation";
 
@@ -39,7 +49,16 @@ export function WelcomeScreen({ onNavigate }: { onNavigate: Navigate }) {
           <Server aria-hidden="true" />
           Browse all hosts
         </Button>
+        <Button
+          variant="outline-secondary"
+          onClick={() => onNavigate({ kind: "keys" })}
+        >
+          <KeyRound aria-hidden="true" />
+          SSH keys
+        </Button>
       </div>
+
+      <AuditTeaser onNavigate={onNavigate} />
 
       <div className="d-flex align-items-center gap-2 mb-3">
         <h2 className="section-title">Recent</h2>
@@ -70,6 +89,46 @@ export function WelcomeScreen({ onNavigate }: { onNavigate: Navigate }) {
         </Row>
       )}
     </div>
+  );
+}
+
+/** The audit result belongs where you land, not behind a menu — a key that
+ *  went world-readable is not something you go looking for. */
+function AuditTeaser({ onNavigate }: { onNavigate: Navigate }) {
+  const { report, loading } = useKeys();
+
+  if (loading && !report) return null;
+  if (!report || !report.dirExists) return null;
+
+  const urgent = report.counts.critical + report.counts.high;
+  const clean = urgent === 0;
+
+  return (
+    <button
+      type="button"
+      className={`audit-teaser${clean ? " audit-teaser--clean" : ""}`}
+      onClick={() => onNavigate({ kind: "audit" })}
+    >
+      {clean ? (
+        <ShieldCheck className="audit-teaser__icon" aria-hidden="true" />
+      ) : (
+        <ShieldAlert className="audit-teaser__icon" aria-hidden="true" />
+      )}
+
+      <span className="audit-teaser__text">
+        <span className="audit-teaser__title">
+          {clean
+            ? "Your SSH keys look healthy"
+            : `${urgent} ${urgent === 1 ? "issue needs" : "issues need"} attention`}
+        </span>
+        <span className="audit-teaser__sub">
+          {report.keyCount} {report.keyCount === 1 ? "key" : "keys"} · security
+          score {report.score}/100
+        </span>
+      </span>
+
+      <ChevronRight className="icon-sm" aria-hidden="true" />
+    </button>
   );
 }
 

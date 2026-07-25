@@ -4,6 +4,10 @@ import { HostSidebar } from "./components/HostSidebar";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
 import { HostsProvider } from "./features/hosts/HostsProvider";
+import { AuditPage } from "./features/keys/AuditPage";
+import { KeyDetail } from "./features/keys/KeyDetail";
+import { KeysPage } from "./features/keys/KeysPage";
+import { KeysProvider } from "./features/keys/KeysProvider";
 import { WelcomeScreen } from "./features/welcome/WelcomeScreen";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import type { View } from "./navigation";
@@ -12,7 +16,9 @@ function App() {
   return (
     <ThemeProvider>
       <HostsProvider>
-        <AppShell />
+        <KeysProvider>
+          <AppShell />
+        </KeysProvider>
       </HostsProvider>
     </ThemeProvider>
   );
@@ -39,6 +45,11 @@ function AppShell() {
           {view.kind === "host" && (
             <HostDetail hostId={view.hostId} onNavigate={setView} />
           )}
+          {view.kind === "keys" && <KeysPage onNavigate={setView} />}
+          {view.kind === "key" && (
+            <KeyDetail keyId={view.keyId} onNavigate={setView} />
+          )}
+          {view.kind === "audit" && <AuditPage onNavigate={setView} />}
         </main>
       </div>
     </div>

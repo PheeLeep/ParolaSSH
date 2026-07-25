@@ -12,12 +12,14 @@ import {
 } from "lucide-react";
 import { useHosts } from "../features/hosts/HostsProvider";
 import { StatusDot } from "../features/hosts/StatusIndicator";
+import { useKeys } from "../features/keys/KeysProvider";
 import type { SshHost } from "../features/hosts/types";
 import type { Navigate, View } from "../navigation";
 
+/** Footer entries that are still placeholders. `Keys` has its own button
+ *  below now that it is implemented. */
 const FOOTER_ITEMS: { label: string; Icon: LucideIcon }[] = [
   { label: "Sessions", Icon: AppWindow },
-  { label: "Keys", Icon: KeyRound },
   { label: "Settings", Icon: Settings },
 ];
 
@@ -29,8 +31,13 @@ type HostSidebarProps = {
 
 export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   const { hosts, groups, onlineCount } = useHosts();
+  const { report } = useKeys();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Only critical and high findings earn a badge — anything more and the
+  // count stops meaning "look at this now".
+  const keyAlerts = report ? report.counts.critical + report.counts.high : 0;
 
   const visibleGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -162,6 +169,24 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
       </div>
 
       <div className="app-sidebar__footer">
+        <button
+          type="button"
+          className={`sidebar-item${
+            view.kind === "keys" || view.kind === "key" || view.kind === "audit"
+              ? " is-active"
+              : ""
+          }`}
+          onClick={() => onNavigate({ kind: "keys" })}
+        >
+          <KeyRound aria-hidden="true" />
+          <span className="sidebar-item__label">Keys</span>
+          {keyAlerts > 0 && (
+            <span className="sidebar-item__meta sidebar-item__meta--danger">
+              {keyAlerts}
+            </span>
+          )}
+        </button>
+
         {FOOTER_ITEMS.map((item) => (
           <button key={item.label} type="button" className="sidebar-item" disabled>
             <item.Icon aria-hidden="true" />

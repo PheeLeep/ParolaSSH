@@ -402,3 +402,466 @@ code,
   align-items: center;
   gap: 0.5rem;
 }
+
+/* ============================================ SSH keys ====== */
+
+.fingerprint {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--bs-secondary-color);
+}
+
+/* Shared pill geometry with .status-badge, different semantics. */
+.perm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  background: var(--parola-unknown-soft);
+  color: var(--bs-secondary-color);
+}
+
+.perm-badge--safe {
+  background: var(--parola-online-soft);
+  color: var(--parola-online);
+}
+
+.perm-badge--exposed {
+  background: var(--parola-high-soft);
+  color: var(--parola-high);
+}
+
+.public-key-box {
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--parola-line);
+  border-radius: var(--parola-radius-sm);
+  background: var(--bs-tertiary-bg);
+  font-family: var(--parola-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  /* Public keys are one long unbroken token — wrap rather than scroll. */
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* ------------------------------------- Generate dialog ------ */
+
+.algorithm-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.625rem;
+}
+
+.algorithm-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  padding: 0.75rem;
+  border: 1px solid var(--parola-line);
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-surface);
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.algorithm-choice:hover {
+  border-color: var(--parola-line-strong);
+  background: var(--parola-hover);
+}
+
+.algorithm-choice.is-active {
+  border-color: var(--parola-accent);
+  background: var(--parola-accent-soft);
+}
+
+.algorithm-choice__name {
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+}
+
+.algorithm-choice__hint {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--bs-secondary-color);
+}
+
+/* ============================================== Audit ======= */
+
+.severity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--parola-radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  white-space: nowrap;
+  background: var(--parola-info-soft);
+  color: var(--parola-info);
+}
+
+.severity-badge--critical {
+  background: var(--parola-critical-soft);
+  color: var(--parola-critical);
+}
+
+.severity-badge--high {
+  background: var(--parola-high-soft);
+  color: var(--parola-high);
+}
+
+.severity-badge--medium {
+  background: var(--parola-medium-soft);
+  color: var(--parola-medium);
+}
+
+.severity-badge--low {
+  background: var(--parola-low-soft);
+  color: var(--parola-low);
+}
+
+.severity-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--parola-info);
+}
+
+.severity-dot--critical {
+  background: var(--parola-critical);
+  box-shadow: 0 0 0 3px var(--parola-critical-soft);
+}
+
+.severity-dot--high {
+  background: var(--parola-high);
+}
+
+.severity-dot--medium {
+  background: var(--parola-medium);
+}
+
+.severity-dot--low {
+  background: var(--parola-low);
+}
+
+/* -------------------------------------------- Summary ------- */
+
+.audit-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.score-tile,
+.severity-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: 1rem 0.75rem;
+  border: 1px solid var(--parola-line);
+  border-radius: var(--parola-radius);
+  background: var(--parola-surface);
+  box-shadow: var(--parola-shadow);
+}
+
+.severity-tile {
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.severity-tile:hover {
+  border-color: var(--parola-line-strong);
+  transform: translateY(-1px);
+}
+
+.severity-tile.is-active {
+  border-color: var(--parola-accent);
+  background: var(--parola-accent-soft);
+}
+
+.severity-tile__icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-bottom: 0.125rem;
+}
+
+/* A zero count is information, not an alarm — let it recede. */
+.severity-tile.is-empty .severity-tile__icon,
+.severity-tile.is-empty .severity-tile__count {
+  opacity: 0.4;
+}
+
+.severity-tile__count {
+  font-size: 1.5rem;
+  font-weight: 650;
+  line-height: 1.1;
+  color: var(--bs-emphasis-color);
+}
+
+.severity-tile__label,
+.score-tile__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+/* A zero count should recede, not shout. */
+.severity-tile--critical .severity-tile__count,
+.severity-tile--critical .severity-tile__icon {
+  color: var(--parola-critical);
+}
+.severity-tile--high .severity-tile__count,
+.severity-tile--high .severity-tile__icon {
+  color: var(--parola-high);
+}
+.severity-tile--medium .severity-tile__count,
+.severity-tile--medium .severity-tile__icon {
+  color: var(--parola-medium);
+}
+.severity-tile--low .severity-tile__count,
+.severity-tile--low .severity-tile__icon {
+  color: var(--parola-low);
+}
+.severity-tile--info .severity-tile__count,
+.severity-tile--info .severity-tile__icon {
+  color: var(--parola-info);
+}
+
+.score-tile__value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.score-tile--good .score-tile__value {
+  color: var(--parola-online);
+}
+.score-tile--fair .score-tile__value {
+  color: var(--parola-low);
+}
+.score-tile--poor .score-tile__value {
+  color: var(--parola-medium);
+}
+.score-tile--bad .score-tile__value {
+  color: var(--parola-critical);
+}
+
+/* -------------------------------------------- Findings ------ */
+
+.finding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.finding {
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--parola-line);
+  /* The severity stripe carries the weight, so the card itself stays quiet. */
+  border-left: 3px solid var(--parola-info);
+  border-radius: var(--parola-radius);
+  background: var(--parola-surface);
+  box-shadow: var(--parola-shadow);
+}
+
+.finding--critical {
+  border-left-color: var(--parola-critical);
+}
+.finding--high {
+  border-left-color: var(--parola-high);
+}
+.finding--medium {
+  border-left-color: var(--parola-medium);
+}
+.finding--low {
+  border-left-color: var(--parola-low);
+}
+
+.finding.is-suppressed {
+  opacity: 0.55;
+  border-left-color: var(--parola-unknown);
+}
+
+.finding__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.finding__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+}
+
+.finding__location {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+}
+
+.finding__detail {
+  margin: 0 0 0.625rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--bs-secondary-color);
+}
+
+.finding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.finding__instruction {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.3125rem 0.5rem;
+  border-radius: var(--parola-radius-sm);
+  background: var(--bs-tertiary-bg);
+}
+
+.finding__instruction code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--bs-emphasis-color);
+}
+
+/* ------------------------------------- Welcome teaser ------- */
+
+.audit-teaser {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  margin-bottom: 2rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--parola-high);
+  border-radius: var(--parola-radius);
+  background: var(--parola-high-soft);
+  text-align: left;
+  transition: transform 0.15s ease;
+}
+
+.audit-teaser:hover {
+  transform: translateY(-1px);
+}
+
+.audit-teaser--clean {
+  border-color: var(--parola-line);
+  background: var(--parola-surface);
+  box-shadow: var(--parola-shadow);
+}
+
+.audit-teaser__icon {
+  width: 1.375rem;
+  height: 1.375rem;
+  color: var(--parola-high);
+}
+
+.audit-teaser--clean .audit-teaser__icon {
+  color: var(--parola-online);
+}
+
+.audit-teaser__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.audit-teaser__title {
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+}
+
+.audit-teaser__sub {
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+}
+
+/* ---------------------------------------------- Bits -------- */
+
+.count-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  margin-left: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--parola-unknown-soft);
+  color: var(--bs-secondary-color);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.count-pill--danger {
+  background: var(--parola-high-soft);
+  color: var(--parola-high);
+}
+
+.sidebar-item__meta--danger {
+  color: var(--parola-high);
+  font-weight: 650;
+}
+
+@keyframes parola-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: parola-spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+
+  .audit-teaser:hover,
+  .severity-tile:hover {
+    transform: none;
+  }
+}
+
+/* Reuses the detail-grid `dt` treatment outside a definition list. */
+.detail-grid__label {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}

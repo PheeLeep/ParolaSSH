@@ -11,7 +11,27 @@ use remote::secrets::SecretVault;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Only ever one ParolaSSH. A second copy would hold its own registry of
+    // SSH sessions and its own copy of any remembered password, and would
+    // race the first over `hosts.json` — two windows editing the same list
+    // with last-write-wins is how saved connections quietly disappear.
+    //
+    // Registered before every other plugin, as the plugin requires: launching
+    // again hands the arguments to the running instance and returns.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // Treat a second launch as "show me the one I already have".
+        if let Some(window) = <tauri::AppHandle as tauri::Manager<_>>::get_webview_window(app, "main")
+        {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         .plugin(tauri_plugin_opener::init())
         // Live SSH sessions and in-memory passwords. Both are process-scoped
         // on purpose: quitting the app drops every credential it holds.

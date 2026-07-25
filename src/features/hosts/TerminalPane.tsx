@@ -34,6 +34,8 @@ export function TerminalPane({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  /** The shell this pane is currently showing, or null before it opens. */
+  const shellIdRef = useRef<number | null>(null);
 
   const { resolved } = useTheme();
   const [status, setStatus] = useState<"opening" | "open" | "closed">("opening");
@@ -46,6 +48,17 @@ export function TerminalPane({
 
     let disposed = false;
     const unlisteners: Array<() => void> = [];
+
+    // Which shell this pane owns. Events for any other shell on the same host
+    // belong to a session we replaced and must not be rendered here. It lives
+    // in a ref so `reopen` below can point the same listeners at a new shell.
+    const isMine = (shellId: number) => shellIdRef.current === shellId;
+
+    // Teardown has to wait for the open to resolve. Unmounting mid-open —
+    // which StrictMode does on every mount in development — would otherwise
+    // close nothing, and the shell that arrived a moment later would be
+    // orphaned: still authenticated, still streaming into the next pane.
+    let opening: Promise<number | null> = Promise.resolve(null);
 
     const terminal = new Terminal({
       fontFamily:
@@ -79,12 +92,12 @@ export function TerminalPane({
     const start = async () => {
       try {
         unlisteners.push(
-          await api.onTerminalOutput(hostId, ({ chunk }) => {
+          await api.onTerminalOutput(hostId, isMine, ({ chunk }) => {
             terminal.write(chunk);
           }),
         );
         unlisteners.push(
-          await api.onTerminalClosed(hostId, ({ exitCode }) => {
+          await api.onTerminalClosed(hostId, isMine, ({ exitCode }) => {
             if (disposed) return;
             setStatus("closed");
             setExitCode(exitCode);
@@ -93,12 +106,18 @@ export function TerminalPane({
         );
 
         // Listeners are attached first: a shell that greets us immediately
-        // would otherwise have its banner dropped.
-        await api.openShell(hostId, terminal.cols, terminal.rows);
-        if (!disposed) {
-          setStatus("open");
-          terminal.focus();
-        }
+        // would otherwise have its banner dropped. They stay inert until the
+        // id below is claimed, so they cannot pick up a predecessor's output.
+        opening = api.openShell(hostId, terminal.cols, terminal.rows);
+        const shellId = await opening;
+
+        // If the pane went away mid-open, leave the ref alone — a newer mount
+        // may already own it — and let the cleanup close this shell instead.
+        if (disposed) return;
+
+        shellIdRef.current = shellId;
+        setStatus("open");
+        terminal.focus();
       } catch (caught) {
         if (!disposed) {
           setError(errorMessage(caught));
@@ -126,10 +145,20 @@ export function TerminalPane({
       disposed = true;
       observer.disconnect();
       for (const unlisten of unlisteners) unlisten();
-      void api.closeShell(hostId).catch(() => undefined);
+
+      // Close only this pane's shell, and only once we know which one it is.
+      // Quoting the id means a teardown that lands after a reopen closes
+      // nothing rather than killing the session now on screen.
+      void opening
+        .then((shellId) =>
+          shellId === null ? undefined : api.closeShell(hostId, shellId),
+        )
+        .catch(() => undefined);
+
       terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      shellIdRef.current = null;
     };
     // Re-creating the terminal on a theme change would wipe the scrollback, so
     // the theme is applied in the effect below instead.
@@ -150,7 +179,7 @@ export function TerminalPane({
     setExitCode(null);
     setStatus("opening");
     try {
-      await api.openShell(hostId, terminal.cols, terminal.rows);
+      shellIdRef.current = await api.openShell(hostId, terminal.cols, terminal.rows);
       setStatus("open");
       terminal.focus();
     } catch (caught) {

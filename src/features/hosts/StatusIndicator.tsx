@@ -1,4 +1,35 @@
+import { useEffect, useRef, useState } from "react";
 import { STATUS_LABELS, type HostStatus } from "./types";
+
+/** How long the pulse class stays on — must outlast the CSS animation. */
+const PULSE_MS = 950;
+
+/**
+ * True for one pulse cycle after `status` changes, false on first render.
+ *
+ * Host status is driven by a 30s background heartbeat, so without this a
+ * host going offline is a silent colour swap that nobody is looking at.
+ */
+function useStatusPulse(status: HostStatus) {
+  const [pulsing, setPulsing] = useState(false);
+  const previous = useRef<HostStatus | null>(null);
+
+  useEffect(() => {
+    // Skip the mount pass: every dot flashing on load is noise, not signal.
+    if (previous.current === null) {
+      previous.current = status;
+      return;
+    }
+    if (previous.current === status) return;
+
+    previous.current = status;
+    setPulsing(true);
+    const timer = window.setTimeout(() => setPulsing(false), PULSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [status]);
+
+  return pulsing;
+}
 
 /** Small coloured node — online gets a soft halo so it reads at a glance. */
 export function StatusDot({
@@ -8,9 +39,13 @@ export function StatusDot({
   status: HostStatus;
   title?: string;
 }) {
+  const pulsing = useStatusPulse(status);
+
   return (
     <span
-      className={`status-dot status-dot--${status}`}
+      className={`status-dot status-dot--${status}${
+        pulsing ? " status-dot--pulse" : ""
+      }`}
       role="img"
       aria-label={title ?? STATUS_LABELS[status]}
       title={title ?? STATUS_LABELS[status]}
@@ -20,9 +55,16 @@ export function StatusDot({
 
 /** Dot plus label, tinted rather than filled — quieter than a solid badge. */
 export function StatusBadge({ status }: { status: HostStatus }) {
+  const pulsing = useStatusPulse(status);
+
   return (
     <span className={`status-badge status-badge--${status}`}>
-      <span className={`status-dot status-dot--${status}`} aria-hidden="true" />
+      <span
+        className={`status-dot status-dot--${status}${
+          pulsing ? " status-dot--pulse" : ""
+        }`}
+        aria-hidden="true"
+      />
       {STATUS_LABELS[status]}
     </span>
   );

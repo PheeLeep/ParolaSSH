@@ -15,7 +15,11 @@
 //!   wedge the UI. Batching bounds the event rate without dropping bytes.
 //! * **UTF-8 is reassembled across packets.** A multi-byte character can
 //!   straddle two packets, and decoding each independently would corrupt it.
+//!
+//! Every shell also carries an id, quoted back in each event, so a pane
+//! renders only its own output and can close only its own session.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,10 +37,20 @@ pub const OUTPUT_EVENT: &str = "terminal://output";
 /// Emitted once, when the shell ends.
 pub const CLOSED_EVENT: &str = "terminal://closed";
 
+/// Identifies one shell for the lifetime of the process.
+///
+/// Without this a pane cannot tell its own output from that of a shell it
+/// replaced: both are addressed by host id, so a stale session's banner and
+/// prompt render into the new terminal alongside the real ones. React's
+/// StrictMode remount makes that the *normal* case in development, and a fast
+/// double-click makes it possible in production.
+static NEXT_SHELL_ID: AtomicU64 = AtomicU64::new(1);
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OutputEvent {
     host_id: String,
+    shell_id: u64,
     /// `true` for stderr, which xterm renders inline like a real terminal.
     stderr: bool,
     chunk: String,
@@ -46,11 +60,15 @@ struct OutputEvent {
 #[serde(rename_all = "camelCase")]
 struct ClosedEvent {
     host_id: String,
+    shell_id: u64,
     exit_code: Option<u32>,
 }
 
 /// The write end of a running shell.
 pub struct ShellHandle {
+    /// Process-unique. The pane that opened this shell quotes it back when
+    /// closing, so a late teardown cannot kill a newer session.
+    pub id: u64,
     writer: Arc<ChannelWriteHalf<Msg>>,
 }
 
@@ -98,6 +116,7 @@ pub async fn open(
     cols: u32,
     rows: u32,
 ) -> SshResult<ShellHandle> {
+    let shell_id = NEXT_SHELL_ID.fetch_add(1, Ordering::Relaxed);
     let channel = session.open_channel().await?;
 
     // `xterm-256color` matches what the frontend renders, so remote programs
@@ -130,6 +149,7 @@ pub async fn open(
         app,
         webview_label,
         host_id.clone(),
+        shell_id,
         receiver,
     ));
 
@@ -165,6 +185,7 @@ pub async fn open(
     });
 
     Ok(ShellHandle {
+        id: shell_id,
         writer: Arc::new(writer),
     })
 }
@@ -174,6 +195,7 @@ async fn batch_and_emit(
     app: AppHandle,
     webview_label: String,
     host_id: String,
+    shell_id: u64,
     mut receiver: mpsc::UnboundedReceiver<ShellMsg>,
 ) {
     let emit = |stderr: bool, chunk: String| {
@@ -187,6 +209,7 @@ async fn batch_and_emit(
             OUTPUT_EVENT,
             OutputEvent {
                 host_id: host_id.clone(),
+                shell_id,
                 stderr,
                 chunk,
             },
@@ -226,7 +249,11 @@ async fn batch_and_emit(
     let _ = app.emit_to(
         webview_label.as_str(),
         CLOSED_EVENT,
-        ClosedEvent { host_id, exit_code },
+        ClosedEvent {
+            host_id,
+            shell_id,
+            exit_code,
+        },
     );
 }
 

@@ -6,6 +6,8 @@ export type View =
   | { kind: "host"; hostId: string }
   | { kind: "keys" }
   | { kind: "key"; keyId: string }
-  | { kind: "audit" };
+  | { kind: "audit" }
+  | { kind: "settings" }
+  | { kind: "about" };
 
 export type Navigate = (view: View) => void;

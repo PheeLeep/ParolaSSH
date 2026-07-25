@@ -121,6 +121,8 @@ export interface CommandOutput {
 /** Payload of the `terminal://output` event. */
 export interface TerminalOutput {
   hostId: string;
+  /** Which shell produced this. Panes ignore anything that is not theirs. */
+  shellId: number;
   stderr: boolean;
   chunk: string;
 }
@@ -128,6 +130,7 @@ export interface TerminalOutput {
 /** Payload of the `terminal://closed` event. */
 export interface TerminalClosed {
   hostId: string;
+  shellId: number;
   exitCode: number | null;
 }
 

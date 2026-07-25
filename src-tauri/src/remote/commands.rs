@@ -326,8 +326,14 @@ pub async fn open_shell(
     host_id: String,
     cols: u32,
     rows: u32,
-) -> SshResult<()> {
+) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
+
+    // Serialise the whole replace-then-open sequence. Two callers racing here
+    // would otherwise both close the old shell and both install a new one,
+    // leaving one orphaned — still authenticated, still streaming its banner
+    // and prompt into whichever pane is listening.
+    let _guard = live.lock_shell_open().await;
 
     // Reopening replaces the old shell rather than stacking a second one on
     // the same session, which would interleave output from both.
@@ -339,9 +345,12 @@ pub async fn open_shell(
     let label = webview.label().to_string();
 
     let handle = shell::open(&live.session, app, label, host_id, cols, rows).await?;
+    let shell_id = handle.id;
     live.set_shell(handle);
 
-    Ok(())
+    // Returned so the pane can filter events to its own shell, and later close
+    // exactly the one it opened.
+    Ok(shell_id)
 }
 
 #[tauri::command]
@@ -374,16 +383,32 @@ pub async fn resize_shell(
     Ok(())
 }
 
+/// Close a shell.
+///
+/// `shell_id` names which one. Passing it means a pane that is unmounting can
+/// only ever close its own session — without it, a teardown arriving after a
+/// reopen would silently kill the shell the user is now typing into. Omitting
+/// it closes whatever is current, which is what an explicit "close" button
+/// wants.
 #[tauri::command]
 pub async fn close_shell(
     registry: State<'_, SessionRegistry>,
     host_id: String,
+    shell_id: Option<u64>,
 ) -> SshResult<()> {
-    if let Some(live) = registry.get(&host_id) {
-        if let Some(shell) = live.take_shell() {
-            shell.close().await;
-        }
+    let Some(live) = registry.get(&host_id) else {
+        return Ok(());
+    };
+
+    let shell = match shell_id {
+        Some(id) => live.take_shell_if(id),
+        None => live.take_shell(),
+    };
+
+    if let Some(shell) = shell {
+        shell.close().await;
     }
+
     Ok(())
 }
 

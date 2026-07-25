@@ -7,9 +7,11 @@
 //! One session per host is a deliberate ceiling: it keeps "is this host
 //! connected?" a question with one answer, which is what the UI displays.
 //!
-//! Locks are `std::sync::Mutex` and are never held across an `await` — every
-//! method clones the `Arc` it needs and releases the lock before doing I/O.
-//! That is the whole discipline; breaking it would deadlock the runtime.
+//! State locks are `std::sync::Mutex` and are never held across an `await` —
+//! every method clones the `Arc` it needs and releases the lock before doing
+//! I/O. That is the whole discipline; breaking it would deadlock the runtime.
+//! The one exception is `shell_open`, which exists precisely to be held across
+//! an await and is therefore a `tokio::sync::Mutex`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -32,6 +34,13 @@ pub struct LiveSession {
     pub fingerprint: Option<String>,
     pub connected_at: String,
     shell: Mutex<Option<Arc<ShellHandle>>>,
+    /// Serialises opening a shell.
+    ///
+    /// Two `open_shell` calls racing on the same host would each close "the"
+    /// existing shell and then install their own, leaving one orphaned and
+    /// still streaming. Holding this across the whole open makes the sequence
+    /// atomic. It is a tokio mutex because it is held across `await`.
+    shell_open: tokio::sync::Mutex<()>,
     /// The password this session authenticated with, when it used one.
     ///
     /// Kept so `sudo` can reuse it instead of asking for the same string a
@@ -59,6 +68,7 @@ impl LiveSession {
             fingerprint,
             connected_at,
             shell: Mutex::new(None),
+            shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
         }
     }
@@ -79,6 +89,24 @@ impl LiveSession {
             .lock()
             .map(|slot| slot.is_some())
             .unwrap_or(false)
+    }
+
+    /// Hold this for the duration of an open/replace sequence.
+    pub async fn lock_shell_open(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.shell_open.lock().await
+    }
+
+    /// Take the current shell only if it is the one the caller opened.
+    ///
+    /// A pane tearing down late must not close the shell that replaced it —
+    /// which is exactly what happens on a StrictMode remount, where the first
+    /// mount's cleanup runs after the second mount has already opened its own.
+    pub fn take_shell_if(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
+        let mut slot = self.shell.lock().ok()?;
+        match slot.as_ref() {
+            Some(shell) if shell.id == shell_id => slot.take(),
+            _ => None,
+        }
     }
 
     pub fn shell(&self) -> Option<Arc<ShellHandle>> {

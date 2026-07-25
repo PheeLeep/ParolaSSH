@@ -8,25 +8,41 @@ import { AuditPage } from "./features/keys/AuditPage";
 import { KeyDetail } from "./features/keys/KeyDetail";
 import { KeysPage } from "./features/keys/KeysPage";
 import { KeysProvider } from "./features/keys/KeysProvider";
+import { AboutPage } from "./features/settings/AboutPage";
+import { readStartupView } from "./features/settings/preferences";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { WelcomeScreen } from "./features/welcome/WelcomeScreen";
+import { useContextMenuGuard } from "./lib/useContextMenuGuard";
+import { MotionProvider } from "./theme/MotionProvider";
 import { ThemeProvider } from "./theme/ThemeProvider";
 import type { View } from "./navigation";
 
 function App() {
   return (
     <ThemeProvider>
-      <HostsProvider>
-        <KeysProvider>
-          <AppShell />
-        </KeysProvider>
-      </HostsProvider>
+      <MotionProvider>
+        <HostsProvider>
+          <KeysProvider>
+            <AppShell />
+          </KeysProvider>
+        </HostsProvider>
+      </MotionProvider>
     </ThemeProvider>
   );
 }
 
+/** Remounts the pane on navigation so its enter animation replays. */
+function paneKey(view: View): string {
+  if (view.kind === "host") return `host:${view.hostId}`;
+  if (view.kind === "key") return `key:${view.keyId}`;
+  return view.kind;
+}
+
 function AppShell() {
-  // The welcome screen is the landing pane on every launch.
-  const [view, setView] = useState<View>({ kind: "welcome" });
+  // Read once: changing the preference later should not yank the current pane.
+  const [view, setView] = useState<View>(() => ({ kind: readStartupView() }));
+
+  useContextMenuGuard();
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
   return (
@@ -40,16 +56,20 @@ function AppShell() {
         <HostSidebar view={view} onNavigate={setView} hidden={sidebarHidden} />
 
         <main className="app-main">
-          {view.kind === "welcome" && <WelcomeScreen onNavigate={setView} />}
-          {view.kind === "hosts" && <HostsPage onNavigate={setView} />}
-          {view.kind === "host" && (
-            <HostDetail hostId={view.hostId} onNavigate={setView} />
-          )}
-          {view.kind === "keys" && <KeysPage onNavigate={setView} />}
-          {view.kind === "key" && (
-            <KeyDetail keyId={view.keyId} onNavigate={setView} />
-          )}
-          {view.kind === "audit" && <AuditPage onNavigate={setView} />}
+          <div className="app-pane" key={paneKey(view)}>
+            {view.kind === "welcome" && <WelcomeScreen onNavigate={setView} />}
+            {view.kind === "hosts" && <HostsPage onNavigate={setView} />}
+            {view.kind === "host" && (
+              <HostDetail hostId={view.hostId} onNavigate={setView} />
+            )}
+            {view.kind === "keys" && <KeysPage onNavigate={setView} />}
+            {view.kind === "key" && (
+              <KeyDetail keyId={view.keyId} onNavigate={setView} />
+            )}
+            {view.kind === "audit" && <AuditPage onNavigate={setView} />}
+            {view.kind === "settings" && <SettingsPage onNavigate={setView} />}
+            {view.kind === "about" && <AboutPage onNavigate={setView} />}
+          </div>
         </main>
       </div>
     </div>

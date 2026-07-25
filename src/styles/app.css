@@ -110,7 +110,7 @@ code,
   min-height: 0;
   background: var(--parola-sidebar-bg);
   border-right: 1px solid var(--parola-line);
-  transition: margin-left 0.18s ease;
+  transition: margin-left var(--parola-duration) var(--parola-ease);
 }
 
 .app-sidebar.is-hidden {
@@ -208,7 +208,7 @@ code,
   flex: 0 0 auto;
   font-size: 0.625rem;
   color: var(--bs-secondary-color);
-  transition: transform 0.15s ease;
+  transition: transform var(--parola-duration) var(--parola-ease);
 }
 
 .sidebar-caret.is-collapsed {
@@ -277,6 +277,11 @@ code,
   padding: 1.75rem 1.5rem 2.5rem;
 }
 
+/* Settings and About read better in a narrower column than a data table. */
+.page--narrow {
+  max-width: 44rem;
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 650;
@@ -316,15 +321,15 @@ code,
   box-shadow: var(--parola-shadow);
   text-align: left;
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+    border-color var(--parola-duration-fast) var(--parola-ease),
+    box-shadow var(--parola-duration-fast) var(--parola-ease),
+    transform var(--parola-duration-fast) var(--parola-ease);
 }
 
 .host-card:hover {
   border-color: var(--parola-accent);
   box-shadow: var(--parola-shadow-lg);
-  transform: translateY(-1px);
+  transform: translateY(var(--parola-lift));
 }
 
 .host-card__name {
@@ -403,6 +408,20 @@ code,
   gap: 0.5rem;
 }
 
+/* Secondary line inside a dropdown row, e.g. the motion mode hints. */
+.dropdown-item__hint {
+  display: block;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--bs-secondary-color);
+}
+
+.dropdown-item:active .dropdown-item__hint,
+.dropdown-item.active .dropdown-item__hint {
+  color: inherit;
+  opacity: 0.75;
+}
+
 /* ============================================ SSH keys ====== */
 
 .fingerprint {
@@ -471,8 +490,8 @@ code,
   background: var(--parola-surface);
   text-align: left;
   transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+    border-color var(--parola-duration-fast) var(--parola-ease),
+    background var(--parola-duration-fast) var(--parola-ease);
 }
 
 .algorithm-choice:hover {
@@ -583,13 +602,13 @@ code,
 
 .severity-tile {
   transition:
-    border-color 0.15s ease,
-    transform 0.15s ease;
+    border-color var(--parola-duration-fast) var(--parola-ease),
+    transform var(--parola-duration-fast) var(--parola-ease);
 }
 
 .severity-tile:hover {
   border-color: var(--parola-line-strong);
-  transform: translateY(-1px);
+  transform: translateY(var(--parola-lift));
 }
 
 .severity-tile.is-active {
@@ -768,11 +787,11 @@ code,
   border-radius: var(--parola-radius);
   background: var(--parola-high-soft);
   text-align: left;
-  transition: transform 0.15s ease;
+  transition: transform var(--parola-duration-fast) var(--parola-ease);
 }
 
 .audit-teaser:hover {
-  transform: translateY(-1px);
+  transform: translateY(var(--parola-lift));
 }
 
 .audit-teaser--clean {
@@ -841,19 +860,89 @@ code,
   }
 }
 
+/* Deliberately not governed by the motion tokens. A spinner is the only
+   signal that a command is still running, and a frozen one reads as a
+   hung app — so it keeps turning even at "off", just more slowly. */
 .spin {
   animation: parola-spin 0.9s linear infinite;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
+[data-motion="reduced"] .spin,
+[data-motion="off"] .spin {
+  animation-duration: 1.6s;
+}
 
-  .audit-teaser:hover,
-  .severity-tile:hover {
-    transform: none;
+/* ---- View pane transition -------------------------------------- */
+
+@keyframes parola-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--parola-travel));
   }
+}
+
+.app-pane {
+  animation: parola-pane-in var(--parola-duration-slow) var(--parola-ease-out);
+}
+
+/* ---- Status change pulse ---------------------------------------- */
+
+/* Expanding ring drawn with box-shadow so it never affects layout, and
+   sized in em so it tracks the dot rather than a fixed pixel value. */
+@keyframes parola-status-pulse {
+  from {
+    box-shadow: 0 0 0 0 var(--parola-pulse-color);
+  }
+  to {
+    box-shadow: 0 0 0 0.75em transparent;
+  }
+}
+
+.status-dot--pulse {
+  animation: parola-status-pulse 900ms var(--parola-ease-out);
+}
+
+.status-dot--pulse.status-dot--online {
+  --parola-pulse-color: var(--parola-online-ring);
+}
+
+.status-dot--pulse.status-dot--offline {
+  --parola-pulse-color: var(--parola-offline-soft);
+}
+
+.status-dot--pulse.status-dot--unknown {
+  --parola-pulse-color: var(--parola-unknown-soft);
+}
+
+/* The pulse is the only cue that a background heartbeat changed
+   something, so at "reduced" it shortens rather than disappearing. */
+[data-motion="reduced"] .status-dot--pulse {
+  animation-duration: 400ms;
+}
+
+[data-motion="off"] .status-dot--pulse {
+  animation: none;
+}
+
+/* ---- Value change flash ------------------------------------------ */
+
+@keyframes parola-count-change {
+  from {
+    color: var(--parola-accent);
+    transform: scale(1.18);
+  }
+}
+
+.count-change {
+  display: inline-block;
+  animation: parola-count-change var(--parola-duration-slow) var(--parola-ease-out);
+}
+
+/* ---- Sidebar group collapse -------------------------------------- */
+
+/* react-bootstrap drives the height inline; this only sets the timing. */
+.sidebar-group__items.collapsing {
+  transition: height var(--parola-duration) var(--parola-ease);
 }
 
 /* Reuses the detail-grid `dt` treatment outside a definition list. */
@@ -982,4 +1071,177 @@ code,
 
 .terminal-pane__screen .xterm {
   height: 100%;
+}
+
+/* ---------------------------------------------- Segmented ------- */
+
+.segmented {
+  display: inline-flex;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-hover);
+}
+
+.segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem;
+  border: 0;
+  border-radius: calc(var(--parola-radius-sm) - 0.125rem);
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.8125rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  transition:
+    background-color var(--parola-duration-fast) var(--parola-ease),
+    color var(--parola-duration-fast) var(--parola-ease);
+}
+
+.segmented__option:hover {
+  color: var(--bs-emphasis-color);
+}
+
+.segmented__option.is-active {
+  background: var(--parola-surface);
+  color: var(--bs-emphasis-color);
+  font-weight: 550;
+  box-shadow: var(--parola-shadow);
+}
+
+/* ---------------------------------------------- Settings -------- */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--parola-line);
+}
+
+.settings-row.is-last {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.settings-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.settings-row__title {
+  font-weight: 550;
+  color: var(--bs-emphasis-color);
+}
+
+.settings-row__hint {
+  margin-top: 0.125rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--bs-secondary-color);
+}
+
+.settings-row__control {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 40rem) {
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.625rem;
+  }
+}
+
+/* ---------------------------------------------- About ----------- */
+
+.about-hero {
+  margin-bottom: 1.75rem;
+  text-align: center;
+}
+
+.about-hero__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 0.875rem;
+  border-radius: var(--parola-radius-lg, 0.875rem);
+  background: var(--parola-accent);
+  color: #fff;
+  box-shadow: var(--parola-shadow-lg);
+}
+
+.about-hero__title {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  color: var(--bs-emphasis-color);
+}
+
+.about-hero__version {
+  margin: 0.125rem 0 0.625rem;
+  font-family: var(--parola-mono);
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 0;
+  border-radius: var(--parola-radius-sm);
+  background: transparent;
+  color: var(--bs-body-color);
+  text-align: left;
+  transition: background-color var(--parola-duration-fast) var(--parola-ease);
+}
+
+.link-row:hover {
+  background: var(--parola-hover);
+}
+
+.link-row__icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-accent-soft);
+  color: var(--parola-accent);
+}
+
+.link-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.link-row__title {
+  display: block;
+  font-weight: 550;
+  color: var(--bs-emphasis-color);
+}
+
+.link-row__hint {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+}
+
+.link-row__arrow {
+  color: var(--bs-secondary-color);
+  opacity: 0;
+  transition: opacity var(--parola-duration-fast) var(--parola-ease);
+}
+
+.link-row:hover .link-row__arrow,
+.link-row:focus-visible .link-row__arrow {
+  opacity: 1;
 }

@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Form, InputGroup } from "react-bootstrap";
+import { Collapse, Form, InputGroup } from "react-bootstrap";
 import {
   AppWindow,
   ChevronDown,
   House,
+  Info,
   KeyRound,
   Search,
   Server,
@@ -12,15 +13,15 @@ import {
 } from "lucide-react";
 import { useHosts } from "../features/hosts/HostsProvider";
 import { StatusDot } from "../features/hosts/StatusIndicator";
+import { AnimatedValue } from "./AnimatedValue";
 import { useKeys } from "../features/keys/KeysProvider";
 import type { SshHost } from "../features/hosts/types";
 import type { Navigate, View } from "../navigation";
 
-/** Footer entries that are still placeholders. `Keys` has its own button
- *  below now that it is implemented. */
+/** Footer entries that are still placeholders. `Keys`, `Settings` and
+ *  `About` have their own buttons below now that they are implemented. */
 const FOOTER_ITEMS: { label: string; Icon: LucideIcon }[] = [
   { label: "Sessions", Icon: AppWindow },
-  { label: "Settings", Icon: Settings },
 ];
 
 type HostSidebarProps = {
@@ -105,7 +106,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         <div className="sidebar-label">
           <span className="flex-grow-1">Hosts</span>
           <span className="fw-normal text-body-secondary">
-            {onlineCount}/{hosts.length} online
+            <AnimatedValue value={onlineCount} />/{hosts.length} online
           </span>
         </div>
 
@@ -136,11 +137,11 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
                   {group.name}
                 </span>
                 <span className="sidebar-item__meta">
-                  {group.onlineCount}/{group.hosts.length}
+                  <AnimatedValue value={group.onlineCount} />/{group.hosts.length}
                 </span>
               </button>
 
-              {!isCollapsed && (
+              <Collapse in={!isCollapsed}>
                 <div className="sidebar-group__items">
                   {group.hosts.map((host) => (
                     <button
@@ -162,7 +163,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
                     </button>
                   ))}
                 </div>
-              )}
+              </Collapse>
             </div>
           );
         })}
@@ -194,6 +195,24 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
             <span className="sidebar-item__meta">Soon</span>
           </button>
         ))}
+
+        <button
+          type="button"
+          className={`sidebar-item${view.kind === "settings" ? " is-active" : ""}`}
+          onClick={() => onNavigate({ kind: "settings" })}
+        >
+          <Settings aria-hidden="true" />
+          <span className="sidebar-item__label">Settings</span>
+        </button>
+
+        <button
+          type="button"
+          className={`sidebar-item${view.kind === "about" ? " is-active" : ""}`}
+          onClick={() => onNavigate({ kind: "about" })}
+        >
+          <Info aria-hidden="true" />
+          <span className="sidebar-item__label">About</span>
+        </button>
       </div>
     </aside>
   );

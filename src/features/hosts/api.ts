@@ -100,8 +100,9 @@ export const powerHost = (
 
 /* ── Interactive terminal ──────────────────────────────────────────────── */
 
+/** Opens a shell and returns its id, used to filter events and close it. */
 export const openShell = (hostId: string, cols: number, rows: number) =>
-  invoke<void>("open_shell", { hostId, cols, rows });
+  invoke<number>("open_shell", { hostId, cols, rows });
 
 export const writeShell = (hostId: string, data: string) =>
   invoke<void>("write_shell", { hostId, data });
@@ -109,31 +110,41 @@ export const writeShell = (hostId: string, data: string) =>
 export const resizeShell = (hostId: string, cols: number, rows: number) =>
   invoke<void>("resize_shell", { hostId, cols, rows });
 
-export const closeShell = (hostId: string) =>
-  invoke<void>("close_shell", { hostId });
+/**
+ * Close a shell.
+ *
+ * Pass the id when a pane is tearing itself down, so a late cleanup cannot
+ * close a session that has already replaced it. Omit it for an explicit
+ * "close" button, which means "whatever is open right now".
+ */
+export const closeShell = (hostId: string, shellId?: number) =>
+  invoke<void>("close_shell", { hostId, shellId: shellId ?? null });
 
 /**
  * Subscribe to terminal output for one host.
  *
- * The Rust side addresses these events to this window only, but every session
- * in the window shares one event name — so the host id is still filtered here,
- * or two open terminals would each render the other's bytes.
+ * `isMine` decides which shell's bytes to render. Filtering on host id alone
+ * is not enough: a shell that has been replaced keeps streaming until it winds
+ * down, and its banner and prompt would appear in the new pane alongside the
+ * real ones — which reads as duplicated output.
  */
 export function onTerminalOutput(
   hostId: string,
+  isMine: (shellId: number) => boolean,
   handler: (event: TerminalOutput) => void,
 ): Promise<UnlistenFn> {
   return listen<TerminalOutput>("terminal://output", ({ payload }) => {
-    if (payload.hostId === hostId) handler(payload);
+    if (payload.hostId === hostId && isMine(payload.shellId)) handler(payload);
   });
 }
 
 export function onTerminalClosed(
   hostId: string,
+  isMine: (shellId: number) => boolean,
   handler: (event: TerminalClosed) => void,
 ): Promise<UnlistenFn> {
   return listen<TerminalClosed>("terminal://closed", ({ payload }) => {
-    if (payload.hostId === hostId) handler(payload);
+    if (payload.hostId === hostId && isMine(payload.shellId)) handler(payload);
   });
 }
 

@@ -24,6 +24,58 @@
   --bs-border-radius: var(--parola-radius);
   --bs-border-radius-sm: var(--parola-radius-sm);
   --bs-border-radius-lg: 0.875rem;
+
+  /* ---- Motion -------------------------------------------------------
+     Every animation in the app is expressed through these tokens, never
+     through literal durations or distances. MotionProvider stamps
+     `data-motion` on <html>; the overrides below re-tune the whole app
+     from one place, so a new animation is covered by the accessibility
+     story automatically instead of needing a selector added to a list. */
+  --parola-duration-fast: 120ms;
+  --parola-duration: 180ms;
+  --parola-duration-slow: 260ms;
+  --parola-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --parola-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Distance travelled by enter/exit slides. */
+  --parola-travel: 0.375rem;
+  /* Hover lift on cards and tiles. */
+  --parola-lift: -1px;
+  /* Scale applied while a button is held down. */
+  --parola-press: 0.97;
+}
+
+/* Keep fades for orientation, drop the movement that causes discomfort. */
+[data-motion="reduced"] {
+  --parola-duration-fast: 80ms;
+  --parola-duration: 100ms;
+  --parola-duration-slow: 120ms;
+  --parola-travel: 0rem;
+  --parola-lift: 0px;
+  --parola-press: 1;
+}
+
+/* Effectively instant. Not `0s` — some transitions need a non-zero
+   duration to still fire their transitionend handlers. */
+[data-motion="off"] {
+  --parola-duration-fast: 1ms;
+  --parola-duration: 1ms;
+  --parola-duration-slow: 1ms;
+  --parola-travel: 0rem;
+  --parola-lift: 0px;
+  --parola-press: 1;
+}
+
+/* Honour the OS before MotionProvider mounts, and for anyone who never
+   opens the menu. An explicit "full" choice still wins. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]):not([data-motion="off"]) {
+    --parola-duration-fast: 80ms;
+    --parola-duration: 100ms;
+    --parola-duration-slow: 120ms;
+    --parola-travel: 0rem;
+    --parola-lift: 0px;
+    --parola-press: 1;
+  }
 }
 
 /* ---------------------------------------------- Light ------- */
@@ -194,6 +246,26 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
+  transition:
+    background-color var(--parola-duration-fast) var(--parola-ease),
+    border-color var(--parola-duration-fast) var(--parola-ease),
+    color var(--parola-duration-fast) var(--parola-ease),
+    box-shadow var(--parola-duration-fast) var(--parola-ease),
+    transform var(--parola-duration-fast) var(--parola-ease);
+}
+
+/* Physical response to the click, so a slow Tauri command still feels
+   acknowledged the instant the button is pressed. */
+.btn:active:not(:disabled) {
+  transform: scale(var(--parola-press));
+}
+
+.form-control,
+.form-select,
+.form-check-input {
+  transition:
+    border-color var(--parola-duration-fast) var(--parola-ease),
+    box-shadow var(--parola-duration-fast) var(--parola-ease);
 }
 
 .dropdown-toggle.no-caret::after {
@@ -247,6 +319,39 @@
 
 .dropdown-item {
   border-radius: var(--parola-radius-sm);
+  transition: background-color var(--parola-duration-fast) var(--parola-ease);
+}
+
+/* ---- Motion: dialogs and banners --------------------------------- */
+
+/* Bootstrap's default is a 50px drop. A short rise plus a slight scale
+   reads as the dialog arriving rather than falling in. */
+.modal.fade .modal-dialog {
+  transform: translateY(var(--parola-travel)) scale(0.98);
+  transition: transform var(--parola-duration-slow) var(--parola-ease-out);
+}
+
+.modal.show .modal-dialog {
+  transform: none;
+}
+
+.modal-backdrop.fade {
+  transition: opacity var(--parola-duration) var(--parola-ease);
+}
+
+@keyframes parola-alert-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--parola-travel)));
+  }
+}
+
+/* Applied globally rather than per-instance: there are ~27 alerts across
+   the app and they all appear the same way. Note this covers arrival
+   only — React unmounts alerts immediately, so an exit animation would
+   need every call site wrapped in a transition component. */
+.alert {
+  animation: parola-alert-in var(--parola-duration) var(--parola-ease-out);
 }
 
 .form-control,

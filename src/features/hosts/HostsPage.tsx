@@ -1,20 +1,22 @@
 import { useMemo, useState } from "react";
-import { Button, Card, Stack } from "react-bootstrap";
+import { Alert, Button, Card, Spinner, Stack } from "react-bootstrap";
 import { Plug, Plus } from "lucide-react";
 import { DataTable } from "../../components/DataTable";
 import { createHostColumns } from "./columns";
-import { useHosts } from "./HostsProvider";
-import type { SshHost } from "./types";
+import { useHosts, type HostRow } from "./HostsProvider";
+import { useHostActions } from "./useHostActions";
 import type { Navigate } from "../../navigation";
 
 export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
-  const { hosts, onlineCount, connect, edit, remove } = useHosts();
-  const [selected, setSelected] = useState<SshHost[]>([]);
+  const { hosts, onlineCount, loading, error } = useHosts();
+  const [selected, setSelected] = useState<HostRow[]>([]);
 
-  const columns = useMemo(
-    () => createHostColumns({ onConnect: connect, onEdit: edit, onDelete: remove }),
-    [connect, edit, remove],
-  );
+  const { actions, add, dialogs } = useHostActions({
+    // A terminal lives on the detail pane, so opening one navigates there.
+    onOpenTerminal: (host) => onNavigate({ kind: "host", hostId: host.id }),
+  });
+
+  const columns = useMemo(() => createHostColumns(actions), [actions]);
 
   return (
     <div className="page">
@@ -23,42 +25,60 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
           <h1 className="page-title">All hosts</h1>
           <p className="text-body-secondary mb-0">
             {hosts.length} saved {hosts.length === 1 ? "host" : "hosts"} ·{" "}
-            {onlineCount} online
+            {onlineCount} connected
           </p>
         </div>
       </header>
 
+      {error && <Alert variant="danger">{error}</Alert>}
+
       <Card>
         <Card.Body>
-          <DataTable
-            data={hosts}
-            columns={columns}
-            getRowId={(host) => host.id}
-            enableRowSelection
-            onSelectionChange={setSelected}
-            onRowActivate={(host) => onNavigate({ kind: "host", hostId: host.id })}
-            searchPlaceholder="Search hosts, tags, users…"
-            emptyMessage="No saved connections. Add one to get started."
-            toolbarActions={
-              <Stack direction="horizontal" gap={2}>
-                <Button size="sm" variant="primary">
-                  <Plus aria-hidden="true" />
-                  New connection
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline-secondary"
-                  disabled={selected.length === 0}
-                  onClick={() => selected.forEach(connect)}
-                >
-                  <Plug aria-hidden="true" />
-                  Connect selected
-                </Button>
-              </Stack>
-            }
-          />
+          {loading && hosts.length === 0 ? (
+            <div className="d-flex align-items-center gap-2 text-body-secondary py-4">
+              <Spinner animation="border" size="sm" aria-hidden="true" />
+              Loading saved connections…
+            </div>
+          ) : (
+            <DataTable
+              data={hosts}
+              columns={columns}
+              getRowId={(host) => host.id}
+              enableRowSelection
+              onSelectionChange={setSelected}
+              onRowActivate={(host) => onNavigate({ kind: "host", hostId: host.id })}
+              searchPlaceholder="Search hosts, tags, users…"
+              emptyMessage="No saved connections. Add one to get started."
+              toolbarActions={
+                <Stack direction="horizontal" gap={2}>
+                  <Button size="sm" variant="primary" onClick={() => add()}>
+                    <Plus aria-hidden="true" />
+                    New connection
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
+                    // Each connection may need its own password, so this walks
+                    // them one dialog at a time rather than firing in parallel.
+                    disabled={selected.length !== 1}
+                    title={
+                      selected.length > 1
+                        ? "Connect one at a time — each may need its own password"
+                        : undefined
+                    }
+                    onClick={() => selected[0] && actions.onConnect(selected[0])}
+                  >
+                    <Plug aria-hidden="true" />
+                    Connect selected
+                  </Button>
+                </Stack>
+              }
+            />
+          )}
         </Card.Body>
       </Card>
+
+      {dialogs}
     </div>
   );
 }

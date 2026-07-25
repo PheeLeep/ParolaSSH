@@ -1,8 +1,20 @@
-import { Button, Card } from "react-bootstrap";
-import { ChevronLeft, Pencil, Plug, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Badge, Button, Card } from "react-bootstrap";
+import {
+  ChevronLeft,
+  Pencil,
+  Plug,
+  Power,
+  ShieldCheck,
+  SquareTerminal,
+  Trash2,
+  Unplug,
+} from "lucide-react";
 import { useHosts } from "./HostsProvider";
 import { StatusBadge } from "./StatusIndicator";
-import { AUTH_METHOD_LABELS } from "./types";
+import { TerminalPane } from "./TerminalPane";
+import { useHostActions } from "./useHostActions";
+import { AUTH_METHOD_LABELS, ELEVATION_LABELS, OS_LABELS } from "./types";
 import { formatAbsolute, formatRelative } from "../../lib/format";
 import type { Navigate } from "../../navigation";
 
@@ -13,8 +25,24 @@ export function HostDetail({
   hostId: string;
   onNavigate: Navigate;
 }) {
-  const { getHost, connect, edit, remove } = useHosts();
+  const { getHost, getConnection } = useHosts();
+  const [showTerminal, setShowTerminal] = useState(false);
+
   const host = getHost(hostId);
+  const connection = getConnection(hostId);
+
+  const { actions, dialogs } = useHostActions({
+    onOpenTerminal: () => setShowTerminal(true),
+  });
+
+  // Losing the session closes the pane: an xterm attached to nothing just
+  // swallows keystrokes, which looks like a hang.
+  useEffect(() => {
+    if (!connection) setShowTerminal(false);
+  }, [connection]);
+
+  // Switching hosts must not carry the previous host's terminal across.
+  useEffect(() => setShowTerminal(false), [hostId]);
 
   if (!host) {
     return (
@@ -32,6 +60,8 @@ export function HostDetail({
       </div>
     );
   }
+
+  const connected = Boolean(connection);
 
   return (
     <div className="page">
@@ -56,21 +86,98 @@ export function HostDetail({
           </p>
         </div>
 
-        <div className="d-flex gap-2">
-          <Button variant="primary" onClick={() => connect(host)}>
-            <Plug aria-hidden="true" />
-            Connect
+        <div className="d-flex flex-wrap gap-2">
+          {connected ? (
+            <Button variant="outline-secondary" onClick={() => actions.onDisconnect(host)}>
+              <Unplug aria-hidden="true" />
+              Disconnect
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={() => actions.onConnect(host)}>
+              <Plug aria-hidden="true" />
+              Connect
+            </Button>
+          )}
+
+          <Button
+            variant="outline-secondary"
+            disabled={!connected}
+            title={connected ? undefined : "Connect first"}
+            onClick={() => setShowTerminal(true)}
+          >
+            <SquareTerminal aria-hidden="true" />
+            Terminal
           </Button>
-          <Button variant="outline-secondary" onClick={() => edit(host)}>
+
+          <Button
+            variant="outline-secondary"
+            disabled={!connected}
+            title={connected ? undefined : "Connect first"}
+            onClick={() => actions.onPower(host)}
+          >
+            <Power aria-hidden="true" />
+            Power
+          </Button>
+
+          <Button variant="outline-secondary" onClick={() => actions.onEdit(host)}>
             <Pencil aria-hidden="true" />
             Edit
           </Button>
-          <Button variant="outline-secondary" onClick={() => remove(host)}>
+          <Button variant="outline-secondary" onClick={() => actions.onDelete(host)}>
             <Trash2 aria-hidden="true" />
             <span className="visually-hidden">Delete {host.label}</span>
           </Button>
         </div>
       </header>
+
+      {/* Only meaningful while connected — everything here was learned from
+          the live session, not from the saved record. */}
+      {connection && (
+        <Card className="mb-3">
+          <Card.Body>
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+              <Badge bg="secondary">{OS_LABELS[connection.os]}</Badge>
+              <span className="text-body-secondary small font-monospace">
+                {connection.osDetail}
+              </span>
+            </div>
+
+            <div className="d-flex gap-2">
+              <ShieldCheck
+                className={`icon-sm flex-shrink-0 mt-1 ${
+                  connection.elevation.kind === "unavailable"
+                    ? "text-danger"
+                    : "text-success"
+                }`}
+                aria-hidden="true"
+              />
+              <div>
+                <div className="fw-semibold">
+                  {ELEVATION_LABELS[connection.elevation.kind]}
+                </div>
+                <div className="text-body-secondary small">
+                  {connection.elevationExplanation}
+                </div>
+              </div>
+            </div>
+
+            {connection.fingerprint && (
+              <div className="mt-3">
+                <div className="detail-grid__label">Host key</div>
+                <code className="small text-break user-select-auto">
+                  {connection.fingerprint}
+                </code>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
+      )}
+
+      {showTerminal && connected && (
+        <div className="mb-3">
+          <TerminalPane hostId={host.id} onClose={() => setShowTerminal(false)} />
+        </div>
+      )}
 
       <Card>
         <Card.Body>
@@ -89,7 +196,14 @@ export function HostDetail({
             </div>
             <div>
               <dt>Authentication</dt>
-              <dd>{AUTH_METHOD_LABELS[host.authMethod]}</dd>
+              <dd>
+                {AUTH_METHOD_LABELS[host.authMethod]}
+                {host.keyPath && (
+                  <div className="text-body-secondary small font-monospace">
+                    {host.keyPath}
+                  </div>
+                )}
+              </dd>
             </div>
             <div>
               <dt>Group</dt>
@@ -115,9 +229,17 @@ export function HostDetail({
                 )}
               </dd>
             </div>
+            {host.notes && (
+              <div>
+                <dt>Notes</dt>
+                <dd className="text-prewrap">{host.notes}</dd>
+              </div>
+            )}
           </dl>
         </Card.Body>
       </Card>
+
+      {dialogs}
     </div>
   );
 }

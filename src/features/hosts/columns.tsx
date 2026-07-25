@@ -1,19 +1,23 @@
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { Button, Dropdown } from "react-bootstrap";
-import { Ellipsis, Pencil, Plug, Trash2 } from "lucide-react";
+import { Ellipsis, Pencil, Plug, Power, SquareTerminal, Trash2, Unplug } from "lucide-react";
 import { formatAbsolute, formatRelative } from "../../lib/format";
 import { StatusBadge, StatusDot } from "./StatusIndicator";
-import { AUTH_METHOD_LABELS, type SshHost } from "./types";
+import type { HostRow } from "./HostsProvider";
+import { AUTH_METHOD_LABELS } from "./types";
 
-const column = createColumnHelper<SshHost>();
+const column = createColumnHelper<HostRow>();
 
 export type HostRowActions = {
-  onConnect: (host: SshHost) => void;
-  onEdit: (host: SshHost) => void;
-  onDelete: (host: SshHost) => void;
+  onConnect: (host: HostRow) => void;
+  onDisconnect: (host: HostRow) => void;
+  onEdit: (host: HostRow) => void;
+  onDelete: (host: HostRow) => void;
+  onPower: (host: HostRow) => void;
+  onTerminal: (host: HostRow) => void;
 };
 
-export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, any>[] {
+export function createHostColumns(actions: HostRowActions): ColumnDef<HostRow, any>[] {
   // Built as a plain const so the column helper's inference isn't widened to
   // `any` by the declared return type.
   const columns = [
@@ -105,12 +109,26 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
       meta: { width: "8.5rem", cellClassName: "text-end" },
       cell: (info) => {
         const host = info.row.original;
+        const connected = host.status === "online";
+
         return (
           <div className="d-flex justify-content-end gap-1">
-            <Button size="sm" variant="primary" onClick={() => actions.onConnect(host)}>
-              <Plug aria-hidden="true" />
-              Connect
-            </Button>
+            {connected ? (
+              <Button
+                size="sm"
+                variant="outline-secondary"
+                onClick={() => actions.onDisconnect(host)}
+              >
+                <Unplug aria-hidden="true" />
+                Disconnect
+              </Button>
+            ) : (
+              <Button size="sm" variant="primary" onClick={() => actions.onConnect(host)}>
+                <Plug aria-hidden="true" />
+                Connect
+              </Button>
+            )}
+
             <Dropdown align="end">
               <Dropdown.Toggle
                 size="sm"
@@ -122,6 +140,24 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
                 <Ellipsis aria-hidden="true" />
               </Dropdown.Toggle>
               <Dropdown.Menu>
+                {/* Both need a live session, so they say why they are off. */}
+                <Dropdown.Item
+                  disabled={!connected}
+                  title={connected ? undefined : "Connect first"}
+                  onClick={() => actions.onTerminal(host)}
+                >
+                  <SquareTerminal className="icon-sm" aria-hidden="true" />
+                  Open terminal
+                </Dropdown.Item>
+                <Dropdown.Item
+                  disabled={!connected}
+                  title={connected ? undefined : "Connect first"}
+                  onClick={() => actions.onPower(host)}
+                >
+                  <Power className="icon-sm" aria-hidden="true" />
+                  Power…
+                </Dropdown.Item>
+                <Dropdown.Divider />
                 <Dropdown.Item onClick={() => actions.onEdit(host)}>
                   <Pencil className="icon-sm" aria-hidden="true" />
                   Edit
@@ -142,5 +178,5 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<SshHost, a
     }),
   ];
 
-  return columns as ColumnDef<SshHost, any>[];
+  return columns as ColumnDef<HostRow, any>[];
 }

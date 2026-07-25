@@ -7,8 +7,9 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
+use crate::app_paths::config_dir;
 use crate::ssh::audit::AuditReport;
 use crate::ssh::generate::{GenerateOutcome, GenerateRequest};
 use crate::ssh::keys::KeyScan;
@@ -19,12 +20,6 @@ use crate::ssh::{audit, config, generate, keys, perms, SshError, SshResult};
 
 fn ssh_dir() -> SshResult<PathBuf> {
     SshPaths::discover().map(|paths| paths.dir)
-}
-
-fn config_dir(app: &AppHandle) -> SshResult<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .map_err(|error| SshError::Io(format!("Could not locate the settings directory: {error}")))
 }
 
 /// Confirm a path lies inside the SSH directory before acting on it.

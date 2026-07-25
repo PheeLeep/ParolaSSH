@@ -32,17 +32,17 @@
 [data-bs-theme="light"] {
   color-scheme: light;
 
-  --parola-accent: #2563eb;
-  --parola-accent-hover: #1d4ed8;
-  --parola-accent-active: #1e40af;
-  --parola-accent-soft: rgba(37, 99, 235, 0.09);
+  --parola-accent: #7c3aed;
+  --parola-accent-hover: #6d28d9;
+  --parola-accent-active: #5b21b6;
+  --parola-accent-soft: rgba(124, 58, 237, 0.09);
 
   --parola-app-bg: #f4f5f7;
   --parola-surface: #ffffff;
   --parola-sidebar-bg: #fafbfc;
   --parola-header-bg: rgba(255, 255, 255, 0.82);
   --parola-hover: rgba(15, 23, 42, 0.05);
-  --parola-selected: rgba(37, 99, 235, 0.1);
+  --parola-selected: rgba(124, 58, 237, 0.1);
   --parola-line: #e3e6ea;
   --parola-line-strong: #d3d8de;
 
@@ -84,10 +84,10 @@
   --bs-tertiary-bg: #f7f8fa;
   --bs-tertiary-bg-rgb: 247, 248, 250;
   --bs-primary: var(--parola-accent);
-  --bs-primary-rgb: 37, 99, 235;
+  --bs-primary-rgb: 124, 58, 237;
   --bs-link-color: var(--parola-accent);
   --bs-link-hover-color: var(--parola-accent-hover);
-  --bs-focus-ring-color: rgba(37, 99, 235, 0.25);
+  --bs-focus-ring-color: rgba(124, 58, 237, 0.25);
 }
 
 /* ---------------------------------------------- Dark -------- */
@@ -97,17 +97,19 @@
 [data-bs-theme="dark"] {
   color-scheme: dark;
 
-  --parola-accent: #3b82f6;
-  --parola-accent-hover: #5b9bfa;
-  --parola-accent-active: #2563eb;
-  --parola-accent-soft: rgba(59, 130, 246, 0.15);
+  /* Lifted off violet-600 so white button labels still clear 4.5:1 while
+     staying bright enough to read as the primary action on near-black. */
+  --parola-accent: #8450f2;
+  --parola-accent-hover: #9366f7;
+  --parola-accent-active: #6d28d9;
+  --parola-accent-soft: rgba(132, 80, 242, 0.16);
 
   --parola-app-bg: #0a0c10;
   --parola-surface: #101319;
   --parola-sidebar-bg: #0c0e13;
   --parola-header-bg: rgba(12, 14, 19, 0.85);
   --parola-hover: rgba(255, 255, 255, 0.055);
-  --parola-selected: rgba(59, 130, 246, 0.16);
+  --parola-selected: rgba(132, 80, 242, 0.18);
   --parola-line: #1d222b;
   --parola-line-strong: #2a313d;
 
@@ -148,10 +150,10 @@
   --bs-tertiary-bg: #12161c;
   --bs-tertiary-bg-rgb: 18, 22, 28;
   --bs-primary: var(--parola-accent);
-  --bs-primary-rgb: 59, 130, 246;
-  --bs-link-color: #7aa9f7;
-  --bs-link-hover-color: #9cc0f9;
-  --bs-focus-ring-color: rgba(59, 130, 246, 0.35);
+  --bs-primary-rgb: 132, 80, 242;
+  --bs-link-color: #b4a0fb;
+  --bs-link-hover-color: #cbbdfd;
+  --bs-focus-ring-color: rgba(132, 80, 242, 0.35);
 }
 
 /* --------------------------- Bootstrap component tuning ----- */

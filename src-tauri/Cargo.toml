@@ -27,8 +27,13 @@ zeroize = "1.9.0"
 dirs = "6.0.0"
 thiserror = "2.0.19"
 rand_core = { version = "0.6", features = ["getrandom"] }
+russh = { version = "0.62.4", default-features = false, features = ["flate2", "ring"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "io-util", "macros", "sync"] }
+futures-util = { version = "0.3.33", default-features = false, features = ["std", "async-await"] }
 
 [dev-dependencies]
 dirs = "6.0.0"
 tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+zeroize = "1.9.0"
 

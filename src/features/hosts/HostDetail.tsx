@@ -8,6 +8,7 @@ import { TerminalTabs } from "./TerminalTabs";
 import { OsBadge, OverviewPane } from "./panes/OverviewPane";
 import { PlannedPane } from "./panes/PlannedPane";
 import { useHostActions } from "./useHostActions";
+import { VpnGlyph } from "../vpn/VpnGlyph";
 import type { Navigate } from "../../navigation";
 
 export function HostDetail({
@@ -79,8 +80,9 @@ export function HostDetail({
             <StatusBadge status={host.status} />
             <OsBadge connection={connection} />
           </div>
-          <p className="text-body-secondary font-monospace small mb-0">
+          <p className="text-body-secondary font-monospace small mb-0 d-inline-flex align-items-center gap-1">
             {host.username}@{host.hostname}:{host.port}
+            <VpnGlyph hostname={host.hostname} />
           </p>
         </div>
 

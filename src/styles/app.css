@@ -57,6 +57,12 @@ code,
   background: var(--parola-header-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--parola-line);
+  /* The backdrop-filter makes the navbar a stacking context, and with an
+     auto z-index the page content after it paints on top — cutting through
+     its open dropdowns. Lift the whole strip above the body; Bootstrap's
+     modals portal to <body> at z-index 1050+ and still win. */
+  position: relative;
+  z-index: 10;
 }
 
 .app-brand {
@@ -98,6 +104,45 @@ code,
 
 .icon-button:disabled {
   opacity: 0.4;
+}
+
+/* --------------------------------------- Window controls ----- */
+
+/* The window is undecorated (except on macOS), so the navbar doubles as the
+   titlebar. The controls bleed to the very edge of the window — a close
+   button with a gutter around it fails Fitts's law at the corner. */
+
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  align-items: stretch;
+  margin: 0 -0.75rem 0 0.5rem; /* cancel the navbar's own padding */
+}
+
+.window-control {
+  display: grid;
+  place-items: center;
+  width: 2.875rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--bs-secondary-color);
+}
+
+.window-control:hover {
+  background: var(--parola-hover);
+  color: var(--bs-emphasis-color);
+}
+
+.window-control--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* Overlay titlebar on macOS: the native traffic lights sit on top of the
+   navbar's left edge, so push our own content clear of them. */
+.app-navbar--mac {
+  padding-left: 5rem;
 }
 
 /* ---------------------------------------------- Sidebar ----- */
@@ -255,6 +300,50 @@ code,
 .status-badge--offline {
   background: var(--parola-offline-soft);
   color: var(--parola-offline);
+}
+
+/* Amber caution — deliberately the audit "medium" colour, not a red: it
+   flags something worth a look, not something broken. */
+.status-badge--warning {
+  background: var(--parola-medium-soft);
+  color: var(--parola-medium);
+}
+
+/* Shield marking an address reached through a VPN. Muted on purpose: it is
+   background knowledge next to the hostname, not a status. */
+.vpn-glyph {
+  display: inline-flex;
+  align-items: center;
+  color: var(--bs-secondary-color);
+}
+
+/* The navbar VPN pill: a status badge that happens to be a button. */
+.vpn-pill {
+  border: 0;
+  cursor: pointer;
+}
+
+.vpn-pill:hover {
+  filter: brightness(0.92);
+}
+
+[data-bs-theme="dark"] .vpn-pill:hover {
+  filter: brightness(1.15);
+}
+
+.icon-spin {
+  animation: icon-spin 0.9s linear infinite;
+}
+
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+[data-motion="reduced"] .icon-spin,
+[data-motion="off"] .icon-spin {
+  animation: none;
 }
 
 .tag-chip {

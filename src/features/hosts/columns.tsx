@@ -2,6 +2,7 @@ import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { Button, Dropdown } from "react-bootstrap";
 import { Ellipsis, Pencil, Plug, Power, SquareTerminal, Trash2, Unplug } from "lucide-react";
 import { formatAbsolute, formatRelative } from "../../lib/format";
+import { VpnGlyph } from "../vpn/VpnGlyph";
 import { StatusBadge, StatusDot } from "./StatusIndicator";
 import type { HostRow } from "./HostsProvider";
 import { AUTH_METHOD_LABELS } from "./types";
@@ -29,8 +30,9 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<HostRow, a
           <StatusDot status={info.row.original.status} />
           <div className="d-flex flex-column">
             <span className="fw-semibold">{info.getValue()}</span>
-            <span className="text-body-secondary small">
+            <span className="text-body-secondary small d-inline-flex align-items-center gap-1">
               {info.row.original.username}@{info.row.original.hostname}
+              <VpnGlyph hostname={info.row.original.hostname} />
             </span>
           </div>
         </div>

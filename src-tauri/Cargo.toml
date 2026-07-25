@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,7 +28,7 @@ dirs = "6.0.0"
 thiserror = "2.0.19"
 rand_core = { version = "0.6", features = ["getrandom"] }
 russh = { version = "0.62.4", default-features = false, features = ["flate2", "ring"] }
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "io-util", "macros", "sync"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "net", "time", "io-util", "macros", "sync", "process"] }
 futures-util = { version = "0.3.33", default-features = false, features = ["std", "async-await"] }
 tauri-plugin-single-instance = "2.4.3"
 

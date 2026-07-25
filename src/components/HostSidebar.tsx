@@ -9,6 +9,7 @@ import {
   Search,
   Server,
   Settings,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { useHosts } from "../features/hosts/HostsProvider";
@@ -186,6 +187,15 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
               {keyAlerts}
             </span>
           )}
+        </button>
+
+        <button
+          type="button"
+          className={`sidebar-item${view.kind === "vpn" ? " is-active" : ""}`}
+          onClick={() => onNavigate({ kind: "vpn" })}
+        >
+          <Shield aria-hidden="true" />
+          <span className="sidebar-item__label">VPN</span>
         </button>
 
         {FOOTER_ITEMS.map((item) => (

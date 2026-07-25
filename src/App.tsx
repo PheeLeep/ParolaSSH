@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AppNavbar } from "./components/AppNavbar";
+import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
@@ -11,6 +12,8 @@ import { KeysProvider } from "./features/keys/KeysProvider";
 import { AboutPage } from "./features/settings/AboutPage";
 import { readStartupView } from "./features/settings/preferences";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { VpnPage } from "./features/vpn/VpnPage";
+import { VpnProvider } from "./features/vpn/VpnProvider";
 import { WelcomeScreen } from "./features/welcome/WelcomeScreen";
 import { useContextMenuGuard } from "./lib/useContextMenuGuard";
 import { MotionProvider } from "./theme/MotionProvider";
@@ -22,9 +25,12 @@ function App() {
     <ThemeProvider>
       <MotionProvider>
         <HostsProvider>
-          <KeysProvider>
-            <AppShell />
-          </KeysProvider>
+          {/* Needs the host list, so it sits inside HostsProvider. */}
+          <VpnProvider>
+            <KeysProvider>
+              <AppShell />
+            </KeysProvider>
+          </VpnProvider>
         </HostsProvider>
       </MotionProvider>
     </ThemeProvider>
@@ -47,9 +53,11 @@ function AppShell() {
 
   return (
     <div className="app-shell">
+      <CloseGuard />
       <AppNavbar
         sidebarHidden={sidebarHidden}
         onToggleSidebar={() => setSidebarHidden((hidden) => !hidden)}
+        onNavigate={setView}
       />
 
       <div className="app-body">
@@ -67,6 +75,7 @@ function AppShell() {
               <KeyDetail keyId={view.keyId} onNavigate={setView} />
             )}
             {view.kind === "audit" && <AuditPage onNavigate={setView} />}
+            {view.kind === "vpn" && <VpnPage onNavigate={setView} />}
             {view.kind === "settings" && <SettingsPage onNavigate={setView} />}
             {view.kind === "about" && <AboutPage onNavigate={setView} />}
           </div>

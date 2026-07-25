@@ -7,6 +7,7 @@ export type View =
   | { kind: "keys" }
   | { kind: "key"; keyId: string }
   | { kind: "audit" }
+  | { kind: "vpn" }
   | { kind: "settings" }
   | { kind: "about" };
 

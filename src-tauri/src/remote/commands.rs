@@ -49,7 +49,19 @@ pub struct ConnectionInfo {
 /// credentials.
 #[tauri::command]
 pub async fn probe_host(hostname: String, port: u16) -> SshResult<ProbeResult> {
-    probe::probe(hostname.trim(), port).await
+    let mut result = probe::probe(hostname.trim(), port).await?;
+
+    // Silence from a VPN address is usually the VPN's doing, not the host's.
+    // The check lives here rather than in `probe` so the probe itself stays a
+    // pure network primitive; this layer is the one that knows about the
+    // machine the app is running on.
+    if !result.reachable {
+        if let Some(advice) = crate::vpn::explain_unreachable(&result.hostname).await {
+            result.message = format!("{} {advice}", result.message);
+        }
+    }
+
+    Ok(result)
 }
 
 /// Connect, authenticate, and work out how this account elevates.

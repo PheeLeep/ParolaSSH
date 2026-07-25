@@ -5,9 +5,67 @@ pub mod remote;
 // Public so the integration tests in `tests/` can drive the audit against
 // fixture directories.
 pub mod ssh;
+pub mod vpn;
 
 use remote::registry::SessionRegistry;
 use remote::secrets::SecretVault;
+
+/// The tray keeps the app reachable while its window is hidden — closing the
+/// window with live SSH sessions offers "minimize to tray" instead of tearing
+/// the connections down, and this icon is the way back in afterwards.
+#[cfg(desktop)]
+mod tray {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    use tauri::{AppHandle, Manager};
+
+    fn show_main(app: &AppHandle) {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }
+
+    pub fn init(app: &tauri::App) -> tauri::Result<()> {
+        let show = MenuItem::with_id(app, "show", "Show ParolaSSH", true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&show, &quit])?;
+
+        TrayIconBuilder::with_id("main")
+            .icon(
+                app.default_window_icon()
+                    .expect("bundle config always ships window icons")
+                    .clone(),
+            )
+            .tooltip("ParolaSSH")
+            .menu(&menu)
+            // Left click restores the window; the menu stays on right click.
+            // (Some Linux status-notifier hosts only ever show the menu — the
+            // "Show" entry is there so those users are not locked out.)
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    show_main(tray.app_handle());
+                }
+            })
+            .on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => show_main(app),
+                // `exit` fires RunEvent::Exit below, which disconnects every
+                // SSH session before the process goes away.
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .build(app)?;
+
+        Ok(())
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +91,13 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            tray::init(app)?;
+            #[cfg(not(desktop))]
+            let _ = app;
+            Ok(())
+        })
         // Live SSH sessions and in-memory passwords. Both are process-scoped
         // on purpose: quitting the app drops every credential it holds.
         .manage(SessionRegistry::new())
@@ -55,6 +120,7 @@ pub fn run() {
             hosts::commands::list_host_tags,
             // Reaching them
             remote::commands::probe_host,
+            vpn::commands::vpn_overview,
             remote::commands::connect_host,
             remote::commands::disconnect_host,
             remote::commands::connected_hosts,

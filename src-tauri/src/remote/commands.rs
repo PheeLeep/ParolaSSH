@@ -35,7 +35,8 @@ pub struct ConnectionInfo {
     pub supports_cancel: bool,
     pub fingerprint: Option<String>,
     pub connected_at: String,
-    pub has_shell: bool,
+    /// Shells already open on this host — empty for a fresh connection.
+    pub shell_ids: Vec<u64>,
     /// Whether the session holds the password it logged in with, so `sudo`
     /// can reuse it instead of asking for the same string again.
     pub has_login_password: bool,
@@ -141,7 +142,7 @@ pub async fn connect_host(
         supports_cancel: report.supports_cancel,
         fingerprint: live.fingerprint.clone(),
         connected_at,
-        has_shell: false,
+        shell_ids: Vec::new(),
         has_login_password: live.has_login_password(),
     })
 }
@@ -311,13 +312,25 @@ pub async fn heartbeat(
     Ok(health)
 }
 
+/// Most shells one host may hold at once.
+///
+/// Each live terminal keeps an xterm instance with its own scrollback — a
+/// megabyte or two of buffer plus a renderer context, and browsers cap live
+/// WebGL contexts near sixteen. The ceiling is the renderer, not memory, so
+/// the cap is deliberately well under it.
+const MAX_SHELLS_PER_HOST: usize = 8;
+
 /// Open an interactive shell. Output arrives as `terminal://output` events.
 ///
+/// Opening does not replace anything: a host can hold several terminals, all
+/// riding the one authenticated connection as separate channels. The returned
+/// id addresses every later call — write, resize, close — and tags every event
+/// so a pane renders only its own bytes.
+///
 /// There is deliberately no general "run this string" command alongside this
-/// one. A terminal is an arbitrary-execution primitive the user is driving
-/// and watching; a silent `run_command(String)` would be the same power with
-/// none of the visibility, and every caller we actually have is either the
-/// terminal or a purpose-built verb like `power_host`.
+/// one. A terminal is an arbitrary-execution primitive the user is driving and
+/// watching; a silent `run_command(String)` would be the same power with none
+/// of the visibility.
 #[tauri::command]
 pub async fn open_shell(
     app: AppHandle,
@@ -329,16 +342,15 @@ pub async fn open_shell(
 ) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
 
-    // Serialise the whole replace-then-open sequence. Two callers racing here
-    // would otherwise both close the old shell and both install a new one,
-    // leaving one orphaned — still authenticated, still streaming its banner
-    // and prompt into whichever pane is listening.
+    // Held across the check and the insert, so concurrent opens cannot both
+    // see room under the cap and both take it.
     let _guard = live.lock_shell_open().await;
 
-    // Reopening replaces the old shell rather than stacking a second one on
-    // the same session, which would interleave output from both.
-    if let Some(existing) = live.take_shell() {
-        existing.close().await;
+    if live.shell_count() >= MAX_SHELLS_PER_HOST {
+        return Err(SshError::invalid(format!(
+            "This host already has {MAX_SHELLS_PER_HOST} terminals open. \
+             Close one before opening another."
+        )));
     }
 
     // Output goes back to the window that asked for it, not to every window.
@@ -346,66 +358,76 @@ pub async fn open_shell(
 
     let handle = shell::open(&live.session, app, label, host_id, cols, rows).await?;
     let shell_id = handle.id;
-    live.set_shell(handle);
+    live.add_shell(handle);
 
-    // Returned so the pane can filter events to its own shell, and later close
-    // exactly the one it opened.
     Ok(shell_id)
 }
 
+/// Shell ids currently open on a host, oldest first.
+///
+/// Lets the UI rebuild its tab strip after a reload without opening anything
+/// new — the shells outlive the window that created them.
+#[tauri::command]
+pub fn list_shells(registry: State<'_, SessionRegistry>, host_id: String) -> Vec<u64> {
+    registry
+        .get(&host_id)
+        .map(|live| live.shell_ids())
+        .unwrap_or_default()
+}
+
+/// Send keystrokes to one shell.
 #[tauri::command]
 pub async fn write_shell(
     registry: State<'_, SessionRegistry>,
     host_id: String,
+    shell_id: u64,
     data: String,
 ) -> SshResult<()> {
     let live = registry.require(&host_id)?;
     let shell = live
-        .shell()
-        .ok_or_else(|| SshError::invalid("There is no open terminal for that host."))?;
+        .shell(shell_id)
+        .ok_or_else(|| SshError::invalid("That terminal has been closed."))?;
 
     shell.write(&data).await
 }
 
+/// Tell one shell its window changed.
 #[tauri::command]
 pub async fn resize_shell(
     registry: State<'_, SessionRegistry>,
     host_id: String,
+    shell_id: u64,
     cols: u32,
     rows: u32,
 ) -> SshResult<()> {
-    let live = registry.require(&host_id)?;
-    // A resize arriving after the shell closed is normal — the pane is still
+    let Some(live) = registry.get(&host_id) else {
+        return Ok(());
+    };
+    // A resize arriving after the shell closed is normal — a pane is still
     // laying out as it unmounts — so it is ignored rather than an error.
-    if let Some(shell) = live.shell() {
+    if let Some(shell) = live.shell(shell_id) {
         shell.resize(cols, rows).await?;
     }
     Ok(())
 }
 
-/// Close a shell.
+/// Close one shell and drop it from the session.
 ///
-/// `shell_id` names which one. Passing it means a pane that is unmounting can
-/// only ever close its own session — without it, a teardown arriving after a
-/// reopen would silently kill the shell the user is now typing into. Omitting
-/// it closes whatever is current, which is what an explicit "close" button
-/// wants.
+/// Closing by id is what keeps tabs safe: a pane tearing down can only ever
+/// close its own terminal, and an id that has already gone is a no-op rather
+/// than an error. This is the only path that removes a map entry, so it is
+/// also where the leak would be if it were missing.
 #[tauri::command]
 pub async fn close_shell(
     registry: State<'_, SessionRegistry>,
     host_id: String,
-    shell_id: Option<u64>,
+    shell_id: u64,
 ) -> SshResult<()> {
     let Some(live) = registry.get(&host_id) else {
         return Ok(());
     };
 
-    let shell = match shell_id {
-        Some(id) => live.take_shell_if(id),
-        None => live.take_shell(),
-    };
-
-    if let Some(shell) = shell {
+    if let Some(shell) = live.remove_shell(shell_id) {
         shell.close().await;
     }
 

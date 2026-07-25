@@ -54,26 +54,21 @@ export interface ConnectionInfo {
   user: string;
   elevation: Elevation;
   elevationExplanation: string;
-  /** Whether `force` does anything on this OS — Windows only. */
   supportsForce: boolean;
   supportsCancel: boolean;
   fingerprint: string | null;
   connectedAt: string;
-  hasShell: boolean;
-  /** Whether sudo can reuse the password this session logged in with. */
+  shellIds: number[];
   hasLoginPassword: boolean;
 }
 
-/** One host's liveness, as of the last heartbeat. */
 export interface HostHealth {
   hostId: string;
   connected: boolean;
-  /** The port answered, even if we are not logged in. */
   reachable: boolean;
   latencyMs: number | null;
 }
 
-/** What answered on the port, before any credential is offered. */
 export interface ProbeResult {
   hostname: string;
   port: number;
@@ -88,14 +83,11 @@ export type PowerAction = "shutdown" | "reboot" | "cancel";
 
 export interface PowerRequest {
   action: PowerAction;
-  /** Minutes to wait; 0 is immediate. Ignored by `cancel`. */
   delayMinutes: number;
-  /** Windows only: close applications without waiting for them. */
   force: boolean;
   message: string | null;
 }
 
-/** The literal command a request would run, shown before it runs. */
 export interface PowerPlan {
   command: string;
   needsPassword: boolean;
@@ -118,16 +110,13 @@ export interface CommandOutput {
   exitCode: number | null;
 }
 
-/** Payload of the `terminal://output` event. */
 export interface TerminalOutput {
   hostId: string;
-  /** Which shell produced this. Panes ignore anything that is not theirs. */
   shellId: number;
   stderr: boolean;
   chunk: string;
 }
 
-/** Payload of the `terminal://closed` event. */
 export interface TerminalClosed {
   hostId: string;
   shellId: number;
@@ -154,7 +143,6 @@ export const OS_LABELS: Record<OsFamily, string> = {
   unknown: "Unknown",
 };
 
-/** Short label for the elevation route, for badges and summaries. */
 export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
   notNeeded: "Root — no elevation needed",
   sudoNoPassword: "sudo (no password)",
@@ -166,7 +154,6 @@ export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
 export const DEFAULT_PORT = 22;
 export const DEFAULT_GROUP = "Ungrouped";
 
-/** A blank draft for the add form. */
 export function emptyDraft(group = DEFAULT_GROUP): HostDraft {
   return {
     label: "",
@@ -181,7 +168,6 @@ export function emptyDraft(group = DEFAULT_GROUP): HostDraft {
   };
 }
 
-/** Turn a saved host back into a draft the form can edit. */
 export function draftFromHost(host: SshHost): HostDraft {
   return {
     id: host.id,

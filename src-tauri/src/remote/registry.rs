@@ -33,13 +33,15 @@ pub struct LiveSession {
     pub elevation: Elevation,
     pub fingerprint: Option<String>,
     pub connected_at: String,
-    shell: Mutex<Option<Arc<ShellHandle>>>,
-    /// Serialises opening a shell.
+    /// Every open shell on this host, keyed by shell id.
     ///
-    /// Two `open_shell` calls racing on the same host would each close "the"
-    /// existing shell and then install their own, leaving one orphaned and
-    /// still streaming. Holding this across the whole open makes the sequence
-    /// atomic. It is a tokio mutex because it is held across `await`.
+    /// A host holds several terminals — one tailing a log, one running
+    /// commands — and they all ride the single authenticated connection as
+    /// separate channels. That is what OpenSSH's `ControlMaster` does, and it
+    /// means the second terminal costs no handshake and no second password.
+    shells: Mutex<HashMap<u64, Arc<ShellHandle>>>,
+    /// Serialises opening a shell, so the cap below cannot be raced past.
+    /// A tokio mutex because it is held across `await`.
     shell_open: tokio::sync::Mutex<()>,
     /// The password this session authenticated with, when it used one.
     ///
@@ -67,7 +69,7 @@ impl LiveSession {
             elevation,
             fingerprint,
             connected_at,
-            shell: Mutex::new(None),
+            shells: Mutex::new(HashMap::new()),
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
         }
@@ -91,45 +93,63 @@ impl LiveSession {
             .unwrap_or(false)
     }
 
-    /// Hold this for the duration of an open/replace sequence.
+    /// Hold this for the duration of an open, so the cap is enforced atomically.
     pub async fn lock_shell_open(&self) -> tokio::sync::MutexGuard<'_, ()> {
         self.shell_open.lock().await
     }
 
-    /// Take the current shell only if it is the one the caller opened.
-    ///
-    /// A pane tearing down late must not close the shell that replaced it —
-    /// which is exactly what happens on a StrictMode remount, where the first
-    /// mount's cleanup runs after the second mount has already opened its own.
-    pub fn take_shell_if(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
-        let mut slot = self.shell.lock().ok()?;
-        match slot.as_ref() {
-            Some(shell) if shell.id == shell_id => slot.take(),
-            _ => None,
-        }
+    /// Look up one shell. Returns `None` once it has been closed, which is
+    /// how a late write from an unmounting pane fails harmlessly.
+    pub fn shell(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
+        self.shells
+            .lock()
+            .ok()
+            .and_then(|shells| shells.get(&shell_id).cloned())
     }
 
-    pub fn shell(&self) -> Option<Arc<ShellHandle>> {
-        self.shell.lock().ok().and_then(|shell| shell.clone())
-    }
-
-    pub fn set_shell(&self, handle: ShellHandle) -> Arc<ShellHandle> {
+    pub fn add_shell(&self, handle: ShellHandle) -> Arc<ShellHandle> {
         let handle = Arc::new(handle);
-        if let Ok(mut slot) = self.shell.lock() {
-            *slot = Some(Arc::clone(&handle));
+        if let Ok(mut shells) = self.shells.lock() {
+            shells.insert(handle.id, Arc::clone(&handle));
         }
         handle
     }
 
-    pub fn take_shell(&self) -> Option<Arc<ShellHandle>> {
-        self.shell.lock().ok().and_then(|mut shell| shell.take())
+    /// Remove one shell, returning it so the caller can close the channel.
+    ///
+    /// Removing by id is what stops a pane tearing down late from closing a
+    /// shell that is not its own — an unknown id is a no-op, not an error.
+    pub fn remove_shell(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
+        self.shells
+            .lock()
+            .ok()
+            .and_then(|mut shells| shells.remove(&shell_id))
     }
 
-    pub fn has_shell(&self) -> bool {
-        self.shell
+    /// Empty the map, returning everything that was in it.
+    ///
+    /// Used when the session goes away: leaving entries behind would hold
+    /// channel handles for the lifetime of the app.
+    pub fn drain_shells(&self) -> Vec<Arc<ShellHandle>> {
+        self.shells
             .lock()
-            .map(|shell| shell.is_some())
-            .unwrap_or(false)
+            .map(|mut shells| shells.drain().map(|(_, shell)| shell).collect())
+            .unwrap_or_default()
+    }
+
+    /// Open shell ids, oldest first, so the UI can rebuild its tabs.
+    pub fn shell_ids(&self) -> Vec<u64> {
+        let mut ids: Vec<u64> = self
+            .shells
+            .lock()
+            .map(|shells| shells.keys().copied().collect())
+            .unwrap_or_default();
+        ids.sort_unstable();
+        ids
+    }
+
+    pub fn shell_count(&self) -> usize {
+        self.shells.lock().map(|shells| shells.len()).unwrap_or(0)
     }
 }
 
@@ -155,7 +175,7 @@ impl SessionRegistry {
 
         if let Some(previous) = previous {
             tokio::spawn(async move {
-                if let Some(shell) = previous.take_shell() {
+                for shell in previous.drain_shells() {
                     shell.close().await;
                 }
                 previous.session.close().await;
@@ -205,7 +225,9 @@ impl SessionRegistry {
     pub async fn disconnect(&self, host_id: &str) -> bool {
         match self.remove(host_id) {
             Some(live) => {
-                if let Some(shell) = live.take_shell() {
+                // Every shell, not just the active one — an entry left behind
+                // holds a channel handle for the lifetime of the app.
+                for shell in live.drain_shells() {
                     shell.close().await;
                 }
                 live.session.close().await;

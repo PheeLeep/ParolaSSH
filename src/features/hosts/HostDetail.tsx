@@ -1,21 +1,13 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Card } from "react-bootstrap";
-import {
-  ChevronLeft,
-  Pencil,
-  Plug,
-  Power,
-  ShieldCheck,
-  SquareTerminal,
-  Trash2,
-  Unplug,
-} from "lucide-react";
+import { Alert, Button } from "react-bootstrap";
+import { ChevronLeft, Pencil, Plug, Power, Trash2, Unplug } from "lucide-react";
 import { useHosts } from "./HostsProvider";
+import { HostFeatureNav, HOST_FEATURES, type HostFeature } from "./HostFeatureNav";
 import { StatusBadge } from "./StatusIndicator";
-import { TerminalPane } from "./TerminalPane";
+import { TerminalTabs } from "./TerminalTabs";
+import { OsBadge, OverviewPane } from "./panes/OverviewPane";
+import { PlannedPane } from "./panes/PlannedPane";
 import { useHostActions } from "./useHostActions";
-import { AUTH_METHOD_LABELS, ELEVATION_LABELS, OS_LABELS } from "./types";
-import { formatAbsolute, formatRelative } from "../../lib/format";
 import type { Navigate } from "../../navigation";
 
 export function HostDetail({
@@ -25,24 +17,28 @@ export function HostDetail({
   hostId: string;
   onNavigate: Navigate;
 }) {
-  const { getHost, getConnection } = useHosts();
-  const [showTerminal, setShowTerminal] = useState(false);
+  const { getHost, getConnection, getHealth } = useHosts();
+  const [feature, setFeature] = useState<HostFeature>("overview");
 
   const host = getHost(hostId);
   const connection = getConnection(hostId);
+  const connected = Boolean(connection);
 
   const { actions, dialogs } = useHostActions({
-    onOpenTerminal: () => setShowTerminal(true),
+    onOpenTerminal: () => setFeature("terminal"),
   });
 
-  // Losing the session closes the pane: an xterm attached to nothing just
-  // swallows keystrokes, which looks like a hang.
-  useEffect(() => {
-    if (!connection) setShowTerminal(false);
-  }, [connection]);
+  // Landing on a different host starts at Overview rather than carrying the
+  // previous host's tab across — Services on one box says nothing about another.
+  useEffect(() => setFeature("overview"), [hostId]);
 
-  // Switching hosts must not carry the previous host's terminal across.
-  useEffect(() => setShowTerminal(false), [hostId]);
+  // Every tab except Overview needs a live session. Losing one mid-view would
+  // otherwise leave you staring at a pane that cannot refresh.
+  useEffect(() => {
+    if (connected) return;
+    const definition = HOST_FEATURES.find((entry) => entry.id === feature);
+    if (definition?.needsSession) setFeature("overview");
+  }, [connected, feature]);
 
   if (!host) {
     return (
@@ -61,7 +57,8 @@ export function HostDetail({
     );
   }
 
-  const connected = Boolean(connection);
+  const selected = HOST_FEATURES.find((entry) => entry.id === feature);
+  const locked = Boolean(selected?.needsSession) && !connected;
 
   return (
     <div className="page">
@@ -75,11 +72,12 @@ export function HostDetail({
         All hosts
       </Button>
 
-      <header className="d-flex flex-wrap align-items-center gap-3 mb-4">
+      <header className="d-flex flex-wrap align-items-center gap-3 mb-3">
         <div className="me-auto">
           <div className="d-flex align-items-center gap-2 mb-1">
             <h1 className="page-title">{host.label}</h1>
             <StatusBadge status={host.status} />
+            <OsBadge connection={connection} />
           </div>
           <p className="text-body-secondary font-monospace small mb-0">
             {host.username}@{host.hostname}:{host.port}
@@ -103,16 +101,6 @@ export function HostDetail({
             variant="outline-secondary"
             disabled={!connected}
             title={connected ? undefined : "Connect first"}
-            onClick={() => setShowTerminal(true)}
-          >
-            <SquareTerminal aria-hidden="true" />
-            Terminal
-          </Button>
-
-          <Button
-            variant="outline-secondary"
-            disabled={!connected}
-            title={connected ? undefined : "Connect first"}
             onClick={() => actions.onPower(host)}
           >
             <Power aria-hidden="true" />
@@ -130,114 +118,26 @@ export function HostDetail({
         </div>
       </header>
 
-      {/* Only meaningful while connected — everything here was learned from
-          the live session, not from the saved record. */}
-      {connection && (
-        <Card className="mb-3">
-          <Card.Body>
-            <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-              <Badge bg="secondary">{OS_LABELS[connection.os]}</Badge>
-              <span className="text-body-secondary small font-monospace">
-                {connection.osDetail}
-              </span>
-            </div>
+      <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
 
-            <div className="d-flex gap-2">
-              <ShieldCheck
-                className={`icon-sm flex-shrink-0 mt-1 ${
-                  connection.elevation.kind === "unavailable"
-                    ? "text-danger"
-                    : "text-success"
-                }`}
-                aria-hidden="true"
-              />
-              <div>
-                <div className="fw-semibold">
-                  {ELEVATION_LABELS[connection.elevation.kind]}
-                </div>
-                <div className="text-body-secondary small">
-                  {connection.elevationExplanation}
-                </div>
-              </div>
-            </div>
-
-            {connection.fingerprint && (
-              <div className="mt-3">
-                <div className="detail-grid__label">Host key</div>
-                <code className="small text-break user-select-auto">
-                  {connection.fingerprint}
-                </code>
-              </div>
-            )}
-          </Card.Body>
-        </Card>
-      )}
-
-      {showTerminal && connected && (
-        <div className="mb-3">
-          <TerminalPane hostId={host.id} onClose={() => setShowTerminal(false)} />
-        </div>
-      )}
-
-      <Card>
-        <Card.Body>
-          <dl className="detail-grid mb-0">
-            <div>
-              <dt>Hostname</dt>
-              <dd className="font-monospace">{host.hostname}</dd>
-            </div>
-            <div>
-              <dt>Port</dt>
-              <dd className="font-monospace">{host.port}</dd>
-            </div>
-            <div>
-              <dt>Username</dt>
-              <dd>{host.username}</dd>
-            </div>
-            <div>
-              <dt>Authentication</dt>
-              <dd>
-                {AUTH_METHOD_LABELS[host.authMethod]}
-                {host.keyPath && (
-                  <div className="text-body-secondary small font-monospace">
-                    {host.keyPath}
-                  </div>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Group</dt>
-              <dd>{host.group}</dd>
-            </div>
-            <div>
-              <dt>Last connected</dt>
-              <dd title={formatAbsolute(host.lastConnected)}>
-                {formatRelative(host.lastConnected)}
-              </dd>
-            </div>
-            <div>
-              <dt>Tags</dt>
-              <dd className="d-flex flex-wrap gap-1">
-                {host.tags.length === 0 ? (
-                  <span className="text-body-secondary">None</span>
-                ) : (
-                  host.tags.map((tag) => (
-                    <span key={tag} className="tag-chip">
-                      {tag}
-                    </span>
-                  ))
-                )}
-              </dd>
-            </div>
-            {host.notes && (
-              <div>
-                <dt>Notes</dt>
-                <dd className="text-prewrap">{host.notes}</dd>
-              </div>
-            )}
-          </dl>
-        </Card.Body>
-      </Card>
+      <div className="feature-pane">
+        {locked ? (
+          <Alert variant="secondary" className="mb-0">
+            Connect to this host to use {selected?.label}. It reads from the live
+            session — there is nothing to show without one.
+          </Alert>
+        ) : feature === "overview" ? (
+          <OverviewPane
+            host={host}
+            connection={connection}
+            health={getHealth(hostId)}
+          />
+        ) : feature === "terminal" ? (
+          <TerminalTabs hostId={hostId} />
+        ) : (
+          <PlannedPane feature={feature} os={connection?.os} />
+        )}
+      </div>
 
       {dialogs}
     </div>

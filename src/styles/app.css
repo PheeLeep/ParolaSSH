@@ -1041,37 +1041,6 @@ code,
   white-space: pre-wrap;
 }
 
-/* ---------------------------------------------- Terminal ----- */
-
-.terminal-pane {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: var(--bs-border-width) solid var(--bs-border-color);
-  border-radius: var(--bs-border-radius);
-  background: var(--bs-body-bg);
-}
-
-.terminal-pane__bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  border-bottom: var(--bs-border-width) solid var(--bs-border-color);
-  background: var(--parola-hover);
-  font-size: 0.8125rem;
-}
-
-/* xterm measures itself against this box, so it needs a definite height —
-   a flex-basis alone would let it collapse to nothing. */
-.terminal-pane__screen {
-  height: 24rem;
-  padding: 0.5rem;
-}
-
-.terminal-pane__screen .xterm {
-  height: 100%;
-}
 
 /* ---------------------------------------------- Segmented ------- */
 
@@ -1244,4 +1213,276 @@ code,
 .link-row:hover .link-row__arrow,
 .link-row:focus-visible .link-row__arrow {
   opacity: 1;
+}
+
+/* ---------------------------------------------- Feature nav ----- */
+
+/* Horizontal rather than a second sidebar: two 16.5rem rails would leave
+   roughly 43 columns for the terminal at the 900px window minimum, under the
+   80 that `htop` and `systemctl status` assume. Height is the cheaper axis. */
+.feature-nav {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  border-bottom: var(--bs-border-width) solid var(--bs-border-color);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.feature-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.feature-nav__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.6875rem 0.5625rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  transition: color var(--parola-duration-fast) var(--parola-ease);
+}
+
+.feature-nav__item:hover:not(.is-locked) {
+  color: var(--bs-body-color);
+}
+
+.feature-nav__item.is-active {
+  color: var(--bs-emphasis-color);
+  font-weight: 600;
+  border-bottom-color: var(--parola-accent);
+}
+
+.feature-nav__item.is-locked {
+  opacity: 0.45;
+}
+
+.feature-nav__soon {
+  font-size: 0.5625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--parola-unknown);
+}
+
+.feature-pane {
+  min-height: 18rem;
+}
+
+/* ---------------------------------------------- Stat tiles ----- */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.625rem;
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  border: var(--bs-border-width) solid var(--bs-border-color);
+  border-radius: var(--parola-radius-sm);
+  background: var(--bs-body-bg);
+  min-width: 0;
+}
+
+.stat-tile__label {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.5625rem;
+  font-weight: 660;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+/* Sized off the label, not the value: the glyph is a category marker, and a
+   row of tiles should scan as a column of numbers rather than a row of icons. */
+.stat-tile__glyph {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+
+.stat-tile__value {
+  font-size: 1rem;
+  font-weight: 620;
+  color: var(--bs-emphasis-color);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.stat-tile__sub {
+  font-size: 0.75rem;
+  color: var(--bs-secondary-color);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------- Planned panes ----- */
+
+.planned__icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--parola-accent);
+  opacity: 0.7;
+}
+
+.planned__pill {
+  padding: 0.0625rem 0.4375rem;
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-accent-soft);
+  color: var(--parola-accent);
+  font-size: 0.625rem;
+  font-weight: 660;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.planned__commands {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.planned__commands code {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------- Terminal ----- */
+
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: var(--bs-border-width) solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background: var(--bs-body-bg);
+}
+
+.terminal-pane__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem 0;
+  border-bottom: var(--bs-border-width) solid var(--bs-border-color);
+  background: var(--parola-hover);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.terminal-pane__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.shell-tab {
+  display: flex;
+  align-items: center;
+  border: var(--bs-border-width) solid transparent;
+  border-bottom: 0;
+  border-radius: var(--parola-radius-sm) var(--parola-radius-sm) 0 0;
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.shell-tab.is-active {
+  background: var(--bs-body-bg);
+  border-color: var(--bs-border-color);
+  color: var(--bs-emphasis-color);
+  font-weight: 570;
+  /* Sit over the strip's bottom border so the tab joins the screen below. */
+  margin-bottom: -1px;
+  padding-bottom: 1px;
+}
+
+.shell-tab__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 11rem;
+  overflow: hidden;
+  padding: 0.3125rem 0.25rem 0.3125rem 0.5625rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.shell-tab__exit {
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  background: var(--parola-unknown-soft);
+  color: var(--parola-unknown);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.shell-tab__close,
+.shell-tab__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: var(--parola-radius-sm);
+  background: transparent;
+  color: var(--bs-secondary-color);
+  opacity: 0.65;
+}
+
+.shell-tab__close {
+  margin-right: 0.25rem;
+}
+
+.shell-tab__close:hover,
+.shell-tab__add:hover {
+  opacity: 1;
+  background: var(--parola-hover);
+}
+
+.shell-tab__close svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+.shell-tab__add {
+  align-self: center;
+  margin-left: 0.125rem;
+}
+
+/* xterm measures itself against this box, so it needs a definite height —
+   a flex-basis alone would let it collapse to nothing. */
+.terminal-pane__screen {
+  position: relative;
+  height: 26rem;
+  padding: 0.5rem;
+}
+
+/* The node the store re-parents in. It must fill the pane, because xterm
+   sizes itself against its container rather than the viewport. */
+.terminal-host,
+.terminal-pane__screen .xterm {
+  height: 100%;
+}
+
+.terminal-pane__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
 }

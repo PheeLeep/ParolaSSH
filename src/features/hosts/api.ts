@@ -100,25 +100,33 @@ export const powerHost = (
 
 /* ── Interactive terminal ──────────────────────────────────────────────── */
 
-/** Opens a shell and returns its id, used to filter events and close it. */
+/**
+ * Open a shell and return its id.
+ *
+ * Opening does not replace anything — a host can hold several terminals on the
+ * one authenticated connection. The id addresses every later call and tags
+ * every event.
+ */
 export const openShell = (hostId: string, cols: number, rows: number) =>
   invoke<number>("open_shell", { hostId, cols, rows });
 
-export const writeShell = (hostId: string, data: string) =>
-  invoke<void>("write_shell", { hostId, data });
+/** Shell ids already open on a host, so a reload can rebuild its tabs. */
+export const listShells = (hostId: string) =>
+  invoke<number[]>("list_shells", { hostId });
 
-export const resizeShell = (hostId: string, cols: number, rows: number) =>
-  invoke<void>("resize_shell", { hostId, cols, rows });
+export const writeShell = (hostId: string, shellId: number, data: string) =>
+  invoke<void>("write_shell", { hostId, shellId, data });
 
-/**
- * Close a shell.
- *
- * Pass the id when a pane is tearing itself down, so a late cleanup cannot
- * close a session that has already replaced it. Omit it for an explicit
- * "close" button, which means "whatever is open right now".
- */
-export const closeShell = (hostId: string, shellId?: number) =>
-  invoke<void>("close_shell", { hostId, shellId: shellId ?? null });
+export const resizeShell = (
+  hostId: string,
+  shellId: number,
+  cols: number,
+  rows: number,
+) => invoke<void>("resize_shell", { hostId, shellId, cols, rows });
+
+/** Close one shell. An id that has already gone is a no-op, not an error. */
+export const closeShell = (hostId: string, shellId: number) =>
+  invoke<void>("close_shell", { hostId, shellId });
 
 /**
  * Subscribe to terminal output for one host.

@@ -66,6 +66,7 @@ pub fn run() {
             remote::commands::heartbeat,
             // Interactive terminal
             remote::commands::open_shell,
+            remote::commands::list_shells,
             remote::commands::write_shell,
             remote::commands::resize_shell,
             remote::commands::close_shell,

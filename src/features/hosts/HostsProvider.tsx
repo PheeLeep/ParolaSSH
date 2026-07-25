@@ -10,6 +10,7 @@ import {
 } from "react";
 import * as api from "./api";
 import { errorMessage } from "./api";
+import * as terminals from "./terminalStore";
 import type {
   ConnectionInfo,
   HostDraft,
@@ -21,10 +22,8 @@ import type {
   SshHost,
 } from "./types";
 
-/** How often every saved host is checked for liveness. */
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
-/** A saved host plus whatever we currently know about reaching it. */
 export type HostRow = SshHost & { status: HostStatus };
 
 export type HostGroup = {
@@ -42,16 +41,13 @@ type ConnectOptions = {
 type HostsContextValue = {
   hosts: HostRow[];
   groups: HostGroup[];
-  /** Most recently connected first; never-connected hosts excluded. */
   recent: HostRow[];
   onlineCount: number;
   loading: boolean;
   error: string | null;
 
   getHost: (id: string) => HostRow | undefined;
-  /** Live session details, or undefined when not connected. */
   getConnection: (id: string) => ConnectionInfo | undefined;
-  /** Last heartbeat result, or undefined before the first one. */
   getHealth: (id: string) => HostHealth | undefined;
 
   refresh: () => Promise<void>;
@@ -73,12 +69,10 @@ const HostsContext = createContext<HostsContextValue | null>(null);
 export function HostsProvider({ children }: { children: ReactNode }) {
   const [hosts, setHosts] = useState<SshHost[]>([]);
   const [connections, setConnections] = useState<Record<string, ConnectionInfo>>({});
-  /** Last heartbeat result per host. Absent means we have not looked yet. */
   const [health, setHealth] = useState<Record<string, HostHealth>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Guards against a slow load overwriting a newer one.
   const requestId = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -95,8 +89,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
       if (id !== requestId.current) return;
       setHosts(nextHosts);
 
-      // A session the Rust side has dropped (an immediate reboot, say) must
-      // not linger in the map as a connected host.
       setConnections((previous) => {
         const next: Record<string, ConnectionInfo> = {};
         for (const hostId of connectedIds) {
@@ -125,8 +117,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  // `remove` needs the current connections without re-creating itself every
-  // time one changes, which would remount every row's handlers.
   const connectionsRef = useRef(connections);
   useEffect(() => {
     connectionsRef.current = connections;
@@ -134,9 +124,8 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
   const remove = useCallback(
     async (id: string) => {
-      // Drop the session first: a deleted host with a live connection would
-      // be unreachable from the UI but still holding a socket open.
       if (connectionsRef.current[id]) {
+        await terminals.closeHost(id).catch(() => undefined);
         await api.disconnectHost(id).catch(() => undefined);
       }
       await api.deleteHost(id);
@@ -150,16 +139,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     return api.probeHost(hostname, port);
   }, []);
 
-  /**
-   * Poll every host on a timer so the list reflects reality without anyone
-   * clicking anything.
-   *
-   * The Rust side drops sessions that fail their liveness check, so a host
-   * that rebooted out from under us stops claiming to be connected here too.
-   * The timer pauses while the window is hidden: a backgrounded app has no
-   * reason to keep opening sockets, and resuming runs one immediately so the
-   * list is never stale by more than a moment after you come back.
-   */
   useEffect(() => {
     if (hosts.length === 0) return;
 
@@ -174,7 +153,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
         setHealth(Object.fromEntries(results.map((entry) => [entry.hostId, entry])));
 
-        // Reap sessions the Rust side just dropped.
         const stillConnected = new Set(
           results.filter((entry) => entry.connected).map((entry) => entry.hostId),
         );
@@ -182,14 +160,14 @@ export function HostsProvider({ children }: { children: ReactNode }) {
           const next: Record<string, ConnectionInfo> = {};
           for (const [hostId, info] of Object.entries(previous)) {
             if (stillConnected.has(hostId)) next[hostId] = info;
+            else void terminals.closeHost(hostId);
           }
           return Object.keys(next).length === Object.keys(previous).length
             ? previous
             : next;
         });
       } catch {
-        // A failed heartbeat is not worth an error banner — the next one is
-        // thirty seconds away, and the statuses simply go stale until then.
+
       }
     };
 
@@ -214,8 +192,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
       setConnections((previous) => ({ ...previous, [id]: info }));
       return info;
     } catch (caught) {
-      // A failed connection is evidence about the host, so record it rather
-      // than leaving the row sitting at "unknown".
       setHealth((previous) => ({
         ...previous,
         [id]: { hostId: id, connected: false, reachable: false, latencyMs: null },
@@ -225,6 +201,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const disconnect = useCallback(async (id: string) => {
+    await terminals.closeHost(id);
     await api.disconnectHost(id);
     setConnections(({ [id]: _removed, ...rest }) => rest);
   }, []);
@@ -233,11 +210,10 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     async (id: string, request: PowerRequest, password?: string | null) => {
       const outcome = await api.powerHost(id, request, password);
 
-      // An immediate shutdown or reboot takes the session with it, so the
-      // Rust side has already dropped it — mirror that here.
       const terminal =
         outcome.succeeded && request.action !== "cancel" && request.delayMinutes === 0;
       if (terminal) {
+        void terminals.closeHost(id);
         setConnections(({ [id]: _removed, ...rest }) => rest);
         setHealth((previous) => ({
           ...previous,
@@ -311,14 +287,6 @@ export function HostsProvider({ children }: { children: ReactNode }) {
   return <HostsContext.Provider value={value}>{children}</HostsContext.Provider>;
 }
 
-/**
- * Online means the machine answered, not that we are logged in.
- *
- * A host we have a session with is obviously online; so is one whose port
- * accepted a heartbeat. Only a host that was actually checked and failed
- * earns "offline" — claiming a machine is down when nobody looked is worse
- * than admitting we do not know.
- */
 function statusFor(
   id: string,
   connections: Record<string, ConnectionInfo>,

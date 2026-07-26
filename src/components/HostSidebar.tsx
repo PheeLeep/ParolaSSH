@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Collapse, Form, InputGroup } from "react-bootstrap";
 import {
   AppWindow,
@@ -10,20 +10,14 @@ import {
   Server,
   Settings,
   Shield,
-  type LucideIcon,
 } from "lucide-react";
 import { useHosts } from "../features/hosts/HostsProvider";
 import { StatusDot } from "../features/hosts/StatusIndicator";
+import * as terminals from "../features/hosts/terminalStore";
 import { AnimatedValue } from "./AnimatedValue";
 import { useKeys } from "../features/keys/KeysProvider";
 import type { SshHost } from "../features/hosts/types";
 import type { Navigate, View } from "../navigation";
-
-/** Footer entries that are still placeholders. `Keys`, `Settings` and
- *  `About` have their own buttons below now that they are implemented. */
-const FOOTER_ITEMS: { label: string; Icon: LucideIcon }[] = [
-  { label: "Sessions", Icon: AppWindow },
-];
 
 type HostSidebarProps = {
   view: View;
@@ -34,6 +28,11 @@ type HostSidebarProps = {
 export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   const { hosts, groups, connectedCount } = useHosts();
   const { report } = useKeys();
+
+  // Shells open and close from the terminal pane, which lives elsewhere in
+  // the tree — subscribe to the store rather than lifting its state.
+  useSyncExternalStore(terminals.subscribe, terminals.getVersion);
+  const sessionCount = terminals.liveCount();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -198,13 +197,19 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
           <span className="sidebar-item__label">VPN</span>
         </button>
 
-        {FOOTER_ITEMS.map((item) => (
-          <button key={item.label} type="button" className="sidebar-item" disabled>
-            <item.Icon aria-hidden="true" />
-            <span className="sidebar-item__label">{item.label}</span>
-            <span className="sidebar-item__meta">Soon</span>
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`sidebar-item${view.kind === "sessions" ? " is-active" : ""}`}
+          onClick={() => onNavigate({ kind: "sessions" })}
+        >
+          <AppWindow aria-hidden="true" />
+          <span className="sidebar-item__label">Sessions</span>
+          {sessionCount > 0 && (
+            <span className="sidebar-item__meta">
+              <AnimatedValue value={sessionCount} />
+            </span>
+          )}
+        </button>
 
         <button
           type="button"

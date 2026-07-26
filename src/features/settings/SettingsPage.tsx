@@ -1,11 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Card, Spinner } from "react-bootstrap";
+import { Button, Card, Form, Spinner } from "react-bootstrap";
 import {
   FolderOpen,
   Home,
   Info,
+  Minus,
   Monitor,
   Moon,
+  Plus,
   Server,
   Sparkles,
   Sun,
@@ -19,9 +21,15 @@ import { useTheme, type ThemeMode } from "../../theme/ThemeProvider";
 import * as keysApi from "../keys/api";
 import type { SshLocation } from "../keys/types";
 import {
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  TERMINAL_FONT_FAMILIES,
   readStartupView,
+  readTerminalFont,
   writeStartupView,
+  writeTerminalFont,
   type StartupView,
+  type TerminalFont,
 } from "./preferences";
 import type { Navigate } from "../../navigation";
 
@@ -29,6 +37,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { mode: motionMode, setMode: setMotionMode } = useMotion();
   const [startup, setStartup] = useState<StartupView>(readStartupView);
+  const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [sshDir, setSshDir] = useState<SshLocation | null>(null);
 
   useEffect(() => {
@@ -49,6 +58,13 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeStartup = (next: StartupView) => {
     setStartup(next);
     writeStartupView(next);
+  };
+
+  // Open terminals follow this immediately, except where a tab set its own.
+  const changeFont = (patch: Partial<TerminalFont>) => {
+    const next = { ...font, ...patch };
+    setFont(next);
+    writeTerminalFont(next);
   };
 
   return (
@@ -117,6 +133,67 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
                 { value: "hosts", label: "All hosts", Icon: Server },
               ]}
             />
+          </SettingRow>
+        </Card.Body>
+      </Card>
+
+      <Card className="mb-3">
+        <Card.Body>
+          <h2 className="section-title mb-1">Terminal</h2>
+          <p className="text-body-secondary small mb-3">
+            The default for every terminal. A single tab can be changed from
+            its own font button without touching this.
+          </p>
+
+          <SettingRow
+            title="Font family"
+            hint="Falls back to the system monospace if the face isn't installed."
+          >
+            <Form.Select
+              value={font.family}
+              onChange={(event) => changeFont({ family: event.target.value })}
+              aria-label="Terminal font family"
+              style={{ maxWidth: "14rem" }}
+            >
+              {TERMINAL_FONT_FAMILIES.every(
+                (option) => option.value !== font.family,
+              ) && <option value={font.family}>Custom</option>}
+              {TERMINAL_FONT_FAMILIES.map((option) => (
+                <option key={option.label} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Form.Select>
+          </SettingRow>
+
+          <SettingRow
+            title="Font size"
+            hint={`Between ${MIN_TERMINAL_FONT_SIZE} and ${MAX_TERMINAL_FONT_SIZE} pixels.`}
+            last
+          >
+            <div className="d-flex align-items-center gap-2">
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                disabled={font.size <= MIN_TERMINAL_FONT_SIZE}
+                onClick={() => changeFont({ size: font.size - 1 })}
+                aria-label="Smaller"
+              >
+                <Minus aria-hidden="true" />
+              </Button>
+              <span className="font-monospace" style={{ minWidth: "3rem" }}>
+                {font.size}px
+              </span>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                disabled={font.size >= MAX_TERMINAL_FONT_SIZE}
+                onClick={() => changeFont({ size: font.size + 1 })}
+                aria-label="Larger"
+              >
+                <Plus aria-hidden="true" />
+              </Button>
+            </div>
           </SettingRow>
         </Card.Body>
       </Card>

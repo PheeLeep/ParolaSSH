@@ -17,13 +17,18 @@ import type { Navigate } from "../../navigation";
 
 export function HostDetail({
   hostId,
+  feature: requested,
+  shellId,
   onNavigate,
 }: {
   hostId: string;
+  /** Set when the caller knows which tab it wants — Sessions links to one. */
+  feature?: HostFeature;
+  shellId?: number;
   onNavigate: Navigate;
 }) {
   const { getHost, getConnection, getHealth } = useHosts();
-  const [feature, setFeature] = useState<HostFeature>("overview");
+  const [feature, setFeature] = useState<HostFeature>(requested ?? "overview");
 
   const host = getHost(hostId);
   const connection = getConnection(hostId);
@@ -34,8 +39,9 @@ export function HostDetail({
   });
 
   // Landing on a different host starts at Overview rather than carrying the
-  // previous host's tab across — Services on one box says nothing about another.
-  useEffect(() => setFeature("overview"), [hostId]);
+  // previous host's tab across — Services on one box says nothing about
+  // another — unless the link asked for a tab by name.
+  useEffect(() => setFeature(requested ?? "overview"), [hostId, requested]);
 
   // Every tab except Overview needs a live session. Losing one mid-view would
   // otherwise leave you staring at a pane that cannot refresh.
@@ -64,9 +70,12 @@ export function HostDetail({
 
   const selected = HOST_FEATURES.find((entry) => entry.id === feature);
   const locked = Boolean(selected?.needsSession) && !connected;
+  // Only the terminal wants the whole window; the other panes read better
+  // at their natural height.
+  const fill = feature === "terminal" && !locked;
 
   return (
-    <div className="page">
+    <div className={`page${fill ? " page--fill" : ""}`}>
       <Button
         variant="link"
         size="sm"
@@ -126,7 +135,7 @@ export function HostDetail({
 
       <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
 
-      <div className="feature-pane">
+      <div className={`feature-pane${fill ? " feature-pane--fill" : ""}`}>
         {locked ? (
           <Alert variant="secondary" className="mb-0">
             Connect to this host to use {selected?.label}. It reads from the live
@@ -139,7 +148,7 @@ export function HostDetail({
             health={getHealth(hostId)}
           />
         ) : feature === "terminal" ? (
-          <TerminalTabs hostId={hostId} />
+          <TerminalTabs hostId={hostId} focusShellId={shellId} />
         ) : feature === "services" ? (
           <ServicesPane hostId={hostId} />
         ) : feature === "performance" ? (

@@ -4,6 +4,12 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "./api";
+import {
+  clampFontSize,
+  readTerminalFont,
+  subscribeTerminalFont,
+  type TerminalFont,
+} from "../settings/preferences";
 
 const THEMES = {
   dark: {
@@ -32,6 +38,10 @@ export type TerminalEntry = {
   fit: FitAddon;
   node: HTMLDivElement;
   unlisteners: UnlistenFn[];
+  /** Set per tab; whatever is absent follows the global default. */
+  fontOverride: Partial<TerminalFont>;
+  /** Refits against the mount, while this terminal is the attached one. */
+  refit: (() => void) | null;
 };
 
 const entries = new Map<number, TerminalEntry>();
@@ -69,16 +79,31 @@ export function countForHost(hostId: string): number {
   return forHost(hostId).length;
 }
 
+/** Every open terminal, across hosts — what the Sessions view lists. */
+export function all(): TerminalEntry[] {
+  return [...entries.values()].sort((a, b) => a.shellId - b.shellId);
+}
+
+/** Shells still running remotely. An exited tab stays until it is closed,
+ *  and counting those would report sessions we no longer hold. */
+export function liveCount(): number {
+  let count = 0;
+  for (const entry of entries.values()) {
+    if (!entry.exited) count += 1;
+  }
+  return count;
+}
+
 
 export async function open(
   hostId: string,
   theme: "light" | "dark",
   title?: string,
 ): Promise<number> {
+  const font = readTerminalFont();
   const terminal = new Terminal({
-    fontFamily:
-      'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace',
-    fontSize: 13,
+    fontFamily: font.family,
+    fontSize: font.size,
     lineHeight: 1.2,
     cursorBlink: true,
     scrollback: SCROLLBACK,
@@ -141,6 +166,8 @@ export async function open(
     fit,
     node,
     unlisteners,
+    fontOverride: {},
+    refit: null,
   });
 
   emit();
@@ -167,13 +194,65 @@ export function attach(shellId: number, mount: HTMLElement): () => void {
   
   const observer = new ResizeObserver(resize);
   observer.observe(mount);
+  entry.refit = resize;
   resize();
 
   return () => {
     observer.disconnect();
+    entry.refit = null;
     entry.node.remove();
   };
 }
+
+/** What this tab actually renders with: its own overrides over the global. */
+export function fontFor(shellId: number): TerminalFont {
+  const global = readTerminalFont();
+  const entry = entries.get(shellId);
+  return { ...global, ...entry?.fontOverride };
+}
+
+export function hasFontOverride(shellId: number): boolean {
+  const entry = entries.get(shellId);
+  return Boolean(entry && Object.keys(entry.fontOverride).length > 0);
+}
+
+function applyFont(entry: TerminalEntry) {
+  const { family, size } = { ...readTerminalFont(), ...entry.fontOverride };
+  entry.terminal.options.fontFamily = family;
+  entry.terminal.options.fontSize = size;
+  // Cell size changed, so the row/column count did too and the remote pty has
+  // to be told, or output wraps against the old geometry. A frame late,
+  // because xterm re-measures the cell before it can be fitted against.
+  requestAnimationFrame(() => entry.refit?.());
+}
+
+/** `patch` of null drops the override and puts the tab back on the global. */
+export function setFontOverride(
+  shellId: number,
+  patch: Partial<TerminalFont> | null,
+): void {
+  const entry = entries.get(shellId);
+  if (!entry) return;
+
+  entry.fontOverride = patch
+    ? {
+        ...entry.fontOverride,
+        ...patch,
+        ...(patch.size === undefined ? {} : { size: clampFontSize(patch.size) }),
+      }
+    : {};
+
+  applyFont(entry);
+  emit();
+}
+
+// Open terminals follow the global default. Re-applying is safe for the ones
+// holding an override too: only the fields they did not set move, so a tab
+// that pinned its size still picks up a new family.
+subscribeTerminalFont(() => {
+  for (const entry of entries.values()) applyFont(entry);
+  emit();
+});
 
 
 export function applyTheme(theme: "light" | "dark") {

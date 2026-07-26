@@ -1,8 +1,8 @@
-import { PanelLeft, Settings } from "lucide-react";
+import { PanelLeft } from "lucide-react";
 import { VpnIndicator } from "../features/vpn/VpnIndicator";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { isMacOS } from "../lib/appWindow";
-import { BrandMark } from "./BrandMark";
+import { AppIcon } from "./AppIcon";
 import { WindowControls } from "./WindowControls";
 import type { Navigate } from "../navigation";
 
@@ -41,17 +41,13 @@ export function AppNavbar({
 
       <span className="app-brand" data-tauri-drag-region>
         <span className="app-brand__mark" aria-hidden="true" data-tauri-drag-region>
-          <BrandMark data-tauri-drag-region />
+          <AppIcon variant="simple" data-tauri-drag-region />
         </span>
         ParolaSSH
       </span>
 
       <div className="ms-auto d-flex align-items-center gap-1">
         <VpnIndicator onOpen={() => onNavigate({ kind: "vpn" })} />
-        <button type="button" className="icon-button" disabled title="Settings">
-          <Settings aria-hidden="true" />
-          <span className="visually-hidden">Settings</span>
-        </button>
         <ThemeToggle />
       </div>
 

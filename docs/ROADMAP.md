@@ -20,6 +20,7 @@ Where things stand. Updated as work lands.
 | sudo password reuse | ✅ | Session holds the login password; overridable per action |
 | 30-second heartbeat | ✅ | Channel round trip when connected, TCP probe otherwise |
 | Interactive terminal (single) | ✅ | PTY, streamed, resizable, UTF-8 reassembly |
+| Sessions view | ✅ | Every open shell across hosts, live count in the sidebar, links straight to the tab |
 | Single instance | ✅ | Second launch focuses the existing window |
 
 ### Security fixes applied

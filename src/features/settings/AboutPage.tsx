@@ -9,7 +9,7 @@ import {
   User,
   type LucideIcon,
 } from "lucide-react";
-import { BrandMark } from "../../components/BrandMark";
+import { AppIcon } from "../../components/AppIcon";
 import { openExternal } from "../../lib/openExternal";
 import type { Navigate } from "../../navigation";
 
@@ -46,7 +46,7 @@ export function AboutPage({ onNavigate }: { onNavigate: Navigate }) {
 
       <header className="about-hero">
         <span className="about-hero__mark" aria-hidden="true">
-          <BrandMark />
+          <AppIcon />
         </span>
         <h1 className="about-hero__title">ParolaSSH</h1>
         <p className="about-hero__version">Version {__APP_VERSION__}</p>

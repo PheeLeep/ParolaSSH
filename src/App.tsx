@@ -10,6 +10,7 @@ import { AuditPage } from "./features/keys/AuditPage";
 import { KeyDetail } from "./features/keys/KeyDetail";
 import { KeysPage } from "./features/keys/KeysPage";
 import { KeysProvider } from "./features/keys/KeysProvider";
+import { SessionsPage } from "./features/sessions/SessionsPage";
 import { AboutPage } from "./features/settings/AboutPage";
 import { readStartupView } from "./features/settings/preferences";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -42,7 +43,11 @@ function App() {
 
 /** Remounts the pane on navigation so its enter animation replays. */
 function paneKey(view: View): string {
-  if (view.kind === "host") return `host:${view.hostId}`;
+  // The tab and shell are part of the key: arriving from Sessions on a host
+  // already on screen must still land on the shell it linked to.
+  if (view.kind === "host") {
+    return `host:${view.hostId}:${view.feature ?? ""}:${view.shellId ?? ""}`;
+  }
   if (view.kind === "key") return `key:${view.keyId}`;
   return view.kind;
 }
@@ -71,13 +76,19 @@ function AppShell() {
             {view.kind === "welcome" && <WelcomeScreen onNavigate={setView} />}
             {view.kind === "hosts" && <HostsPage onNavigate={setView} />}
             {view.kind === "host" && (
-              <HostDetail hostId={view.hostId} onNavigate={setView} />
+              <HostDetail
+                hostId={view.hostId}
+                feature={view.feature}
+                shellId={view.shellId}
+                onNavigate={setView}
+              />
             )}
             {view.kind === "keys" && <KeysPage onNavigate={setView} />}
             {view.kind === "key" && (
               <KeyDetail keyId={view.keyId} onNavigate={setView} />
             )}
             {view.kind === "audit" && <AuditPage onNavigate={setView} />}
+            {view.kind === "sessions" && <SessionsPage onNavigate={setView} />}
             {view.kind === "vpn" && <VpnPage onNavigate={setView} />}
             {view.kind === "settings" && <SettingsPage onNavigate={setView} />}
             {view.kind === "about" && <AboutPage onNavigate={setView} />}

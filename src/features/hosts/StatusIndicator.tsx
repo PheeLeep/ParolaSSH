@@ -1,8 +1,34 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, Unlink } from "lucide-react";
 import { STATUS_LABELS, type HostStatus } from "./types";
 
 /** How long the pulse class stays on — must outlast the CSS animation. */
 const PULSE_MS = 950;
+
+/** Whole chain only while a session is open; broken for every other state,
+ *  since "reachable" still means we are not on the box. */
+function Chain({ status }: { status: HostStatus }) {
+  const linked = status === "connected";
+  const Glyph = linked ? Link : Unlink;
+
+  return (
+    <Glyph
+      className={`status-mark__chain${linked ? " status-mark__chain--linked" : ""}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function Dot({ status, pulsing }: { status: HostStatus; pulsing: boolean }) {
+  return (
+    <span
+      className={`status-dot status-dot--${status}${
+        pulsing ? " status-dot--pulse" : ""
+      }`}
+      aria-hidden="true"
+    />
+  );
+}
 
 /**
  * True for one pulse cycle after `status` changes, false on first render.
@@ -31,7 +57,8 @@ function useStatusPulse(status: HostStatus) {
   return pulsing;
 }
 
-/** Small coloured node — online gets a soft halo so it reads at a glance. */
+/** Chain says whether we hold a session, dot says whether the host answered
+ *  its last probe. One mark could not carry both. */
 export function StatusDot({
   status,
   title,
@@ -40,16 +67,13 @@ export function StatusDot({
   title?: string;
 }) {
   const pulsing = useStatusPulse(status);
+  const label = title ?? STATUS_LABELS[status];
 
   return (
-    <span
-      className={`status-dot status-dot--${status}${
-        pulsing ? " status-dot--pulse" : ""
-      }`}
-      role="img"
-      aria-label={title ?? STATUS_LABELS[status]}
-      title={title ?? STATUS_LABELS[status]}
-    />
+    <span className="status-mark" role="img" aria-label={label} title={label}>
+      <Chain status={status} />
+      <Dot status={status} pulsing={pulsing} />
+    </span>
   );
 }
 
@@ -59,12 +83,10 @@ export function StatusBadge({ status }: { status: HostStatus }) {
 
   return (
     <span className={`status-badge status-badge--${status}`}>
-      <span
-        className={`status-dot status-dot--${status}${
-          pulsing ? " status-dot--pulse" : ""
-        }`}
-        aria-hidden="true"
-      />
+      <span className="status-mark" aria-hidden="true">
+        <Chain status={status} />
+        <Dot status={status} pulsing={pulsing} />
+      </span>
       {STATUS_LABELS[status]}
     </span>
   );

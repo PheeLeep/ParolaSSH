@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Alert, Card, ProgressBar, Spinner } from "react-bootstrap";
 import { Clock, Cpu, Gauge, MemoryStick } from "lucide-react";
 import { Segmented } from "../../../components/Segmented";
@@ -23,6 +23,11 @@ const DEFAULT_INTERVAL: IntervalChoice = "1";
 
 /** How many samples the sparklines keep. */
 const HISTORY_LIMIT = 60;
+
+/** Where the CPU trace turns red. Sustained load above this is the point at
+ *  which the box has nothing left to give, so it should read as a warning
+ *  without anyone having to look at the number. */
+const CPU_HOT_PERCENT = 80;
 
 export function PerformancePane({ hostId }: { hostId: string }) {
   const [metrics, setMetrics] = useState<HostMetrics | null>(null);
@@ -117,7 +122,11 @@ export function PerformancePane({ hostId }: { hostId: string }) {
           </div>
           <div className="stat-tile__sub">
             {cpuHistory.length > 1 ? (
-              <Sparkline values={cpuHistory} max={100} />
+              <Sparkline
+                values={cpuHistory}
+                max={100}
+                hot={cpuHistory[cpuHistory.length - 1] >= CPU_HOT_PERCENT}
+              />
             ) : (
               `sampled every ${interval} s`
             )}
@@ -206,37 +215,93 @@ export function PerformancePane({ hostId }: { hostId: string }) {
   );
 }
 
-/** A tiny inline history line — no chart library for four data series. */
-function Sparkline({ values, max }: { values: number[]; max: number }) {
-  const width = 120;
-  const height = 24;
-  const step = values.length > 1 ? width / (values.length - 1) : width;
-  const points = values
-    .map((value, index) => {
-      const x = index * step;
-      const y = height - (Math.min(value, max) / max) * height;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+/** A tiny inline history line — no chart library for four data series. The
+ *  box is stretched to the tile width, so the drawing runs in fixed viewBox
+ *  units and the stroke opts out of the scaling. */
+const SPARK_WIDTH = 120;
+const SPARK_HEIGHT = 28;
+/** Keeps the stroke off the edges, where half of it would be clipped. */
+const SPARK_PAD = 2;
+
+type Point = { x: number; y: number };
+
+function Sparkline({
+  values,
+  max,
+  hot,
+}: {
+  values: number[];
+  max: number;
+  hot: boolean;
+}) {
+  // Colons out of React's id: this goes in a `url(#…)` reference.
+  const gradientId = `spark-${useId().replace(/:/g, "")}`;
+
+  const step = SPARK_WIDTH / (values.length - 1);
+  const span = SPARK_HEIGHT - SPARK_PAD * 2;
+  const points: Point[] = values.map((value, index) => ({
+    x: index * step,
+    y: SPARK_PAD + (1 - clamp(value, 0, max) / max) * span,
+  }));
+
+  const line = smoothPath(points);
+  const last = points[points.length - 1];
+  const area = `${line} L ${last.x.toFixed(1)},${SPARK_HEIGHT} L ${points[0].x.toFixed(
+    1,
+  )},${SPARK_HEIGHT} Z`;
 
   return (
     <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
+      className={`sparkline${hot ? " is-hot" : ""}`}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
       role="img"
-      aria-label="CPU history"
+      aria-label={`CPU history, last ${values.length} samples`}
     >
-      <polyline
-        points={points}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop className="sparkline__stop--top" offset="0%" />
+          <stop className="sparkline__stop--bottom" offset="100%" />
+        </linearGradient>
+      </defs>
+      <path className="sparkline__area" d={area} fill={`url(#${gradientId})`} />
+      <path className="sparkline__line" d={line} />
     </svg>
   );
+}
+
+/**
+ * Catmull-Rom through every sample, emitted as cubic Béziers.
+ *
+ * Control points are clamped to the box: a spike between two low samples
+ * otherwise overshoots past 100 % and draws load the host never had.
+ */
+function smoothPath(points: Point[]): string {
+  const top = SPARK_PAD;
+  const bottom = SPARK_HEIGHT - SPARK_PAD;
+  let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const previous = points[i - 1] ?? points[i];
+    const start = points[i];
+    const end = points[i + 1];
+    const next = points[i + 2] ?? end;
+
+    const c1x = start.x + (end.x - previous.x) / 6;
+    const c1y = clamp(start.y + (end.y - previous.y) / 6, top, bottom);
+    const c2x = end.x - (next.x - start.x) / 6;
+    const c2y = clamp(end.y - (next.y - start.y) / 6, top, bottom);
+
+    d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(
+      1,
+    )} ${end.x.toFixed(1)},${end.y.toFixed(1)}`;
+  }
+
+  return d;
+}
+
+function clamp(value: number, low: number, high: number): number {
+  return Math.min(Math.max(value, low), high);
 }
 
 function formatKb(kb: number): string {

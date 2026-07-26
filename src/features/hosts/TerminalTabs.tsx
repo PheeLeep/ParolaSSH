@@ -5,15 +5,27 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Alert, Button, Spinner } from "react-bootstrap";
-import { Eraser, Plus, SquareTerminal, X } from "lucide-react";
+import { Alert, Button, Dropdown, Form, Spinner } from "react-bootstrap";
+import { Eraser, Minus, Plus, SquareTerminal, Type, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { errorMessage } from "./api";
 import * as store from "./terminalStore";
+import {
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  TERMINAL_FONT_FAMILIES,
+} from "../settings/preferences";
 import { useTheme } from "../../theme/ThemeProvider";
 
 
-export function TerminalTabs({ hostId }: { hostId: string }) {
+export function TerminalTabs({
+  hostId,
+  focusShellId,
+}: {
+  hostId: string;
+  /** A specific tab to open on, when Sessions linked to one shell. */
+  focusShellId?: number;
+}) {
   const { resolved } = useTheme();
 
   
@@ -53,16 +65,19 @@ export function TerminalTabs({ hostId }: { hostId: string }) {
   useEffect(() => {
     const existing = store.forHost(hostId);
     if (existing.length > 0) {
+      const linked = existing.find((entry) => entry.shellId === focusShellId);
       setActiveId((current) =>
-        current !== null && existing.some((entry) => entry.shellId === current)
-          ? current
-          : existing[0].shellId,
+        linked
+          ? linked.shellId
+          : current !== null && existing.some((entry) => entry.shellId === current)
+            ? current
+            : existing[0].shellId,
       );
       return;
     }
     setActiveId(null);
     void openRef.current();
-  }, [hostId]);
+  }, [hostId, focusShellId]);
 
   
   useEffect(() => {
@@ -93,54 +108,59 @@ export function TerminalTabs({ hostId }: { hostId: string }) {
 
   return (
     <div className="terminal-pane">
-      <div className="terminal-pane__tabs">
-        {terminals.map((entry) => (
-          <div
-            key={entry.shellId}
-            className={`shell-tab${entry.shellId === activeId ? " is-active" : ""}`}
+      <div className="terminal-pane__bar">
+        <div className="terminal-pane__tabs">
+          {terminals.map((entry) => (
+            <div
+              key={entry.shellId}
+              className={`shell-tab${entry.shellId === activeId ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                className="shell-tab__label"
+                onClick={() => setActiveId(entry.shellId)}
+                title={entry.exited ? "Session ended" : entry.title}
+              >
+                <SquareTerminal className="icon-sm" aria-hidden="true" />
+                {entry.title}
+                {entry.exited && (
+                  <span className="shell-tab__exit">
+                    {entry.exitCode === null ? "ended" : entry.exitCode}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="shell-tab__close"
+                onClick={() => void store.close(entry.shellId)}
+                aria-label={`Close ${entry.title}`}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            className="shell-tab__add"
+            onClick={() => void openTerminal()}
+            disabled={busy}
+            aria-label="New terminal"
+            title="New terminal on this host"
           >
-            <button
-              type="button"
-              className="shell-tab__label"
-              onClick={() => setActiveId(entry.shellId)}
-              title={entry.exited ? "Session ended" : entry.title}
-            >
-              <SquareTerminal className="icon-sm" aria-hidden="true" />
-              {entry.title}
-              {entry.exited && (
-                <span className="shell-tab__exit">
-                  {entry.exitCode === null ? "ended" : entry.exitCode}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="shell-tab__close"
-              onClick={() => void store.close(entry.shellId)}
-              aria-label={`Close ${entry.title}`}
-            >
-              <X aria-hidden="true" />
-            </button>
-          </div>
-        ))}
+            {busy ? (
+              <Spinner animation="border" size="sm" aria-hidden="true" />
+            ) : (
+              <Plus aria-hidden="true" />
+            )}
+          </button>
+        </div>
 
-        <button
-          type="button"
-          className="shell-tab__add"
-          onClick={() => void openTerminal()}
-          disabled={busy}
-          aria-label="New terminal"
-          title="New terminal on this host"
-        >
-          {busy ? (
-            <Spinner animation="border" size="sm" aria-hidden="true" />
-          ) : (
-            <Plus aria-hidden="true" />
-          )}
-        </button>
-
+        {/* Outside the scrolling strip: these stay put however many tabs are
+            open, and a dropdown here is not clipped by its overflow. */}
         {active && (
-          <div className="ms-auto d-flex gap-1 pe-1">
+          <div className="terminal-pane__actions">
+            <FontMenu shellId={active.shellId} />
             <Button
               size="sm"
               variant="outline-secondary"
@@ -173,5 +193,96 @@ export function TerminalTabs({ hostId }: { hostId: string }) {
         <div ref={mountRef} className="terminal-pane__screen" />
       )}
     </div>
+  );
+}
+
+/**
+ * Type controls for the active tab only. Settings holds the default every
+ * new terminal starts from; this is for the one session where you need the
+ * text bigger, without dragging every other terminal along.
+ */
+function FontMenu({ shellId }: { shellId: number }) {
+  useSyncExternalStore(store.subscribe, store.getVersion);
+
+  const font = store.fontFor(shellId);
+  const overridden = store.hasFontOverride(shellId);
+
+  const step = (delta: number) =>
+    store.setFontOverride(shellId, { size: font.size + delta });
+
+  return (
+    // "outside" so stepping the size a few times doesn't shut the menu.
+    <Dropdown align="end" autoClose="outside">
+      <Dropdown.Toggle
+        size="sm"
+        variant="outline-secondary"
+        className="no-caret"
+        title={
+          overridden
+            ? `Font — ${font.size}px, this terminal only`
+            : "Font for this terminal"
+        }
+        aria-label="Font for this terminal"
+      >
+        <Type aria-hidden="true" />
+      </Dropdown.Toggle>
+
+      <Dropdown.Menu className="terminal-font-menu">
+        <div className="terminal-font-menu__row">
+          <span className="terminal-font-menu__label">Size</span>
+          <div className="d-flex align-items-center gap-1">
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              disabled={font.size <= MIN_TERMINAL_FONT_SIZE}
+              onClick={() => step(-1)}
+              aria-label="Smaller"
+            >
+              <Minus aria-hidden="true" />
+            </Button>
+            <span className="terminal-font-menu__size">{font.size}px</span>
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              disabled={font.size >= MAX_TERMINAL_FONT_SIZE}
+              onClick={() => step(1)}
+              aria-label="Larger"
+            >
+              <Plus aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="terminal-font-menu__row">
+          <span className="terminal-font-menu__label">Family</span>
+          <Form.Select
+            size="sm"
+            value={font.family}
+            onChange={(event) =>
+              store.setFontOverride(shellId, { family: event.target.value })
+            }
+            aria-label="Font family for this terminal"
+          >
+            {TERMINAL_FONT_FAMILIES.every(
+              (option) => option.value !== font.family,
+            ) && <option value={font.family}>Custom</option>}
+            {TERMINAL_FONT_FAMILIES.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Form.Select>
+        </div>
+
+        <Dropdown.Divider />
+        <Dropdown.Item
+          as="button"
+          disabled={!overridden}
+          onClick={() => store.setFontOverride(shellId, null)}
+        >
+          Use the default
+        </Dropdown.Item>
+      </Dropdown.Menu>
+    </Dropdown>
   );
 }

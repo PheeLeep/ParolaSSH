@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
-import { KeyRound, Plug, ShieldQuestion, TriangleAlert } from "lucide-react";
+import { KeyRound, Plug, ShieldQuestion, TriangleAlert, Usb } from "lucide-react";
+import * as api from "./api";
 import { errorMessage, hostKeyFingerprint, isUnknownHostKey } from "./api";
 import { useHosts } from "./HostsProvider";
 import type { HostRow } from "./HostsProvider";
-import type { ConnectionInfo } from "./types";
+import type { ConnectionInfo, PassphraseNeed } from "./types";
 
 /**
  * Collects whatever the chosen auth method needs, then connects.
  *
- * Two things make this more than a password box:
+ * Three things make this more than a password box:
  *
  *  1. An unknown host key stops the connection *before* a password is sent,
  *     and this dialog is where the fingerprint is shown and accepted. A
@@ -17,6 +18,10 @@ import type { ConnectionInfo } from "./types";
  *  2. "Remember" means until the app quits, and says so — no keychain is
  *     involved, and implying otherwise would be a lie about where a password
  *     ended up.
+ *  3. A key connection asks the Rust side whether the key is actually locked
+ *     before showing a passphrase box. An unencrypted key has nothing to
+ *     unlock, so it connects as directly as agent auth does — a prompt that
+ *     can only be answered with Enter teaches people to dismiss prompts.
  */
 export function ConnectDialog({
   host,
@@ -35,18 +40,45 @@ export function ConnectDialog({
   const [error, setError] = useState<string | null>(null);
   /** Set when the server offered a key we have never seen. */
   const [unknownKey, setUnknownKey] = useState<string | null>(null);
+  /** What the key on disk needs, once the Rust side has looked at it. */
+  const [need, setNeed] = useState<PassphraseNeed | null>(null);
 
   useEffect(() => {
-    if (host) {
-      // Agent auth needs nothing from the user, so try straight away.
-      if (host.authMethod === "agent") void attempt(false);
+    if (!host) {
+      setPassword("");
+      setRemember(false);
+      setBusy(false);
+      setError(null);
+      setUnknownKey(null);
+      setNeed(null);
       return;
     }
-    setPassword("");
-    setRemember(false);
-    setBusy(false);
-    setError(null);
-    setUnknownKey(null);
+
+    // Agent auth needs nothing from the user, so try straight away.
+    if (host.authMethod === "agent") {
+      void attempt(false);
+      return;
+    }
+    if (host.authMethod !== "publickey") return;
+
+    let cancelled = false;
+    void (async () => {
+      let answer: PassphraseNeed;
+      try {
+        answer = await api.hostKeyPassphraseNeed(host.id);
+      } catch (caught) {
+        // Could not tell, so ask — the attempt will report the real problem.
+        answer = { kind: "unknown", detail: errorMessage(caught) };
+      }
+      if (cancelled) return;
+      setNeed(answer);
+      // Nothing to type: connect rather than showing an empty box.
+      if (answer.kind === "notNeeded") void attempt(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
     // `attempt` is stable for a given host; re-running on every render would
     // reconnect in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -55,7 +87,10 @@ export function ConnectDialog({
   if (!host) return null;
 
   const needsPassword = host.authMethod === "password";
-  const needsPassphrase = host.authMethod === "publickey";
+  // Only once we know the key is locked — and never for one that is not.
+  const needsPassphrase =
+    host.authMethod === "publickey" && need !== null && need.kind !== "notNeeded";
+  const checkingKey = host.authMethod === "publickey" && need === null;
 
   const attempt = async (trustUnknown: boolean) => {
     setBusy(true);
@@ -83,7 +118,7 @@ export function ConnectDialog({
     }
   };
 
-  const canSubmit = !busy && (!needsPassword || password.length > 0);
+  const canSubmit = !busy && !checkingKey && (!needsPassword || password.length > 0);
 
   return (
     <Modal show onHide={onClose} centered backdrop="static">
@@ -133,31 +168,67 @@ export function ConnectDialog({
           </Form.Group>
         )}
 
-        {needsPassphrase && (
+        {checkingKey && !error && (
+          <p className="text-body-secondary mb-0">
+            Checking whether <code>{host.keyPath ?? "the key"}</code> is
+            locked…
+          </p>
+        )}
+
+        {needsPassphrase && need && (
           <Form.Group className="mb-3">
             <Form.Label className="d-flex align-items-center gap-2">
-              <KeyRound className="icon-sm" aria-hidden="true" />
-              Key passphrase
+              {need.kind === "hardware" ? (
+                <Usb className="icon-sm" aria-hidden="true" />
+              ) : (
+                <KeyRound className="icon-sm" aria-hidden="true" />
+              )}
+              {need.kind === "hardware"
+                ? "Security key PIN or passphrase"
+                : "Key passphrase"}
             </Form.Label>
             <Form.Control
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && canSubmit) {
+                  void attempt(Boolean(unknownKey));
+                }
+              }}
               autoFocus
               autoComplete="off"
             />
             <Form.Text className="text-body-secondary">
-              Leave blank if <code>{host.keyPath ?? "the key"}</code> has no
-              passphrase.
+              {need.kind === "required" && (
+                <>
+                  <code>{host.keyPath ?? "The key"}</code> is encrypted — this
+                  unlocks it, and is never stored.
+                </>
+              )}
+              {need.kind === "hardware" && (
+                <>
+                  {need.algorithm} lives on a token: it may want a PIN here and
+                  a touch on the device itself.
+                </>
+              )}
+              {need.kind === "unknown" && (
+                <>{need.detail} Leave this blank if the key has no passphrase.</>
+              )}
             </Form.Text>
           </Form.Group>
         )}
 
-        {host.authMethod === "agent" && !error && !unknownKey && (
-          <p className="text-body-secondary mb-0">
-            Offering the keys held by your SSH agent…
-          </p>
-        )}
+        {(host.authMethod === "agent" ||
+          (host.authMethod === "publickey" && need?.kind === "notNeeded")) &&
+          !error &&
+          !unknownKey && (
+            <p className="text-body-secondary mb-0">
+              {host.authMethod === "agent"
+                ? "Offering the keys held by your SSH agent…"
+                : "The key is not encrypted, so there is nothing to unlock — connecting…"}
+            </p>
+          )}
 
         {needsPassword && (
           <>

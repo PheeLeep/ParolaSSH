@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Form, Spinner } from "react-bootstrap";
+import { Alert, Button, Card, Spinner } from "react-bootstrap";
 import {
   Bell,
   BellOff,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import * as api from "../api";
 import { errorMessage } from "../api";
+import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
 import { SeverityBadge } from "../../keys/KeyIndicators";
 import type {
@@ -29,35 +30,61 @@ const SEVERITY_RANK: Record<RemoteSeverity, number> = {
   info: 0,
 };
 
+/** The elevated half of the checks, shown in the prompt before it is agreed
+ *  to. A copy of `TIER1_PRIVILEGED_COMMAND` in `remote/audit.rs`: shortening
+ *  it for display would make the prompt describe something other than what
+ *  runs, which is the whole thing this app refuses to do. */
+const PRIVILEGED_COMMAND =
+  `sudo -S -p '' sh -c 'sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; ` +
+  `echo ---PAROLA:shadow---; awk -F: "(\\$2==\\"\\")" /etc/shadow | cut -d: -f1'`;
+
 export function AuditPane({ hostId }: { hostId: string }) {
   const { getConnection } = useHosts();
+  const requestElevation = useElevation();
   const connection = getConnection(hostId);
 
   const [report, setReport] = useState<RemoteAuditReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [password, setPassword] = useState("");
 
   // A report from one host must never linger under another's audit tab.
   useEffect(() => {
     setReport(null);
     setError(null);
-    setPassword("");
   }, [hostId]);
 
   const negotiated = connection?.negotiated ?? null;
 
-  // The sudo password field appears only when the retry could actually need
-  // typing: sudo wants a password and the session is not already holding one.
-  const mayNeedPassword =
-    connection?.elevation.kind === "sudoPassword" && !connection.hasLoginPassword;
+  // Two of the checks need root. Where there is a route to it, the user is
+  // asked before it is taken — and declining still runs the rest, because a
+  // partial report is worth more than none.
+  const canElevate =
+    connection !== undefined &&
+    connection.elevation.kind !== "unavailable" &&
+    connection.os !== "windows";
 
   const run = async () => {
+    let password: string | null = null;
+    let elevate = false;
+
+    if (canElevate) {
+      const grant = await requestElevation({
+        hostId,
+        summary: "Run posture checks as root",
+        command: PRIVILEGED_COMMAND,
+        unprivilegedLabel: "Run without root",
+      });
+      if (grant.outcome === "cancelled") return;
+      if (grant.outcome === "granted") {
+        elevate = true;
+        password = grant.password;
+      }
+    }
+
     setBusy(true);
     setError(null);
     try {
-      setReport(await api.remoteAudit(hostId, password || null));
-      setPassword("");
+      setReport(await api.remoteAudit(hostId, password, elevate));
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -150,21 +177,6 @@ export function AuditPane({ hostId }: { hostId: string }) {
               directories, and — where sudo allows — accounts with empty
               passwords. Nothing is changed on the host.
             </p>
-
-            {mayNeedPassword && (
-              <Form.Group className="mb-3" style={{ maxWidth: "20rem" }}>
-                <Form.Label className="small">
-                  sudo password for {connection?.user} (optional — some checks
-                  need root)
-                </Form.Label>
-                <Form.Control
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="off"
-                />
-              </Form.Group>
-            )}
 
             {error && <Alert variant="danger" className="text-prewrap">{error}</Alert>}
 

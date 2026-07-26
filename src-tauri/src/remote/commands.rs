@@ -21,6 +21,7 @@ use super::{shell, stream, OsFamily};
 use crate::app_paths::config_dir;
 use crate::hosts::model::{AuthMethod, HostRecord};
 use crate::hosts::store::{now_iso8601, HostStore};
+use crate::ssh::keys::{self, PassphraseNeed};
 use crate::ssh::{SshError, SshResult};
 
 /// What the UI knows about a live connection.
@@ -188,6 +189,34 @@ pub fn has_remembered_password(vault: State<'_, SecretVault>, host_id: String) -
 #[tauri::command]
 pub fn forget_password(vault: State<'_, SecretVault>, host_id: String) {
     vault.forget(&host_id);
+}
+
+/// What, if anything, the connect dialog must ask for before using this
+/// host's key.
+///
+/// Keyed by host id rather than by path so the webview cannot turn this into
+/// a way to probe arbitrary files: the only paths it reaches are ones already
+/// saved as a connection. The answer carries no key material.
+#[tauri::command]
+pub fn host_key_passphrase_need(app: AppHandle, host_id: String) -> SshResult<PassphraseNeed> {
+    let host = HostStore::read(&config_dir(&app)?)
+        .get(&host_id)
+        .cloned()
+        .ok_or_else(|| SshError::invalid("That connection no longer exists."))?;
+
+    if host.auth_method != AuthMethod::Publickey {
+        // No key file in play; whatever else this host needs is not a
+        // passphrase, and the dialog already knows what to ask for.
+        return Ok(PassphraseNeed::NotNeeded);
+    }
+
+    let Some(path) = host.key_path.as_deref() else {
+        return Ok(PassphraseNeed::Unknown {
+            detail: "This connection has no private key set. Edit it and choose one.".to_string(),
+        });
+    };
+
+    Ok(keys::passphrase_need(&crate::ssh::paths::expand_tilde(path)))
 }
 
 /// How this account will elevate, re-read from the live session.
@@ -651,6 +680,11 @@ pub async fn check_updates(
 ///
 /// `password` follows the sudo chain and is used only for the privileged
 /// retry when the unprivileged `sshd -T` was refused.
+///
+/// `elevate` is the user's answer to the elevation prompt. `false` means they
+/// declined it, and it is honoured literally: no sudo retry runs, not even
+/// with a password the session already holds. Declining has to mean declining,
+/// or the prompt is decoration.
 #[tauri::command]
 pub async fn remote_audit(
     app: AppHandle,
@@ -658,16 +692,18 @@ pub async fn remote_audit(
     vault: State<'_, SecretVault>,
     host_id: String,
     password: Option<String>,
+    elevate: bool,
 ) -> SshResult<super::audit::RemoteAuditReport> {
     use super::audit;
 
     let live = registry.require(&host_id)?;
+    let may_elevate = elevate && live.elevation.is_usable();
 
     let tier1 = if live.os.is_unix() {
         let unprivileged = live.session.exec(audit::TIER1_COMMAND, None).await?;
 
         let privileged = if audit::needs_privileged_retry(&unprivileged)
-            && live.elevation.is_usable()
+            && may_elevate
             && !matches!(live.elevation, Elevation::WindowsAdminToken)
         {
             let sudo_password: Option<Zeroizing<String>> = password
@@ -700,7 +736,7 @@ pub async fn remote_audit(
         Some(audit::gather_tier1(
             &unprivileged,
             privileged.as_ref(),
-            live.elevation.is_usable(),
+            may_elevate,
         ))
     } else {
         None
@@ -718,6 +754,18 @@ pub async fn remote_audit(
         tier1.as_ref(),
         &suppressed,
     );
+
+    // Declining the prompt is not the same as having no route to root, and
+    // the note must not tell someone to configure the sudo they already have.
+    // Only rewritten when something was actually skipped — an unprivileged
+    // run that answered everything leaves no note to correct.
+    if live.os.is_unix() && !elevate && live.elevation.is_usable() && report.tier1_note.is_some() {
+        report.tier1_note = Some(
+            "The checks that need root were skipped: elevation was declined for this \
+             run. Run the checks again and allow sudo to include them."
+                .to_string(),
+        );
+    }
 
     // A Windows host runs no tier-1 commands; say so instead of showing an
     // unexplained half-report.

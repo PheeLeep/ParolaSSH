@@ -11,6 +11,7 @@ import {
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { errorMessage } from "../api";
+import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
 import {
   SERVICE_STATE_LABELS,
@@ -346,13 +347,10 @@ function ServiceActionDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const { getConnection } = useHosts();
-  const connection = getConnection(hostId);
+  const requestElevation = useElevation();
 
   const [plan, setPlan] = useState<ServicePlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
-  const [password, setPassword] = useState("");
-  const [reuseLogin, setReuseLogin] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ServiceOutcome | null>(null);
@@ -360,8 +358,6 @@ function ServiceActionDialog({
   useEffect(() => {
     setPlan(null);
     setPlanError(null);
-    setPassword("");
-    setReuseLogin(true);
     setError(null);
     setOutcome(null);
     setBusy(false);
@@ -383,20 +379,24 @@ function ServiceActionDialog({
 
   if (!request) return null;
 
-  const needsPassword = plan?.needsPassword ?? false;
-  const canReuse = needsPassword && Boolean(connection?.hasLoginPassword);
-  const usingLogin = canReuse && reuseLogin;
-  const canRun =
-    !busy && plan !== null && (!needsPassword || usingLogin || password.length > 0);
+  const canRun = !busy && plan !== null;
 
   const run = async () => {
+    // Starting or stopping a unit is a privileged act even where sudo is
+    // configured to want no password, so the prompt is not conditional on the
+    // plan needing one — the shared prompt decides what to ask for.
+    const grant = await requestElevation({
+      hostId,
+      summary: `${verb[request.action]} ${request.unit}`,
+      command: plan?.command ?? null,
+      destructive: request.action !== "start",
+    });
+    if (grant.outcome !== "granted") return;
+
     setBusy(true);
     setError(null);
     try {
-      setOutcome(
-        await api.serviceAction(hostId, request, usingLogin ? null : password || null),
-      );
-      setPassword("");
+      setOutcome(await api.serviceAction(hostId, request, grant.password));
       onDone();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -455,35 +455,6 @@ function ServiceActionDialog({
               </>
             )}
 
-            {needsPassword && (
-              <div className="mt-3">
-                {canReuse && (
-                  <Form.Check
-                    type="checkbox"
-                    id="service-reuse-login"
-                    className="mb-2"
-                    label={`Use the password I logged in with as ${connection?.user}`}
-                    checked={reuseLogin}
-                    onChange={(event) => setReuseLogin(event.target.checked)}
-                  />
-                )}
-                {!usingLogin && (
-                  <Form.Group>
-                    <Form.Label>sudo password for {connection?.user}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      autoComplete="off"
-                    />
-                  </Form.Group>
-                )}
-                <Form.Text className="text-body-secondary">
-                  Sent to <code>sudo -S</code> over the existing encrypted channel,
-                  never as part of the command line.
-                </Form.Text>
-              </div>
-            )}
           </Modal.Body>
           <Modal.Footer>
             <Button variant="outline-secondary" onClick={onClose} disabled={busy}>

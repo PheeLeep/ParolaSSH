@@ -126,6 +126,7 @@ pub fn run() {
             remote::commands::connected_hosts,
             remote::commands::has_remembered_password,
             remote::commands::forget_password,
+            remote::commands::host_key_passphrase_need,
             remote::commands::privilege_report,
             remote::commands::preview_power,
             remote::commands::power_host,

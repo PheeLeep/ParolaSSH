@@ -132,6 +132,70 @@ pub struct OrphanPublicKey {
     pub comment: Option<String>,
 }
 
+/// What has to be asked of the user before a private key can be loaded.
+///
+/// A prompt that cannot possibly be answered is worse than no prompt: it
+/// teaches people to type a secret into any box that appears, and it slows
+/// down the common case of an unencrypted key for nothing. So the question is
+/// asked only when the file really is locked — every other variant here is a
+/// specific reason to ask rather than a cautious default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum PassphraseNeed {
+    /// Unencrypted on disk: it loads as-is, so there is nothing to prompt for.
+    NotNeeded,
+    /// Encrypted with a KDF — the passphrase is what decrypts it.
+    Required,
+    /// A FIDO/PIV key. The secret lives on the token, not in the file, so the
+    /// token may still want a PIN and a touch; the file half can be encrypted
+    /// as well. Both mean the prompt stays, worded for hardware.
+    Hardware { algorithm: String },
+    /// Unreadable or unparseable. Ask, and let the attempt report why.
+    Unknown { detail: String },
+}
+
+/// Decide whether loading `path` needs anything from the user.
+///
+/// Reads only what `inspect` already reads, and returns no key material — the
+/// answer is a shape for a dialog, not a description of the key.
+pub fn passphrase_need(path: &Path) -> PassphraseNeed {
+    let key = match inspect(path) {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            return PassphraseNeed::Unknown {
+                detail: format!("{} is not readable as a private key.", path.display()),
+            }
+        }
+        Err(error) => return PassphraseNeed::Unknown { detail: error.to_string() },
+    };
+
+    // An unparseable file tells us nothing about its encryption, and the
+    // algorithm it reports is a guess — check it before trusting either.
+    if let Some(detail) = key.parse_error {
+        return PassphraseNeed::Unknown { detail };
+    }
+
+    if key.algorithm_id.starts_with("sk-") {
+        return PassphraseNeed::Hardware { algorithm: key.algorithm };
+    }
+
+    if key.encrypted {
+        return PassphraseNeed::Required;
+    }
+
+    match key.kdf {
+        KdfInfo::None => PassphraseNeed::NotNeeded,
+        // Not flagged as encrypted, but the KDF is not one we recognise: that
+        // is a "we do not know", not a "no passphrase".
+        _ => PassphraseNeed::Unknown {
+            detail: format!(
+                "{} uses a key-derivation scheme this build does not recognise.",
+                path.display()
+            ),
+        },
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyScan {

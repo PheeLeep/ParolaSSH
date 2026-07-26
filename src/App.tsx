@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppNavbar } from "./components/AppNavbar";
 import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
+import { ElevationProvider } from "./features/hosts/ElevationProvider";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
 import { HostsProvider } from "./features/hosts/HostsProvider";
@@ -25,12 +26,14 @@ function App() {
     <ThemeProvider>
       <MotionProvider>
         <HostsProvider>
-          {/* Needs the host list, so it sits inside HostsProvider. */}
-          <VpnProvider>
-            <KeysProvider>
-              <AppShell />
-            </KeysProvider>
-          </VpnProvider>
+          {/* Both need the host list, so they sit inside HostsProvider. */}
+          <ElevationProvider>
+            <VpnProvider>
+              <KeysProvider>
+                <AppShell />
+              </KeysProvider>
+            </VpnProvider>
+          </ElevationProvider>
         </HostsProvider>
       </MotionProvider>
     </ThemeProvider>

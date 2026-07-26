@@ -1144,6 +1144,13 @@ code,
   background: var(--parola-hover);
 }
 
+/* The elevation prompt is raised from inside other modals (Power, Services),
+   so both it and its backdrop sit above Bootstrap's 1050/1055 defaults. The
+   modal itself carries the matching z-index inline. */
+.elevation-backdrop {
+  z-index: 1070;
+}
+
 /* Remote command output, and any message that arrives with newlines in it. */
 .command-output {
   max-height: 14rem;

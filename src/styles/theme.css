@@ -84,17 +84,22 @@
 [data-bs-theme="light"] {
   color-scheme: light;
 
-  --parola-accent: #7c3aed;
-  --parola-accent-hover: #6d28d9;
-  --parola-accent-active: #5b21b6;
-  --parola-accent-soft: rgba(124, 58, 237, 0.09);
+  /* The whole accent ramp sits on the app icon's hue — 258°, 90% saturation,
+     taken from the lantern glow (#8B5CF6). Only lightness moves between the
+     steps below, so hover and active read as the same colour pressed rather
+     than as a different one. Light mode runs one step deeper than the icon so
+     a solid fill doesn't vibrate against white. */
+  --parola-accent: #7b47f5;
+  --parola-accent-hover: #6227ec;
+  --parola-accent-active: #5017d3;
+  --parola-accent-soft: rgba(123, 71, 245, 0.09);
 
   --parola-app-bg: #f4f5f7;
   --parola-surface: #ffffff;
   --parola-sidebar-bg: #fafbfc;
   --parola-header-bg: rgba(255, 255, 255, 0.82);
   --parola-hover: rgba(15, 23, 42, 0.05);
-  --parola-selected: rgba(124, 58, 237, 0.1);
+  --parola-selected: rgba(123, 71, 245, 0.1);
   --parola-line: #e3e6ea;
   --parola-line-strong: #d3d8de;
 
@@ -141,10 +146,10 @@
   --bs-tertiary-bg: #f7f8fa;
   --bs-tertiary-bg-rgb: 247, 248, 250;
   --bs-primary: var(--parola-accent);
-  --bs-primary-rgb: 124, 58, 237;
+  --bs-primary-rgb: 123, 71, 245;
   --bs-link-color: var(--parola-accent);
   --bs-link-hover-color: var(--parola-accent-hover);
-  --bs-focus-ring-color: rgba(124, 58, 237, 0.25);
+  --bs-focus-ring-color: rgba(123, 71, 245, 0.25);
 }
 
 /* ---------------------------------------------- Dark -------- */
@@ -154,19 +159,20 @@
 [data-bs-theme="dark"] {
   color-scheme: dark;
 
-  /* Lifted off violet-600 so white button labels still clear 4.5:1 while
-     staying bright enough to read as the primary action on near-black. */
-  --parola-accent: #8450f2;
-  --parola-accent-hover: #9366f7;
-  --parola-accent-active: #6d28d9;
-  --parola-accent-soft: rgba(132, 80, 242, 0.16);
+  /* Dark mode lands on the icon's violet itself, a hair under it in lightness
+     (66% -> 65%) so white button labels still clear 4.5:1 — the icon is drawn
+     on near-black, so this is where app and icon should match exactly. */
+  --parola-accent: #8655f6;
+  --parola-accent-hover: #9064f7;
+  --parola-accent-active: #662ced;
+  --parola-accent-soft: rgba(134, 85, 246, 0.16);
 
   --parola-app-bg: #0a0c10;
   --parola-surface: #101319;
   --parola-sidebar-bg: #0c0e13;
   --parola-header-bg: rgba(12, 14, 19, 0.85);
   --parola-hover: rgba(255, 255, 255, 0.055);
-  --parola-selected: rgba(132, 80, 242, 0.18);
+  --parola-selected: rgba(134, 85, 246, 0.18);
   --parola-line: #1d222b;
   --parola-line-strong: #2a313d;
 
@@ -210,10 +216,12 @@
   --bs-tertiary-bg: #12161c;
   --bs-tertiary-bg-rgb: 18, 22, 28;
   --bs-primary: var(--parola-accent);
-  --bs-primary-rgb: 132, 80, 242;
-  --bs-link-color: #b4a0fb;
-  --bs-link-hover-color: #cbbdfd;
-  --bs-focus-ring-color: rgba(132, 80, 242, 0.35);
+  --bs-primary-rgb: 134, 85, 246;
+  /* Links go lighter than the accent to clear the near-black body; these are
+     the icon's own lantern (#A78BFA) and beam-highlight (#D6BCFF) tones. */
+  --bs-link-color: #b69dfb;
+  --bs-link-hover-color: #cfbefd;
+  --bs-focus-ring-color: rgba(134, 85, 246, 0.35);
 }
 
 /* --------------------------- Bootstrap component tuning ----- */

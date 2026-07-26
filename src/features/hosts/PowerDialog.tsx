@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import * as api from "./api";
 import { errorMessage } from "./api";
+import { useElevation } from "./ElevationProvider";
 import { useHosts } from "./HostsProvider";
 import type { HostRow } from "./HostsProvider";
 import {
@@ -40,6 +41,10 @@ const PRESETS = [
  * at all), and the literal command that will run. Both are shown before the
  * button is armed — a remote reboot is not something to trigger from a button
  * whose behaviour is a mystery.
+ *
+ * Elevating itself is not this dialog's job: pressing the button raises the
+ * shared elevation prompt, which is the one place that asks for a sudo
+ * password or consent to run as root.
  */
 export function PowerDialog({
   host,
@@ -49,15 +54,13 @@ export function PowerDialog({
   onClose: () => void;
 }) {
   const { getConnection, power } = useHosts();
+  const requestElevation = useElevation();
   const connection = host ? getConnection(host.id) : undefined;
 
   const [action, setAction] = useState<PowerAction>("reboot");
   const [minutes, setMinutes] = useState(0);
   const [force, setForce] = useState(false);
   const [message, setMessage] = useState("");
-  const [password, setPassword] = useState("");
-  /** Reuse the password this session logged in with, rather than retyping it. */
-  const [reuseLogin, setReuseLogin] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
 
   const [plan, setPlan] = useState<PowerPlan | null>(null);
@@ -79,8 +82,6 @@ export function PowerDialog({
     setMinutes(0);
     setForce(false);
     setMessage("");
-    setPassword("");
-    setReuseLogin(true);
     setConfirmed(false);
     setPlan(null);
     setPlanError(null);
@@ -137,31 +138,25 @@ export function PowerDialog({
 
   const { elevation, elevationExplanation, os, osDetail, user } = connection;
   const blocked = elevation.kind === "unavailable";
-  const needsPassword = plan?.needsPassword ?? elevation.kind === "sudoPassword";
   const destructive = action !== "cancel";
 
-  // The session already holds the login password on a password-auth host, and
-  // on Unix it is nearly always the same string sudo wants. Offering it beats
-  // making people type it twice — but it stays overridable, because sudo may
-  // be configured to run as a different account.
-  const canReuse = needsPassword && connection.hasLoginPassword;
-  const usingLogin = canReuse && reuseLogin;
-
-  const canRun =
-    !busy &&
-    !blocked &&
-    plan !== null &&
-    (!destructive || confirmed) &&
-    (!needsPassword || usingLogin || password.length > 0);
+  const canRun = !busy && !blocked && plan !== null && (!destructive || confirmed);
 
   const run = async () => {
+    // Every power action runs elevated, so the prompt is unconditional: what
+    // it asks for depends on how this host elevates, not on whether it does.
+    const grant = await requestElevation({
+      hostId: host.id,
+      summary: plan?.summary ?? "Power action",
+      command: plan?.command ?? null,
+      destructive,
+    });
+    if (grant.outcome !== "granted") return;
+
     setBusy(true);
     setError(null);
     try {
-      // Sending null tells the Rust side to fall back to the session's own
-      // login password; it never travels back to the webview to get here.
-      setOutcome(await power(host.id, request, usingLogin ? null : password || null));
-      setPassword("");
+      setOutcome(await power(host.id, request, grant.password));
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -348,40 +343,6 @@ export function PowerDialog({
                 checked={force}
                 onChange={(event) => setForce(event.target.checked)}
               />
-            )}
-
-            {needsPassword && (
-              <div className="mb-3">
-                {canReuse && (
-                  <Form.Check
-                    type="checkbox"
-                    id="power-reuse-login"
-                    className="mb-2"
-                    label={`Use the password I logged in with as ${user}`}
-                    checked={reuseLogin}
-                    onChange={(event) => setReuseLogin(event.target.checked)}
-                  />
-                )}
-
-                {!usingLogin && (
-                  <Form.Group>
-                    <Form.Label>sudo password for {user}</Form.Label>
-                    <Form.Control
-                      type="password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      autoComplete="off"
-                      autoFocus={canReuse}
-                    />
-                  </Form.Group>
-                )}
-
-                <Form.Text className="text-body-secondary">
-                  Sent to <code>sudo -S</code> over the existing encrypted
-                  channel, never as part of the command line — so it stays out
-                  of the remote process list.
-                </Form.Text>
-              </div>
             )}
 
             {/* The literal command. */}

@@ -11,6 +11,7 @@ import type {
   HostDraft,
   HostHealth,
   HostMetrics,
+  PassphraseNeed,
   PowerOutcome,
   PowerPlan,
   PowerRequest,
@@ -81,6 +82,14 @@ export const hasRememberedPassword = (hostId: string) =>
 
 export const forgetPassword = (hostId: string) =>
   invoke<void>("forget_password", { hostId });
+
+/**
+ * Whether this host's key is locked, so the dialog can skip a prompt that
+ * would have nothing to unlock. Returns no key material — only the shape of
+ * the question, or that there is none.
+ */
+export const hostKeyPassphraseNeed = (hostId: string) =>
+  invoke<PassphraseNeed>("host_key_passphrase_need", { hostId });
 
 /**
  * Check every saved host: are they up, and are our sessions still good?
@@ -242,9 +251,23 @@ export const checkUpdates = (hostId: string) =>
 
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 
-/** Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only. */
-export const remoteAudit = (hostId: string, password?: string | null) =>
-  invoke<RemoteAuditReport>("remote_audit", { hostId, password: password ?? null });
+/**
+ * Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only.
+ *
+ * `elevate` is the answer to the elevation prompt: false skips the privileged
+ * retry outright, so declining is honoured even on a session that is holding
+ * a usable password.
+ */
+export const remoteAudit = (
+  hostId: string,
+  password?: string | null,
+  elevate = true,
+) =>
+  invoke<RemoteAuditReport>("remote_audit", {
+    hostId,
+    password: password ?? null,
+    elevate,
+  });
 
 export const setRemoteFindingSuppressed = (
   hostId: string,

@@ -45,7 +45,15 @@ sends a credential you did not choose.
 | Performance | CPU, memory, load, disks; user-set 1–30 s sampling |
 | Updates | Pending apt/dnf packages; Windows hotfix history |
 | Audit | Handshake crypto, `sshd -T` posture, key permissions — with per-host dismissals |
-| Files | SFTP browser — upload, download, delete, new folder; symlinks shown but never followed |
+| Files | SFTP browser — upload, download (files *and* folders), rename, move, copy, delete; symlinks shown but never followed |
+
+**File operations**
+- Rename and move are one SFTP request; neither will ever land on an existing name
+- Copy runs `cp -a` on the server, so a 10 GB duplicate never crosses the network
+- Cut / copy / paste across folders, with the destination checked before anything runs
+- Folder download walks the tree and queues each file, mirroring the layout locally
+- A name already taken prompts to **overwrite, keep both, or skip** — with apply-to-all,
+  so a recursive transfer asks once rather than fifty times
 
 **File transfers**
 - One queue for every host: what gets rationed is your uplink, not any one server

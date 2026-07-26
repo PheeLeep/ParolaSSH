@@ -80,7 +80,7 @@ export function HostDetail({
       <Button
         variant="link"
         size="sm"
-        className="p-0 mb-3 text-decoration-none text-body-secondary"
+        className="page-back p-0 mb-3 text-decoration-none text-body-secondary"
         onClick={() => onNavigate({ kind: "hosts" })}
       >
         <ChevronLeft className="icon-sm" aria-hidden="true" />

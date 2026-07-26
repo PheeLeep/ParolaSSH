@@ -178,16 +178,20 @@ function RecentHostCard({
           <History className="icon-sm" aria-hidden="true" />
           {formatRelative(host.lastConnected)}
         </small>
-        <Button
-          size="sm"
-          variant="primary"
-          onClick={(event) => {
-            event.stopPropagation();
-            onConnect();
-          }}
-        >
-          Connect
-        </Button>
+        {
+          host.status !== "connected" && (
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={(event) => {
+                event.stopPropagation();
+                onConnect();
+              }}
+            >
+              Connect
+            </Button>
+          )
+        }
       </div>
     </div>
   );

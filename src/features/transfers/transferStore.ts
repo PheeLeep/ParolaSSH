@@ -15,6 +15,7 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import * as api from "../hosts/api";
+import * as toast from "../../lib/toast";
 import type {
   TransferPriority,
   TransferRecord,
@@ -75,12 +76,42 @@ export async function refresh(): Promise<void> {
       api.listTransfers(),
       api.transferSummary(),
     ]);
+    announceSettled(records, next);
     records = next;
     summary = nextSummary;
     emit();
   } catch {
     // The backend is the source of truth; a failed read just leaves the last
     // known list on screen rather than blanking it.
+  }
+}
+
+/** Toast transfers that finished since the last read.
+ *
+ *  The whole point of a background queue is that you stop watching it, so an
+ *  outcome nobody is looking at still has to reach the user. Only transitions
+ *  are announced — re-reading the same finished row must not toast twice.
+ */
+function announceSettled(before: TransferRecord[], after: TransferRecord[]) {
+  if (before.length === 0) return; // First load is history, not news.
+
+  const previous = new Map(before.map((record) => [record.id, record.state]));
+
+  for (const record of after) {
+    const was = previous.get(record.id);
+    if (was === undefined || was === record.state) continue;
+    if (was !== "queued" && was !== "running") continue;
+
+    const direction = record.direction === "download" ? "Downloaded" : "Uploaded";
+    if (record.state === "done") {
+      toast.success(`${direction} ${record.name}`, record.hostLabel);
+    } else if (record.state === "failed") {
+      toast.error(
+        `${record.direction === "download" ? "Download" : "Upload"} failed: ${record.name}`,
+        record.error ?? undefined,
+      );
+    }
+    // A cancellation was the user's own doing and needs no announcement.
   }
 }
 

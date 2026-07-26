@@ -117,7 +117,7 @@ export function createKeyColumns(actions: KeyRowActions): ColumnDef<SshKey, any>
       id: "actions",
       header: "",
       enableHiding: false,
-      meta: { width: "9.5rem", cellClassName: "text-end" },
+      meta: { width: "9.5rem", sticky: "right", cellClassName: "text-end" },
       cell: (info) => {
         const key = info.row.original;
         const worst = actions.worstSeverity(key);
@@ -143,7 +143,9 @@ export function createKeyColumns(actions: KeyRowActions): ColumnDef<SshKey, any>
               >
                 <Ellipsis aria-hidden="true" />
               </Dropdown.Toggle>
-              <Dropdown.Menu>
+              {/* Fixed strategy keeps the open menu from adding to the table's
+                  scrollable overflow. */}
+              <Dropdown.Menu popperConfig={{ strategy: "fixed" }}>
                 <Dropdown.Item
                   className="text-danger"
                   onClick={() => actions.onDelete(key)}

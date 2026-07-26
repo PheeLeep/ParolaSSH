@@ -108,7 +108,7 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<HostRow, a
       id: "actions",
       header: "",
       enableHiding: false,
-      meta: { width: "8.5rem", cellClassName: "text-end" },
+      meta: { width: "8.5rem", sticky: "right", cellClassName: "text-end" },
       cell: (info) => {
         const host = info.row.original;
         const connected = host.status === "connected";
@@ -141,7 +141,10 @@ export function createHostColumns(actions: HostRowActions): ColumnDef<HostRow, a
               >
                 <Ellipsis aria-hidden="true" />
               </Dropdown.Toggle>
-              <Dropdown.Menu>
+              {/* Fixed strategy: an absolutely-placed menu counts towards the
+                  scroll container's overflow and makes the table sprout
+                  scrollbars the moment it opens. */}
+              <Dropdown.Menu popperConfig={{ strategy: "fixed" }}>
                 {/* Both need a live session, so they say why they are off. */}
                 <Dropdown.Item
                   disabled={!connected}

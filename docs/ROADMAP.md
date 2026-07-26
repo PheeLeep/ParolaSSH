@@ -52,7 +52,7 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 | Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
 | Updates | ✅ | apt/dnf pending list; Windows shows hotfix history when PSWindowsUpdate is absent |
 | Audit | ✅ | Tiers 0–1 built, tier 2 is detect-only; details below |
-| Files | ✅ | SFTP browse, upload, download, delete; symlinks listed but never followed |
+| Files | ✅ | SFTP browse, transfer, rename/move/copy, delete; symlinks listed but never followed |
 
 ### Files — the two rules ✅
 
@@ -67,6 +67,24 @@ elevation to offer. A denied path says so and names the fix (reconnect as a
 user with access) rather than showing a prompt that cannot work. Note that the
 denial only surfaces on *open*: `stat` needs no read permission, so
 `/etc/shadow` stats fine and fails when its bytes are asked for.
+
+### Files — operations ✅
+
+Rename and move are the same SFTP request, and it is deliberately allowed to
+fail: the protocol's rename refuses an existing destination, so "move" can never
+silently destroy a file the user did not name. Copy has no SFTP equivalent, so it
+runs `cp -a` (or `Copy-Item -Recurse`) on the server — the one file operation
+needing a shell, quoted with the same helper as the power and service commands,
+and the only one that keeps a 10 GB duplicate off the wire entirely.
+
+Folder download walks the tree first and queues one transfer per regular file,
+so progress, priority and cancellation stay per-file. Symlinks and device files
+are skipped and counted; empty directories are not recreated, since only files
+are transferred.
+
+A destination that is already taken prompts for overwrite / keep both / skip,
+with an apply-to-all for recursive transfers. This was not always so: uploads
+opened with `CREATE|TRUNCATE` and silently replaced whatever was there.
 
 ### Transfers — one queue for every host ✅
 

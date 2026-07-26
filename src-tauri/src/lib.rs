@@ -158,6 +158,11 @@ pub fn run() {
             remote::commands::remote_home_dir,
             remote::commands::create_remote_dir,
             remote::commands::delete_remote_entry,
+            remote::commands::rename_remote_entry,
+            remote::commands::copy_remote_entry,
+            remote::commands::list_remote_tree,
+            remote::commands::local_conflicts,
+            remote::commands::remote_conflicts,
             // Transfers — one queue across every host
             remote::commands::enqueue_download,
             remote::commands::enqueue_upload,

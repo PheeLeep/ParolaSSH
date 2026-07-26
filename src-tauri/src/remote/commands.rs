@@ -909,8 +909,213 @@ pub async fn delete_remote_entry(
     result.map_err(|error| sftp::explain_error(&format!("Could not delete {path}"), &error.to_string()))
 }
 
-/// Queue a download. Returns the transfer id; the file arrives via events.
+/// Rename an entry, or move it — the same SFTP request either way, the only
+/// difference being whether the destination's parent is the one it is in.
+///
+/// Refuses to act on a symlink, and refuses to land on anything that already
+/// exists: SFTP's rename does not overwrite, and asking it to would make "move"
+/// a way to destroy a file you did not name.
 #[tauri::command]
+pub async fn rename_remote_entry(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    from: String,
+    to: String,
+) -> SshResult<String> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    let from = sftp::normalize(&from);
+    let to = sftp::normalize(&to);
+    if from == to {
+        return Ok(to);
+    }
+
+    let source = sftp
+        .symlink_metadata(from.clone())
+        .await
+        .map_err(|error| sftp::explain_error(&format!("Could not read {from}"), &error.to_string()))?;
+    if let Some(refusal) = sftp::refuse_unless_regular(sftp::EntryKind::from(source.file_type()), &from) {
+        return Err(refusal);
+    }
+
+    if sftp.try_exists(to.clone()).await.unwrap_or(false) {
+        return Err(SshError::invalid(format!(
+            "{to} already exists. Rename or remove it first."
+        )));
+    }
+
+    sftp.rename(from.clone(), to.clone())
+        .await
+        .map_err(|error| sftp::explain_error(&format!("Could not move {from}"), &error.to_string()))?;
+
+    Ok(to)
+}
+
+/// Copy an entry to another path on the *same* host.
+///
+/// Done by the server with `cp`/`Copy-Item` rather than by pulling the bytes
+/// down and pushing them back: a copy that never crosses the network is both
+/// far faster and does not depend on this machine staying awake. SFTP has no
+/// copy request of its own, so this is the one file operation that needs a
+/// shell — hence the quoting, which is the same helper the power and service
+/// commands use.
+#[tauri::command]
+pub async fn copy_remote_entry(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    from: String,
+    to: String,
+) -> SshResult<String> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    let from = sftp::normalize(&from);
+    let to = sftp::normalize(&to);
+    if from == to {
+        return Err(SshError::invalid("A file cannot be copied over itself."));
+    }
+
+    let source = sftp
+        .symlink_metadata(from.clone())
+        .await
+        .map_err(|error| sftp::explain_error(&format!("Could not read {from}"), &error.to_string()))?;
+    let kind = sftp::EntryKind::from(source.file_type());
+    if let Some(refusal) = sftp::refuse_unless_regular(kind, &from) {
+        return Err(refusal);
+    }
+
+    // Copying a folder into itself would recurse until the disk filled.
+    if kind == sftp::EntryKind::Dir && to.starts_with(&format!("{from}/")) {
+        return Err(SshError::invalid(
+            "A folder cannot be copied into itself.",
+        ));
+    }
+
+    if sftp.try_exists(to.clone()).await.unwrap_or(false) {
+        return Err(SshError::invalid(format!(
+            "{to} already exists. Rename or remove it first."
+        )));
+    }
+
+    let command = copy_command(live.os, &from, &to)?;
+    // A large copy is disk-bound on the server and easily outlives the default
+    // thirty seconds, so this is one of the few commands given real headroom.
+    let output = live
+        .session
+        .exec_with_timeout(&command, None, Duration::from_secs(3600))
+        .await?;
+
+    if !output.succeeded() {
+        return Err(sftp::explain_error(
+            &format!("Could not copy {from}"),
+            &output.failure_text(),
+        ));
+    }
+
+    Ok(to)
+}
+
+/// The copy command for one remote OS. Pure, so the quoting is unit-tested.
+fn copy_command(os: OsFamily, from: &str, to: &str) -> SshResult<String> {
+    match os {
+        // `-a` keeps modes and timestamps; `--` stops a path that begins with a
+        // dash being read as a flag.
+        os if os.is_unix() => Ok(format!(
+            "cp -a -- {} {}",
+            power::single_quote(from),
+            power::single_quote(to)
+        )),
+        OsFamily::Windows => {
+            // The wire form is `/C:/Users/...`; the shell wants `C:\Users\...`.
+            let win = |path: &str| power::double_quote(&to_windows_path(path));
+            Ok(format!(
+                "powershell -NoProfile -NonInteractive -Command \
+                 \"Copy-Item -LiteralPath {} -Destination {} -Recurse -Force\"",
+                win(from),
+                win(to)
+            ))
+        }
+        OsFamily::Unknown => Err(SshError::unsupported(
+            "This host's operating system could not be identified, so copying is not offered.",
+        )),
+        other => Err(SshError::unsupported(format!(
+            "Copying is not supported on {}.",
+            other.label()
+        ))),
+    }
+}
+
+/// `/C:/Users/me` → `C:\Users\me`, for a command line rather than the wire.
+fn to_windows_path(path: &str) -> String {
+    path.trim_start_matches('/').replace('/', "\\")
+}
+
+/// Every regular file under a folder, for a recursive transfer.
+#[tauri::command]
+pub async fn list_remote_tree(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    path: String,
+) -> SshResult<sftp::TreeListing> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+    sftp::walk(&sftp, &path).await
+}
+
+/// What to do when a transfer's destination is already taken.
+///
+/// The caller decides, having asked the user; there is no "ask" here because
+/// the backend has nobody to ask. Defaults to `KeepBoth`, so a caller that
+/// forgets to choose cannot destroy anything.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnConflict {
+    #[default]
+    KeepBoth,
+    Overwrite,
+}
+
+/// Which of `names` already exist in a local folder, so the UI can ask before
+/// anything is queued rather than after something is lost.
+#[tauri::command]
+pub fn local_conflicts(local_dir: String, names: Vec<String>) -> Vec<String> {
+    let dir = PathBuf::from(local_dir);
+    names
+        .into_iter()
+        .filter(|name| dir.join(name).exists())
+        .collect()
+}
+
+/// The same question for a remote folder.
+#[tauri::command]
+pub async fn remote_conflicts(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    remote_dir: String,
+    names: Vec<String>,
+) -> SshResult<Vec<String>> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    let mut taken = Vec::new();
+    for name in names {
+        let path = sftp::join(&remote_dir, &name);
+        if sftp.try_exists(path).await.unwrap_or(false) {
+            taken.push(name);
+        }
+    }
+    Ok(taken)
+}
+
+/// Queue a download. Returns the transfer id; the file arrives via events.
+///
+/// `relative` places the file inside `local_dir`, so a recursive folder
+/// transfer can mirror the tree. It comes from our own walk, but is sanitized
+/// segment by segment anyway — a server-supplied path must never climb out of
+/// the folder the user picked.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn enqueue_download(
     app: AppHandle,
     registry: State<'_, SessionRegistry>,
@@ -918,9 +1123,11 @@ pub async fn enqueue_download(
     host_id: String,
     remote_path: String,
     local_dir: String,
+    relative: Option<String>,
+    on_conflict: Option<OnConflict>,
     priority: Option<Priority>,
 ) -> SshResult<u64> {
-    let live = registry.require(&host_id)?;
+    registry.require(&host_id)?;
 
     let remote_path = sftp::normalize(&remote_path);
     let name = remote_path.rsplit('/').next().unwrap_or_default().to_string();
@@ -933,7 +1140,23 @@ pub async fn enqueue_download(
             "Choose a folder that exists to download into.",
         ));
     }
-    let local_path = transfer_task::available_path(&dir, &safe_name);
+
+    // Everything above the file name, each segment checked the same way.
+    let mut target_dir = dir;
+    if let Some(relative) = relative.as_deref() {
+        for segment in relative.split('/').rev().skip(1).collect::<Vec<_>>().into_iter().rev() {
+            if segment.is_empty() {
+                continue;
+            }
+            target_dir = target_dir.join(sftp::safe_local_name(segment)?);
+        }
+    }
+
+    let target = target_dir.join(&safe_name);
+    let local_path = match on_conflict.unwrap_or_default() {
+        OnConflict::Overwrite => target,
+        OnConflict::KeepBoth => transfer_task::available_path(&target_dir, &safe_name),
+    };
 
     let id = transfers.enqueue(TransferRequest {
         host_id: host_id.clone(),
@@ -946,13 +1169,13 @@ pub async fn enqueue_download(
         bytes_total: None,
     });
 
-    let _ = live;
     pump_transfers(&app, &registry, &transfers).await;
     Ok(id)
 }
 
 /// Queue an upload of a local file into a remote directory.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn enqueue_upload(
     app: AppHandle,
     registry: State<'_, SessionRegistry>,
@@ -960,9 +1183,10 @@ pub async fn enqueue_upload(
     host_id: String,
     local_path: String,
     remote_dir: String,
+    on_conflict: Option<OnConflict>,
     priority: Option<Priority>,
 ) -> SshResult<u64> {
-    registry.require(&host_id)?;
+    let live = registry.require(&host_id)?;
 
     let source = PathBuf::from(&local_path);
     let metadata = std::fs::metadata(&source)
@@ -977,7 +1201,16 @@ pub async fn enqueue_upload(
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .ok_or_else(|| SshError::invalid("That file has no name to upload it under."))?;
-    let remote_path = sftp::join(&remote_dir, &name);
+
+    // Uploading opens the destination with CREATE|TRUNCATE, so without this an
+    // upload silently replaces whatever was already there.
+    let remote_path = match on_conflict.unwrap_or_default() {
+        OnConflict::Overwrite => sftp::join(&remote_dir, &name),
+        OnConflict::KeepBoth => {
+            let sftp = live.browse.get_or_open(&live.session).await?;
+            available_remote_path(&sftp, &remote_dir, &name).await?
+        }
+    };
 
     let id = transfers.enqueue(TransferRequest {
         host_id: host_id.clone(),
@@ -992,6 +1225,37 @@ pub async fn enqueue_upload(
 
     pump_transfers(&app, &registry, &transfers).await;
     Ok(id)
+}
+
+/// A remote path that is free, disambiguating as `name (1).ext` — the same
+/// scheme downloads use locally, so "keep both" means one thing in both
+/// directions.
+async fn available_remote_path(
+    sftp: &russh_sftp::client::SftpSession,
+    dir: &str,
+    name: &str,
+) -> SshResult<String> {
+    let first = sftp::join(dir, name);
+    if !sftp.try_exists(first.clone()).await.unwrap_or(false) {
+        return Ok(first);
+    }
+
+    let (stem, extension) = match name.rfind('.') {
+        // A leading dot is the whole name (`.bashrc`), not an extension.
+        Some(index) if index > 0 => (&name[..index], &name[index..]),
+        _ => (name, ""),
+    };
+
+    for index in 1..1000 {
+        let candidate = sftp::join(dir, &format!("{stem} ({index}){extension}"));
+        if !sftp.try_exists(candidate.clone()).await.unwrap_or(false) {
+            return Ok(candidate);
+        }
+    }
+
+    Err(SshError::invalid(format!(
+        "There are already too many copies of {name} in that folder."
+    )))
 }
 
 /// Every transfer the app knows about, newest first.
@@ -1147,6 +1411,43 @@ pub struct TransferSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_unix_copy_quotes_both_paths() {
+        let command = copy_command(OsFamily::Linux, "/tmp/a b", "/tmp/c").unwrap();
+        assert_eq!(command, "cp -a -- '/tmp/a b' '/tmp/c'");
+    }
+
+    #[test]
+    fn a_hostile_path_cannot_break_out_of_its_quoting() {
+        let command =
+            copy_command(OsFamily::Linux, "/tmp/x'; rm -rf ~; echo '", "/tmp/y").unwrap();
+        // The injection survives only as literal characters inside the quotes.
+        assert!(command.starts_with("cp -a -- '/tmp/x'\\''; rm -rf ~; echo '"));
+        assert!(!command.contains("; rm -rf ~; echo ' '/tmp/y'"));
+    }
+
+    #[test]
+    fn a_windows_copy_uses_a_shell_path_not_the_wire_path() {
+        let command = copy_command(OsFamily::Windows, "/C:/Users/me/a.txt", "/C:/tmp/a.txt")
+            .unwrap();
+        assert!(command.contains(r#""C:\Users\me\a.txt""#), "{command}");
+        assert!(!command.contains("/C:/"), "{command}");
+    }
+
+    #[test]
+    fn copying_is_refused_where_we_cannot_phrase_it() {
+        assert!(copy_command(OsFamily::Unknown, "/a", "/b").is_err());
+        let message = copy_command(OsFamily::Macos, "/a", "/b");
+        // macOS is unix-like, so it takes the `cp` branch rather than failing.
+        assert!(message.is_ok());
+    }
+
+    #[test]
+    fn to_windows_path_drops_the_wire_prefix() {
+        assert_eq!(to_windows_path("/C:/Users/me"), r"C:\Users\me");
+        assert_eq!(to_windows_path("/tmp/x"), r"tmp\x");
+    }
 
     fn host(auth_method: AuthMethod) -> HostRecord {
         HostRecord {

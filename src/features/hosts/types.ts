@@ -185,7 +185,28 @@ export interface DirListing {
   truncated: boolean;
 }
 
+/** One file found by a recursive walk. `relative` mirrors the tree under the
+ *  folder the walk started at. */
+export interface TreeFile {
+  path: string;
+  relative: string;
+  size: number;
+}
+
+export interface TreeListing {
+  files: TreeFile[];
+  /** Symlinks and device files passed over, so the UI can say what was left
+   *  out rather than transferring less than the user saw. */
+  skipped: string[];
+  truncated: boolean;
+}
+
 /* ── Transfers ─────────────────────────────────────────────────────────── */
+
+/** What to do when a destination is already taken. Decided by the user before
+ *  anything is queued — the backend has nobody to ask. */
+export type OnConflict = "keepBoth" | "overwrite";
+
 
 export type TransferDirection = "upload" | "download";
 export type TransferPriority = "low" | "normal" | "high";

@@ -961,3 +961,119 @@ fn sha256_file(path: &std::path::Path) -> String {
 }
 
 
+
+/// The recursive walk: files found, links and specials skipped, tree preserved.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn a_folder_walk_finds_files_and_skips_links() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let root = format!("/tmp/parolassh-tree-{}", now_ms());
+    let build = session
+        .exec(
+            &format!(
+                "mkdir -p {root}/a/b {root}/empty && \
+                 echo one > {root}/top.txt && \
+                 echo two > {root}/a/mid.txt && \
+                 echo three > {root}/a/b/deep.txt && \
+                 ln -s {root}/top.txt {root}/a/link.txt"
+            ),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(build.succeeded(), "{}", build.failure_text());
+
+    let tree = sftp::walk(&sftp, &root).await.unwrap();
+    let relatives: Vec<&str> = tree.files.iter().map(|f| f.relative.as_str()).collect();
+
+    assert_eq!(
+        relatives,
+        ["a/b/deep.txt", "a/mid.txt", "top.txt"],
+        "the walk should find every regular file, sorted by tree position"
+    );
+    assert_eq!(tree.skipped.len(), 1, "the symlink should be skipped");
+    assert!(tree.skipped[0].ends_with("link.txt"));
+    assert!(!tree.truncated);
+    // The empty directory contributes nothing: only files are transferred.
+    assert!(!relatives.iter().any(|path| path.contains("empty")));
+
+    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    session.close().await;
+}
+
+/// Rename doubles as move, and refuses to land on something that exists.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn rename_moves_and_never_overwrites() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let root = format!("/tmp/parolassh-mv-{}", now_ms());
+    sftp.create_dir(root.clone()).await.unwrap();
+    sftp.create_dir(format!("{root}/sub")).await.unwrap();
+    write_new(&sftp, &format!("{root}/a.txt"), b"first").await;
+    write_new(&sftp, &format!("{root}/b.txt"), b"second").await;
+
+    // A move into another directory is the same request as a rename.
+    sftp.rename(format!("{root}/a.txt"), format!("{root}/sub/a.txt"))
+        .await
+        .unwrap();
+    assert!(sftp.try_exists(format!("{root}/sub/a.txt")).await.unwrap());
+    assert!(!sftp.try_exists(format!("{root}/a.txt")).await.unwrap());
+
+    // Onto an existing name, the server refuses — which is what the command
+    // relies on rather than checking and hoping.
+    write_new(&sftp, &format!("{root}/c.txt"), b"third").await;
+    assert!(
+        sftp.rename(format!("{root}/c.txt"), format!("{root}/b.txt"))
+            .await
+            .is_err(),
+        "SFTP rename must not clobber an existing file"
+    );
+    assert_eq!(sftp.read(format!("{root}/b.txt")).await.unwrap(), b"second");
+
+    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    session.close().await;
+}
+
+/// A server-side copy duplicates a whole tree without moving bytes over the
+/// wire, and the built command survives a hostile name.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn a_server_side_copy_duplicates_a_tree() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let root = format!("/tmp/parolassh-cp-{}", now_ms());
+    let build = session
+        .exec(&format!(
+            "mkdir -p {root}/src/inner && echo hello > {root}/src/inner/f.txt"
+        ), None)
+        .await
+        .unwrap();
+    assert!(build.succeeded(), "{}", build.failure_text());
+
+    // Exactly what `copy_remote_entry` runs.
+    let command = format!(
+        "cp -a -- '{root}/src' '{root}/dst'"
+    );
+    let copied = session.exec(&command, None).await.unwrap();
+    assert!(copied.succeeded(), "{}", copied.failure_text());
+
+    assert_eq!(
+        sftp.read(format!("{root}/dst/inner/f.txt")).await.unwrap(),
+        b"hello\n", // `echo` adds the newline
+
+        "the copy should carry the whole tree"
+    );
+    // The original is untouched.
+    assert!(sftp.try_exists(format!("{root}/src/inner/f.txt")).await.unwrap());
+
+    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    session.close().await;
+}

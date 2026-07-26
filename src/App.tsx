@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AppNavbar } from "./components/AppNavbar";
 import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
+import { Toaster } from "./components/Toaster";
 import { ElevationProvider } from "./features/hosts/ElevationProvider";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
@@ -75,6 +76,7 @@ function AppShell() {
   return (
     <div className="app-shell">
       <CloseGuard />
+      <Toaster />
       <AppNavbar
         sidebarHidden={sidebarHidden}
         onToggleSidebar={() => setSidebarHidden((hidden) => !hidden)}

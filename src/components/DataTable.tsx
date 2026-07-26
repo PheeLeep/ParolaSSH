@@ -39,7 +39,15 @@ declare module "@tanstack/react-table" {
     width?: string;
     /** Human label for the column-visibility menu, when the header is not plain text. */
     title?: string;
+    /** Pin the column to an edge while the rest of the table scrolls. */
+    sticky?: "left" | "right";
   }
+}
+
+function stickyClass(sticky: "left" | "right" | undefined, extra?: string) {
+  if (!sticky) return extra;
+  const pinned = `datatable__sticky datatable__sticky--${sticky}`;
+  return extra ? `${pinned} ${extra}` : pinned;
 }
 
 const SELECT_COLUMN_ID = "__select";
@@ -87,7 +95,12 @@ export function DataTable<TData>({
       enableSorting: false,
       enableHiding: false,
       enableGlobalFilter: false,
-      meta: { width: "2.75rem", headerClassName: "text-center", cellClassName: "text-center" },
+      meta: {
+        width: "2.75rem",
+        sticky: "left",
+        headerClassName: "text-center",
+        cellClassName: "text-center",
+      },
       header: ({ table }) => (
         <SelectCheckbox
           checked={table.getIsAllPageRowsSelected()}
@@ -190,7 +203,7 @@ export function DataTable<TData>({
         </Dropdown>
       </div>
 
-      <div className="table-responsive border rounded">
+      <div className="table-responsive border rounded datatable__scroll">
         <Table hover className="mb-0 align-middle">
           {/* No `.table-light` here — it paints an inset box-shadow that would
               cover the themed header background from app.css. */}
@@ -207,7 +220,7 @@ export function DataTable<TData>({
                       key={header.id}
                       scope="col"
                       style={meta?.width ? { width: meta.width } : undefined}
-                      className={meta?.headerClassName}
+                      className={stickyClass(meta?.sticky, meta?.headerClassName)}
                       aria-sort={
                         sorted === "asc"
                           ? "ascending"
@@ -344,11 +357,14 @@ function TableRow<TData>({
       tabIndex={onActivate ? 0 : undefined}
       style={onActivate ? { cursor: "pointer" } : undefined}
     >
-      {row.getVisibleCells().map((cell) => (
-        <td key={cell.id} className={cell.column.columnDef.meta?.cellClassName}>
-          {flexRender(cell.column.columnDef.cell, cell.getContext())}
-        </td>
-      ))}
+      {row.getVisibleCells().map((cell) => {
+        const meta = cell.column.columnDef.meta;
+        return (
+          <td key={cell.id} className={stickyClass(meta?.sticky, meta?.cellClassName)}>
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </td>
+        );
+      })}
     </tr>
   );
 }

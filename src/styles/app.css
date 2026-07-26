@@ -431,6 +431,12 @@ code,
   padding-bottom: 1.5rem;
 }
 
+/* A flex column stretches its children, which would centre this button's
+   label and make its whole row clickable. */
+.page-back {
+  align-self: flex-start;
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 650;
@@ -549,6 +555,48 @@ code,
   outline: 2px solid var(--bs-focus-ring-color);
   outline-offset: 2px;
   box-shadow: none;
+}
+
+/* Pinned columns — selection on the left, actions on the right — stay put while
+   the middle scrolls. The cells need their own background or the scrolling ones
+   would show through; Bootstrap's hover and .table-active paint over it with an
+   inset shadow, so those still read correctly. */
+.datatable__sticky {
+  position: sticky;
+  z-index: 1;
+  background: var(--bs-body-bg);
+}
+
+.table > thead th.datatable__sticky {
+  z-index: 3;
+  background: var(--bs-tertiary-bg);
+}
+
+.datatable__sticky--left {
+  left: 0;
+}
+
+.datatable__sticky--right {
+  right: 0;
+}
+
+/* A hairline edge, drawn as a pseudo-element so it survives the hover shadow. */
+.datatable__sticky--right::before,
+.datatable__sticky--left::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--parola-line);
+}
+
+.datatable__sticky--right::before {
+  left: 0;
+}
+
+.datatable__sticky--left::after {
+  right: 0;
 }
 
 .dropdown-item {
@@ -1851,8 +1899,9 @@ code,
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 1 1 auto;
   min-height: 0;
-  height: 100%;
+  overflow: hidden;
 }
 
 .files-pane__bar {
@@ -1881,12 +1930,12 @@ code,
   border: 0;
   background: none;
   padding: 0.125rem 0.25rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--parola-radius-sm);
   color: var(--bs-body-color);
 }
 
 .files-crumb:hover {
-  background: var(--surface-hover);
+  background: var(--parola-hover);
 }
 
 .files-crumb__sep {
@@ -1898,7 +1947,7 @@ code,
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--bs-border-color);
-  border-radius: var(--radius-md);
+  border-radius: var(--parola-radius-sm);
 }
 
 .files-table thead th {
@@ -1907,6 +1956,31 @@ code,
   z-index: 1;
   background: var(--bs-body-bg);
   box-shadow: inset 0 -1px 0 var(--bs-border-color);
+}
+
+/* The header's own sticky wins on `top`; the pinned column adds `right`. It
+   keeps this table's header colour rather than the shared table one. */
+.files-table thead th.datatable__sticky--right {
+  z-index: 3;
+  background: var(--bs-body-bg);
+}
+
+.files-table__check {
+  width: 2.5rem;
+  text-align: center;
+}
+
+/* Batch actions appear only with a selection, so they sit above the table
+   rather than taking up a permanent row of chrome. */
+.files-pane__batch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-hover, var(--bs-tertiary-bg));
+  font-size: 0.875rem;
 }
 
 .files-row[role="button"] {
@@ -1938,4 +2012,41 @@ code,
 
 .priority-badge {
   font-weight: 500;
+}
+
+/* ---- Toasts ------------------------------------------------------------- */
+
+/* Above the modal backdrop: a transfer can fail while a dialog is open, and a
+   message the user cannot see is the same as no message. */
+.toaster {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1080;
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+
+.toaster__item {
+  border-left: 3px solid var(--bs-border-color);
+}
+
+.toaster__item--success {
+  border-left-color: var(--bs-success);
+}
+
+.toaster__item--error {
+  border-left-color: var(--bs-danger);
+}
+
+.toaster__item--progress {
+  border-left-color: var(--bs-primary);
+}
+
+/* Paths are the identifying part, so they wrap rather than being cut off. */
+.files-confirm__list {
+  max-height: 11rem;
+  overflow-y: auto;
+  padding-left: 1.1rem;
+  margin-bottom: 0.75rem;
+  overflow-wrap: anywhere;
 }

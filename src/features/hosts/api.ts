@@ -9,6 +9,7 @@ import type {
   ConnectionInfo,
   DirListing,
   HostDraft,
+  OnConflict,
   HostHealth,
   HostMetrics,
   PassphraseNeed,
@@ -31,6 +32,7 @@ import type {
   TransferProgress,
   TransferRecord,
   TransferSummary,
+  TreeListing,
   UpdateReport,
 } from "./types";
 
@@ -265,32 +267,61 @@ export const createRemoteDir = (hostId: string, path: string, name: string) =>
 export const deleteRemoteEntry = (hostId: string, path: string, isDir: boolean) =>
   invoke<void>("delete_remote_entry", { hostId, path, isDir });
 
+/** Rename or move — the same SFTP request, differing only in whether the
+ *  destination's parent is the one it is already in. Never overwrites. */
+export const renameRemoteEntry = (hostId: string, from: string, to: string) =>
+  invoke<string>("rename_remote_entry", { hostId, from, to });
+
+/** Copy within one host, done by the server so the bytes never cross the wire. */
+export const copyRemoteEntry = (hostId: string, from: string, to: string) =>
+  invoke<string>("copy_remote_entry", { hostId, from, to });
+
+/** Every regular file under a folder, for a recursive transfer. */
+export const listRemoteTree = (hostId: string, path: string) =>
+  invoke<TreeListing>("list_remote_tree", { hostId, path });
+
+/** Which of `names` already exist, so the user is asked before anything is
+ *  queued rather than after something is lost. */
+export const localConflicts = (localDir: string, names: string[]) =>
+  invoke<string[]>("local_conflicts", { localDir, names });
+
+export const remoteConflicts = (hostId: string, remoteDir: string, names: string[]) =>
+  invoke<string[]>("remote_conflicts", { hostId, remoteDir, names });
+
 /* ── Transfers ─────────────────────────────────────────────────────────── */
 
 export const enqueueDownload = (
   hostId: string,
   remotePath: string,
   localDir: string,
-  priority?: TransferPriority | null,
+  options: {
+    /** Sub-path under `localDir`, so a folder transfer mirrors the tree. */
+    relative?: string | null;
+    onConflict?: OnConflict | null;
+    priority?: TransferPriority | null;
+  } = {},
 ) =>
   invoke<number>("enqueue_download", {
     hostId,
     remotePath,
     localDir,
-    priority: priority ?? null,
+    relative: options.relative ?? null,
+    onConflict: options.onConflict ?? null,
+    priority: options.priority ?? null,
   });
 
 export const enqueueUpload = (
   hostId: string,
   localPath: string,
   remoteDir: string,
-  priority?: TransferPriority | null,
+  options: { onConflict?: OnConflict | null; priority?: TransferPriority | null } = {},
 ) =>
   invoke<number>("enqueue_upload", {
     hostId,
     localPath,
     remoteDir,
-    priority: priority ?? null,
+    onConflict: options.onConflict ?? null,
+    priority: options.priority ?? null,
   });
 
 export const listTransfers = () => invoke<TransferRecord[]>("list_transfers");

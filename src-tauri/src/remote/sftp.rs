@@ -327,6 +327,119 @@ pub fn explain_error(context: &str, error: &str) -> SshError {
     SshError::Io(format!("{context}: {error}"))
 }
 
+/* ── Walking a tree ────────────────────────────────────────────────────── */
+
+/// Ceiling on one recursive walk. A folder transfer that would enqueue more
+/// than this is refused rather than filling the queue with thousands of rows.
+pub const MAX_TREE_FILES: usize = 5_000;
+
+/// How deep a walk will go. Guards against a pathological tree; symlinks are
+/// skipped, so this is not what prevents cycles.
+const MAX_TREE_DEPTH: usize = 40;
+
+/// One file found inside a folder being transferred.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeFile {
+    /// Absolute path on the server.
+    pub path: String,
+    /// Path relative to the folder the walk started at, so the destination can
+    /// mirror the layout. Always `/`-separated.
+    pub relative: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeListing {
+    pub files: Vec<TreeFile>,
+    /// Symlinks and device files passed over, named so the UI can say what was
+    /// left out rather than silently transferring less than the user saw.
+    pub skipped: Vec<String>,
+    /// True when the walk hit `MAX_TREE_FILES` and stopped.
+    pub truncated: bool,
+}
+
+impl TreeListing {
+    pub fn total_bytes(&self) -> u64 {
+        self.files.iter().map(|file| file.size).sum()
+    }
+}
+
+/// Collect every regular file under `root`, depth-first.
+///
+/// Symlinks are skipped rather than followed — the same rule as everywhere
+/// else, and it is also what makes a cycle impossible. Empty directories are
+/// not recorded: only files are transferred, and a directory is created on the
+/// way to writing one.
+pub async fn walk(sftp: &SftpSession, root: &str) -> SshResult<TreeListing> {
+    let root = normalize(root);
+    let mut listing = TreeListing::default();
+    let mut queue = vec![(root.clone(), 0_usize)];
+
+    while let Some((dir, depth)) = queue.pop() {
+        if depth > MAX_TREE_DEPTH {
+            listing.skipped.push(format!("{dir} (too deeply nested)"));
+            continue;
+        }
+
+        let entries = match list_dir(sftp, &dir).await {
+            Ok(entries) => entries,
+            // A directory we cannot read should not sink the whole transfer;
+            // record it and carry on with the rest of the tree.
+            Err(error) => {
+                listing.skipped.push(format!("{dir} ({error})"));
+                continue;
+            }
+        };
+
+        for entry in entries.entries {
+            match entry.kind {
+                EntryKind::Dir => queue.push((entry.path, depth + 1)),
+                EntryKind::File => {
+                    if listing.files.len() >= MAX_TREE_FILES {
+                        listing.truncated = true;
+                        return Ok(listing);
+                    }
+                    let relative = relative_to(&root, &entry.path);
+                    listing.files.push(TreeFile {
+                        path: entry.path,
+                        relative,
+                        size: entry.size,
+                    });
+                }
+                EntryKind::Symlink | EntryKind::Other => listing.skipped.push(entry.path),
+            }
+        }
+    }
+
+    // Depth-first popping yields a jumbled order; sorting makes the queue read
+    // the way the tree looks.
+    listing.files.sort_by(|a, b| a.relative.cmp(&b.relative));
+    Ok(listing)
+}
+
+/// `child` expressed relative to `root`. Falls back to the file name when
+/// `child` is not under `root`, which cannot happen from `walk` but keeps the
+/// result safe to join onto a local directory regardless.
+pub fn relative_to(root: &str, child: &str) -> String {
+    let prefix = if root.ends_with('/') {
+        root.to_string()
+    } else {
+        format!("{root}/")
+    };
+    child
+        .strip_prefix(&prefix)
+        .map(|rest| rest.to_string())
+        .unwrap_or_else(|| {
+            child
+                .rsplit('/')
+                .next()
+                .unwrap_or(child)
+                .to_string()
+        })
+}
+
 /* ── Reading a file fast ───────────────────────────────────────────────── */
 
 /// Read requests kept in flight at once.
@@ -642,6 +755,22 @@ mod tests {
                 "{hostile:?} should have been refused"
             );
         }
+    }
+
+    #[test]
+    fn relative_to_mirrors_the_tree_under_the_chosen_folder() {
+        assert_eq!(relative_to("/srv/app", "/srv/app/conf/nginx.conf"), "conf/nginx.conf");
+        assert_eq!(relative_to("/srv/app", "/srv/app/README"), "README");
+        assert_eq!(relative_to("/", "/etc/hosts"), "etc/hosts");
+    }
+
+    #[test]
+    fn a_child_outside_its_root_collapses_to_a_bare_name() {
+        // Cannot arise from `walk`, but the result must still be something that
+        // is safe to join onto a local directory rather than an escape.
+        assert_eq!(relative_to("/srv/app", "/etc/shadow"), "shadow");
+        assert_eq!(relative_to("/srv/app", "/srv/appendix/x"), "x");
+        assert!(!relative_to("/srv/app", "/etc/passwd").contains('/'));
     }
 
     #[test]

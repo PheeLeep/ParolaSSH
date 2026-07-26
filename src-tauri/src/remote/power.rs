@@ -1,36 +1,15 @@
 //! Shutting down and rebooting a remote machine.
 //!
-//! # Why this is not one command string
+//! The OS is detected first, because the command differs per family: Unix
+//! counts the delay in minutes and Windows in seconds, and macOS has no
+//! `shutdown -c` (a pending job is killed instead).
 //!
-//! Every family spells this differently, and the differences are not cosmetic:
-//!
-//! | | reboot now | reboot in 10 min | cancel |
-//! |---|---|---|---|
-//! | Linux/BSD | `shutdown -r now` | `shutdown -r +10` | `shutdown -c` |
-//! | macOS | `shutdown -r now` | `shutdown -r +10` | `killall shutdown` |
-//! | Windows | `shutdown /r /t 0` | `shutdown /r /t 600` | `shutdown /a` |
-//!
-//! Unix counts the delay in **minutes**, Windows in **seconds**. macOS has no
-//! `-c`. So the remote OS is detected first, and the command is built for it.
-//!
-//! # Privilege: sudo vs UAC
-//!
-//! These two look similar and are not.
-//!
-//! *Unix* elevation is a **credential** check. `sudo -S` reads the password
-//! from stdin, so it works fine over a non-interactive SSH channel: we send
-//! the password down the channel we already have. The password never appears
-//! in the command line, so it stays out of the remote process list.
-//!
-//! *Windows* elevation is a **token** decision made at logon, and UAC's
-//! consent prompt is drawn on the interactive desktop — a session that has no
-//! desktop cannot answer it. There is no `sudo -S` equivalent: `runas` needs a
-//! console, and Windows 11's `sudo` just triggers the same undismissable
-//! prompt. What saves us is that OpenSSH on Windows does not apply UAC
-//! filtering to its logons: **an account in Administrators arrives already
-//! holding its full token**, so `shutdown /r` simply works. A standard user
-//! cannot be elevated at all over SSH, and this module says so plainly instead
-//! of returning "Access is denied.(5)".
+//! Elevation differs too. Unix is a credential check — `sudo -S` reads the
+//! password from stdin, so it works over a non-interactive channel and keeps
+//! the password out of the remote process list. Windows decides at logon and
+//! has no `sudo -S` equivalent, but OpenSSH does not UAC-filter its logons, so
+//! an account in Administrators arrives holding its full token. A standard user
+//! cannot elevate over SSH at all.
 
 use serde::{Deserialize, Serialize};
 
@@ -64,10 +43,8 @@ pub struct PowerRequest {
     pub message: Option<String>,
 }
 
-/// Longest delay we will accept, in minutes (about a year).
-///
-/// Windows caps `/t` at 315360000 seconds; this stays well inside that and
-/// rejects a fat-fingered delay before it reaches the remote host.
+/// Longest delay we accept, in minutes (about a year). Stays well inside
+/// Windows' 315360000-second cap on `/t`.
 const MAX_DELAY_MINUTES: u32 = 525_600;
 
 /// How this account will gain the privilege to power the machine off.
@@ -113,11 +90,9 @@ pub struct PrivilegeReport {
     pub supports_cancel: bool,
 }
 
-/// Detect the remote OS.
-///
-/// `uname -s` answers on every Unix. On Windows it is not a command, so the
-/// `||` branch runs and `ver` reports the Windows version — this works whether
-/// sshd hands us cmd.exe or PowerShell, because both understand `||` here.
+/// Detect the remote OS. `uname -s` answers on every Unix; on Windows it is not
+/// a command, so the `||` branch runs `ver`. Both cmd.exe and PowerShell
+/// understand `||` here.
 pub async fn detect_os(session: &Session) -> SshResult<(OsFamily, String)> {
     let output = session.exec("uname -s 2>/dev/null || ver", None).await?;
     let text = format!("{} {}", output.stdout.trim(), output.stderr.trim());
@@ -174,8 +149,8 @@ async fn check_unix_privileges(
     os: OsFamily,
     os_detail: String,
 ) -> SshResult<PrivilegeReport> {
-    // One round trip: who am I, am I root, and does sudo need a password?
-    // `sudo -n true` fails without prompting when a password would be needed.
+    // One round trip. `sudo -n true` fails without prompting when a password
+    // would be needed.
     let probe = session
         .exec(
             "id -un; id -u; command -v sudo >/dev/null 2>&1 && \
@@ -226,9 +201,8 @@ async fn check_unix_privileges(
         os_detail,
         user,
         elevation,
-        // `shutdown` on Unix has no force flag; the delay is the safety valve.
+        // Unix `shutdown` has no force flag.
         supports_force: false,
-        // macOS `shutdown` has no `-c`, so a pending job is killed instead.
         supports_cancel: true,
         explanation,
     })
@@ -238,9 +212,8 @@ async fn check_windows_privileges(
     session: &Session,
     os_detail: String,
 ) -> SshResult<PrivilegeReport> {
-    // `net session` needs administrator rights, so its exit status is a
-    // reliable read of whether this token is elevated — which over SSH is
-    // decided at logon, not by any prompt we could answer.
+    // `net session` needs administrator rights, so its exit status reads
+    // whether this token is elevated.
     let probe = session
         .exec(
             "whoami & net session >nul 2>&1 && echo ELEVATED || echo LIMITED",
@@ -288,9 +261,7 @@ async fn check_windows_privileges(
 }
 
 /// The exact command that will run, plus whether it needs a password on stdin.
-///
-/// Returned to the UI before anything is executed: showing the literal string
-/// is the difference between trusting a button and knowing what it does.
+/// Returned to the UI before anything is executed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PowerPlan {
@@ -299,8 +270,8 @@ pub struct PowerPlan {
     pub summary: String,
 }
 
-/// Build the command for a request. Pure, so it is exhaustively unit-tested
-/// below rather than against a machine we would have to keep rebooting.
+/// Build the command for a request. Pure, so it is unit-tested below rather
+/// than against a machine we would have to keep rebooting.
 pub fn plan(
     os: OsFamily,
     elevation: &Elevation,
@@ -333,8 +304,8 @@ pub fn plan(
 
     let needs_password = elevation.needs_password();
     let command = if needs_password || elevation == &Elevation::SudoNoPassword {
-        // `-S` reads the password from stdin; `-p ''` suppresses the prompt so
-        // it does not end up mixed into the command's output.
+        // `-S` reads the password from stdin; `-p ''` keeps the prompt out of
+        // the command's output.
         format!("sudo -S -p '' {command}")
     } else {
         command
@@ -353,7 +324,7 @@ fn unix_command(request: &PowerRequest, is_macos: bool) -> String {
         PowerAction::Cancel if is_macos => "killall shutdown".to_string(),
         PowerAction::Cancel => "shutdown -c".to_string(),
         action => {
-            // Unix counts the delay in minutes; `now` is the idiomatic zero.
+            // Unix counts the delay in minutes.
             let when = if request.delay_minutes == 0 {
                 "now".to_string()
             } else {
@@ -410,24 +381,20 @@ fn summarise(os: OsFamily, request: &PowerRequest) -> String {
     }
 }
 
-/// Wrap for a POSIX shell. An embedded `'` is closed, escaped, and reopened —
-/// the standard trick, and the reason a message cannot break out of the quotes.
-/// Shared with `services`, which quotes unit names the same way.
+/// Wrap for a POSIX shell: an embedded `'` is closed, escaped, and reopened, so
+/// a message cannot break out. Shared with `services` for unit names.
 pub(crate) fn single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
-/// Wrap for cmd.exe, which has no escape for `"` inside a quoted string.
-/// Dropping the character is the only safe option; `&`, `|` and friends are
-/// inert once quoted.
+/// Wrap for cmd.exe, which has no escape for `"` inside a quoted string, so the
+/// character is dropped. `&`, `|` and friends are inert once quoted.
 pub(crate) fn double_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('"', "'"))
 }
 
-/// Run a power request against a live session.
-///
-/// `password` is only read when the plan says a password is needed, and is
-/// written to the command's stdin rather than interpolated into it.
+/// Run a power request against a live session. `password` is read only when the
+/// plan needs one, and goes to stdin rather than into the command string.
 pub async fn execute(
     session: &Session,
     os: OsFamily,
@@ -463,10 +430,8 @@ pub struct PowerOutcome {
     pub exit_code: Option<u32>,
 }
 
-/// Decide whether a power command worked.
-///
-/// An immediate reboot is a special case: sshd dies mid-command, so a missing
-/// exit status is the *expected* outcome and must not be reported as failure.
+/// Decide whether a power command worked. An immediate reboot kills sshd
+/// mid-command, so a missing exit status is expected there, not a failure.
 fn interpret(
     plan: &PowerPlan,
     request: &PowerRequest,
@@ -479,7 +444,6 @@ fn interpret(
 
     let message = if !succeeded {
         let text = output.failure_text();
-        // The most common failure by far, and the least self-explanatory.
         if text.contains("incorrect password") || text.contains("Sorry, try again") {
             "sudo rejected the password.".to_string()
         } else if text.contains("Access is denied") {

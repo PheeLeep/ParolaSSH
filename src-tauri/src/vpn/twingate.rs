@@ -1,17 +1,13 @@
 //! Asking — or at least noticing — the Twingate client.
 //!
-//! Twingate publishes no local status API. Linux gets a real answer because
-//! the headless client ships a `twingate status` command; macOS and Windows
-//! get presence detection only — the app is either running or it is not, and
-//! whether it is *connected* stays its secret. The `detail` strings are
-//! honest about that difference so the UI never claims more than we know.
+//! Twingate publishes no local status API. Linux's headless client ships
+//! `twingate status`; macOS and Windows get presence detection only, and the
+//! `detail` strings say so rather than claiming more than we know.
 //!
-//! Linux also gets `twingate resources`, and that one matters more than it
-//! looks: Twingate resources are often plain private ranges like
-//! `192.168.1.0/24` that no address heuristic could ever attribute to a VPN —
-//! the same IP works directly when on premise and through Twingate when not.
-//! The resource list is the client saying outright which addresses it owns,
-//! and whether each still has valid authentication.
+//! Linux also gets `twingate resources` — the client stating which addresses it
+//! owns and whether each is still authenticated. That matters because resources
+//! are often plain ranges like `192.168.1.0/24` that no heuristic could
+//! attribute to a VPN.
 
 use std::net::Ipv4Addr;
 
@@ -68,9 +64,8 @@ pub async fn status() -> VpnStatus {
         return VpnStatus::not_installed(VpnKind::Twingate);
     }
 
-    // `pgrep -x` exits zero only on a match. Missing pgrep would be a very
-    // strange macOS install; it collapses to "not running", the safe answer
-    // for advice that only triggers on it being down.
+    // `pgrep -x` exits zero only on a match; a missing pgrep collapses to
+    // "not running".
     let running = matches!(
         run_cli("/usr/bin/pgrep", &["-x", "Twingate"]).await,
         CliOutcome::Ran { success: true, .. }
@@ -94,8 +89,7 @@ pub async fn status() -> VpnStatus {
         return VpnStatus::not_installed(VpnKind::Twingate);
     }
 
-    // `tasklist` always exits zero, so the answer is in whether the filtered
-    // output names the process rather than in the status code.
+    // `tasklist` always exits zero, so read the output, not the status code.
     let running = match run_cli(
         "tasklist",
         &["/FI", "IMAGENAME eq Twingate.exe", "/NH"],
@@ -117,8 +111,8 @@ fn presence_only(running: bool) -> VpnStatus {
         installed: true,
         up: running,
         detail: if running {
-            // Running is treated as up because it is the best signal
-            // available, but the wording keeps the uncertainty visible.
+            // Running counts as up — the best signal available — but the
+            // wording keeps the uncertainty visible.
             "app running (connection state not visible)".to_string()
         } else {
             "app not running".to_string()
@@ -148,8 +142,7 @@ impl TwingateResource {
             return true;
         }
 
-        // "*.example.com" covers subdomains, not the bare domain — the same
-        // reading a TLS certificate would give it.
+        // "*.example.com" covers subdomains, not the bare domain, as with TLS.
         if let Some(domain) = address.strip_prefix('*') {
             if host.len() > domain.len() && host.ends_with(domain) {
                 return true;
@@ -169,24 +162,18 @@ impl TwingateResource {
         false
     }
 
-    /// Whether the auth status says access would be refused right now.
-    ///
-    /// The client phrases health as "Auth expires in …", so only the words
-    /// that clearly mean "not any more" flip this — an unrecognised phrase
-    /// is treated as fine rather than sending someone to re-authenticate
-    /// for nothing.
+    /// Whether the auth status says access would be refused right now. The
+    /// client phrases health as "Auth expires in …", so only words that clearly
+    /// mean "not any more" flip this; an unrecognised phrase is treated as fine.
     pub fn needs_auth(&self) -> bool {
         let status = self.auth_status.to_ascii_lowercase();
         status.contains("required") || status.contains("expired")
     }
 }
 
-/// The addresses Twingate owns on this machine.
-///
-/// Only the Linux client can answer, and only while its service is running —
-/// everywhere else this is empty and the caller falls back to heuristics.
-/// A stopped service costs us the list too; nothing to do about that beyond
-/// what the plain up/down advice already covers.
+/// The addresses Twingate owns on this machine. Only the Linux client can
+/// answer, and only while its service runs; everywhere else this is empty and
+/// the caller falls back to heuristics.
 #[cfg(target_os = "linux")]
 pub async fn resources() -> Vec<TwingateResource> {
     use super::{run_cli, CliOutcome};
@@ -206,12 +193,9 @@ pub async fn resources() -> Vec<TwingateResource> {
     Vec::new()
 }
 
-/// Read the tab-separated table `twingate resources` prints.
-///
-/// Columns are space-padded for the eye and tab-separated for us:
-/// name, address, alias (`-` for none), auth status. Anything that does not
-/// fit that shape — the header, an error line, a future format change — is
-/// skipped rather than half-parsed.
+/// Read the table `twingate resources` prints: tab-separated name, address,
+/// alias (`-` for none), auth status. Rows that do not fit — header, errors, a
+/// future format change — are skipped rather than half-parsed.
 fn parse_resources(stdout: &str) -> Vec<TwingateResource> {
     stdout
         .lines()

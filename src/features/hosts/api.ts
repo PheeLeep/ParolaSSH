@@ -1,8 +1,7 @@
 /** The Rust command surface for saved connections and live sessions.
  *
- *  Passwords are passed as arguments and never returned. The Rust side holds
- *  them in memory for the app's lifetime at most — nothing here writes a
- *  secret to disk, and there is no command that reads one back. */
+ *  Passwords are passed as arguments and never returned — no command here
+ *  reads one back, and nothing writes a secret to disk. */
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -51,12 +50,8 @@ export const listHostTags = () => invoke<string[]>("list_host_tags");
 export const probeHost = (hostname: string, port: number) =>
   invoke<ProbeResult>("probe_host", { hostname, port });
 
-/**
- * Connect and authenticate.
- *
- * `trustUnknown` records an unrecognised host key — only pass it once the
- * user has actually seen and accepted the fingerprint.
- */
+/** Connect and authenticate. `trustUnknown` records an unrecognised host key —
+ *  pass it only once the user has seen and accepted the fingerprint. */
 export const connectHost = (
   hostId: string,
   options: {
@@ -83,21 +78,14 @@ export const hasRememberedPassword = (hostId: string) =>
 export const forgetPassword = (hostId: string) =>
   invoke<void>("forget_password", { hostId });
 
-/**
- * Whether this host's key is locked, so the dialog can skip a prompt that
- * would have nothing to unlock. Returns no key material — only the shape of
- * the question, or that there is none.
- */
+/** Whether this host's key is locked, so the dialog can skip a prompt with
+ *  nothing to unlock. Returns no key material. */
 export const hostKeyPassphraseNeed = (hostId: string) =>
   invoke<PassphraseNeed>("host_key_passphrase_need", { hostId });
 
-/**
- * Check every saved host: are they up, and are our sessions still good?
- *
- * Connected hosts get a round trip on the existing session; the rest get a
- * TCP probe. Sessions that fail are dropped by the Rust side, so the result
- * is authoritative — a host reported as disconnected really is.
- */
+/** Check every saved host: are they up, and are our sessions still good?
+ *  Failed sessions are dropped by the Rust side, so the result is
+ *  authoritative. */
 export const heartbeat = () => invoke<HostHealth[]>("heartbeat");
 
 /* ── Power ─────────────────────────────────────────────────────────────── */
@@ -119,13 +107,8 @@ export const powerHost = (
 
 /* ── Interactive terminal ──────────────────────────────────────────────── */
 
-/**
- * Open a shell and return its id.
- *
- * Opening does not replace anything — a host can hold several terminals on the
- * one authenticated connection. The id addresses every later call and tags
- * every event.
- */
+/** Open a shell and return its id. A host can hold several terminals on the one
+ *  connection; the id addresses every later call and tags every event. */
 export const openShell = (hostId: string, cols: number, rows: number) =>
   invoke<number>("open_shell", { hostId, cols, rows });
 
@@ -147,14 +130,9 @@ export const resizeShell = (
 export const closeShell = (hostId: string, shellId: number) =>
   invoke<void>("close_shell", { hostId, shellId });
 
-/**
- * Subscribe to terminal output for one host.
- *
- * `isMine` decides which shell's bytes to render. Filtering on host id alone
- * is not enough: a shell that has been replaced keeps streaming until it winds
- * down, and its banner and prompt would appear in the new pane alongside the
- * real ones — which reads as duplicated output.
- */
+/** Subscribe to terminal output for one host. `isMine` picks which shell's
+ *  bytes to render: host id alone is not enough, since a replaced shell keeps
+ *  streaming and its output would read as duplicates in the new pane. */
 export function onTerminalOutput(
   hostId: string,
   isMine: (shellId: number) => boolean,
@@ -197,11 +175,8 @@ export const serviceAction = (
     password: password ?? null,
   });
 
-/**
- * The last journal lines (Linux) or SCM events (Windows) for a service.
- * `displayName` matters only on Windows, where events name services by their
- * display name.
- */
+/** The last journal lines (Linux) or SCM events (Windows) for a service.
+ *  `displayName` matters only on Windows, where events name services by it. */
 export const serviceLog = (
   hostId: string,
   unit: string,
@@ -251,13 +226,8 @@ export const checkUpdates = (hostId: string) =>
 
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 
-/**
- * Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only.
- *
- * `elevate` is the answer to the elevation prompt: false skips the privileged
- * retry outright, so declining is honoured even on a session that is holding
- * a usable password.
- */
+/** Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only, and
+ *  `elevate: false` skips that retry even when the session holds a password. */
 export const remoteAudit = (
   hostId: string,
   password?: string | null,
@@ -284,13 +254,9 @@ export function errorMessage(error: unknown): string {
   return "Something went wrong.";
 }
 
-/**
- * Whether a failure was an unrecognised host key.
- *
- * The Rust side tags that message so the UI can offer "trust and connect"
- * instead of a dead end. A *changed* key is deliberately not matched here —
- * that one should never be click-through.
- */
+/** Whether a failure was an unrecognised host key, so the UI can offer "trust
+ *  and connect". A *changed* key is deliberately not matched — that one must
+ *  never be click-through. */
 export function isUnknownHostKey(error: unknown): boolean {
   return errorMessage(error).includes("HOSTKEY:unknown");
 }

@@ -1,19 +1,12 @@
 //! Listing, controlling, and reading the history of system services.
 //!
-//! Two platforms, two vocabularies, per the roadmap decision: Linux gets
-//! systemd (`systemctl` + `journalctl`), Windows gets the SCM (`sc query`,
-//! `net start/stop`, and the Service Control Manager's own event-log entries
-//! via `wevtutil`). macOS and BSD are refused honestly — launchd and rc.d are
-//! different enough that pretending `systemctl` phrasing fits would produce
-//! wrong answers, and a wrong answer about a service action is worse than a
-//! missing tab.
+//! Linux gets systemd (`systemctl` + `journalctl`), Windows the SCM (`sc
+//! query`, `net start/stop`, `wevtutil`). macOS and BSD are refused rather than
+//! guessed at: launchd and rc.d are too different for systemd phrasing to fit.
 //!
-//! Everything here follows the shape `power.rs` established: command
-//! construction is **pure** and exhaustively unit-tested; elevation reuses
-//! the session's known route (`sudo -S` with the password on stdin, or the
-//! Windows administrator token); output interpretation is a pure function fed
-//! by fixtures in tests. Unit names are validated and then quoted with the
-//! same helpers the power module uses, so a hostile name cannot break out.
+//! Same shape as `power.rs`: command construction and output interpretation are
+//! pure and unit-tested, elevation reuses the session's known route, and unit
+//! names are validated then quoted with the power module's helpers.
 
 use serde::{Deserialize, Serialize};
 
@@ -88,16 +81,15 @@ pub struct ServiceOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct ServiceLog {
     pub lines: Vec<String>,
-    /// Anything the host said alongside the log — most usefully journald's
-    /// hint that this account is not in `adm`/`systemd-journal` and is seeing
-    /// a truncated view. Passed through rather than hidden: an empty log and
-    /// a log we may not read are different answers.
+    /// Anything the host said alongside the log, usually journald's hint that
+    /// this account is not in `adm`/`systemd-journal`. Passed through because
+    /// an empty log and a log we may not read are different answers.
     pub note: Option<String>,
 }
 
-/// SCM event ids worth showing: 7036 state changes, 7031/7034 crashes.
-/// A constant, never interpolated — the service-name filter happens in Rust,
-/// so no user input ever reaches this query string.
+/// SCM event ids worth showing: 7036 state changes, 7031/7034 crashes. Never
+/// interpolated — the service-name filter runs in Rust, so no user input
+/// reaches this query.
 const WEVTUTIL_SCM_QUERY: &str = "wevtutil qe System \
     \"/q:*[System[Provider[@Name='Service Control Manager'] and \
     (EventID=7036 or EventID=7031 or EventID=7034)]]\" /c:100 /rd:true /f:text";
@@ -125,8 +117,7 @@ pub fn list_command(os: OsFamily) -> SshResult<&'static str> {
         OsFamily::Linux => {
             Ok("systemctl list-units --type=service --all --plain --no-legend --no-pager")
         }
-        // `sc` is native and answers in milliseconds; PowerShell's
-        // Get-Service costs a runtime startup for the same information.
+        // `sc` is native; PowerShell's Get-Service costs a runtime startup.
         OsFamily::Windows => Ok("sc query type= service state= all"),
         other => Err(unsupported_os(other)),
     }
@@ -227,10 +218,8 @@ fn parse_sc_query(stdout: &str) -> Vec<ServiceEntry> {
 }
 
 /// Refuse names that could not be a real service before they reach a shell.
-///
-/// Quoting already contains them; this is defence in depth, and it produces a
-/// better error than the remote shell would. Spaces stay legal — Windows
-/// service names genuinely contain them.
+/// Defence in depth behind the quoting, with a better error. Spaces stay legal:
+/// Windows service names contain them.
 fn validate_unit(unit: &str) -> SshResult<&str> {
     let unit = unit.trim();
     if unit.is_empty() {
@@ -269,8 +258,8 @@ pub fn plan_action(
             format!("systemctl {verb} -- {}", single_quote(unit))
         }
         OsFamily::Windows => {
-            // `net` waits for the transition to finish, so the exit status
-            // means something; `sc start` returns before the service does.
+            // `net` waits for the transition, so its exit status means
+            // something; `sc start` returns before the service does.
             let quoted = double_quote(unit);
             match request.action {
                 ServiceAction::Start => format!("net start {quoted}"),
@@ -363,10 +352,8 @@ pub fn follow_command(os: OsFamily, unit: &str) -> SshResult<String> {
     }
 }
 
-/// Turn log command output into what the pane shows. Pure.
-///
-/// `filter` is the text a Windows event must mention to belong to the chosen
-/// service — its display name, since SCM events name services by display name.
+/// Turn log command output into what the pane shows. Pure. `filter` is the
+/// display name a Windows event must mention to belong to the chosen service.
 pub fn parse_log(os: OsFamily, output: &CommandOutput, filter: Option<&str>) -> ServiceLog {
     match os {
         OsFamily::Windows => parse_wevtutil(&output.stdout, filter),
@@ -448,8 +435,8 @@ fn parse_wevtutil(stdout: &str, filter: Option<&str>) -> ServiceLog {
     ServiceLog { lines, note: None }
 }
 
-/// The labels wevtutil prints, so free-form description text is not mistaken
-/// for a field when it happens to contain a colon.
+/// The labels wevtutil prints, so description text containing a colon is not
+/// mistaken for a field.
 fn is_wevtutil_field(line: &str) -> bool {
     const FIELDS: &[&str] = &[
         "Log Name:", "Source:", "Date:", "Event ID:", "Task:", "Level:",

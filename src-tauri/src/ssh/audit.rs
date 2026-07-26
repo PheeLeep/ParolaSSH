@@ -104,10 +104,8 @@ pub struct AuditReport {
     pub scanned_at_ms: i64,
 }
 
-/// A finding before its id and suppression state are resolved.
-///
-/// A struct rather than a long argument list: the fields are all strings and
-/// options, so positional arguments would be easy to transpose silently.
+/// A finding before its id and suppression state are resolved. A struct because
+/// the fields are all strings and options, easy to transpose positionally.
 struct NewFinding<'a> {
     rule_id: &'a str,
     /// The stable thing this is about — a fingerprint, or a path. Combined
@@ -144,10 +142,8 @@ impl RuleContext<'_> {
         });
     }
 
-    /// Add a finding about a specific key.
-    ///
-    /// Keys are the common case, and their target, location and path all
-    /// derive from the key itself — so call sites only supply what varies.
+    /// Add a finding about a specific key. Target, location and path derive
+    /// from the key, so call sites supply only what varies.
     fn add_key(
         &mut self,
         key: &SshKey,
@@ -721,8 +717,7 @@ fn check_config(context: &mut RuleContext, ssh_dir: &Path, config: &SshConfig) {
                 remediation: None,
             }),
 
-            // Valid on a Mac, inert everywhere else — worth saying, not worth
-            // alarming about.
+            // Valid on a Mac, inert elsewhere.
             other if MACOS_ONLY_KEYWORDS.contains(&other) && !cfg!(target_os = "macos") => {
                 context.add(NewFinding {
                     rule_id: "cfg.macos-only",
@@ -820,15 +815,10 @@ fn count(findings: &[Finding]) -> SeverityCounts {
 
 /// Score the directory out of 100, with diminishing returns per rule.
 ///
-/// Repeats of the same rule are one problem, not many: ten keys without a
-/// passphrase is a single decision to revisit, and charging full weight for
-/// each one drives any directory with a handful of keys straight to zero. A
-/// saturated score stops distinguishing "needs tidying" from "actively
-/// compromised", which is the only thing the number is for.
-///
-/// So each rule costs its full weight once, half as much for the second
-/// instance, and nothing beyond that — while `counts` still reports every
-/// finding truthfully.
+/// Repeats of a rule are one problem, not many: each costs full weight once,
+/// half for the second instance, nothing beyond. Charging full weight per
+/// instance would saturate the score and stop distinguishing "needs tidying"
+/// from "actively compromised". `counts` still reports every finding.
 fn score(findings: &[Finding]) -> u32 {
     // Collapse to one entry per rule, keeping the worst severity seen — a rule
     // like `cfg.forward-agent` varies by context.

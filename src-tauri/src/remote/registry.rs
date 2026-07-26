@@ -1,17 +1,13 @@
 //! Keeping connections alive between commands.
 //!
-//! Tauri commands are one-shot, but an SSH session is expensive to establish
-//! and a terminal is worthless without one that persists. So an authenticated
-//! session is parked here, keyed by host id, and later commands borrow it.
+//! Tauri commands are one-shot, so an authenticated session is parked here,
+//! keyed by host id, for later commands to borrow. One session per host, so
+//! "is this host connected?" has exactly one answer.
 //!
-//! One session per host is a deliberate ceiling: it keeps "is this host
-//! connected?" a question with one answer, which is what the UI displays.
-//!
-//! State locks are `std::sync::Mutex` and are never held across an `await` —
+//! State locks are `std::sync::Mutex` and must never be held across an `await`:
 //! every method clones the `Arc` it needs and releases the lock before doing
-//! I/O. That is the whole discipline; breaking it would deadlock the runtime.
-//! The one exception is `shell_open`, which exists precisely to be held across
-//! an await and is therefore a `tokio::sync::Mutex`.
+//! I/O. The one exception is `shell_open`, which exists to be held across an
+//! await and is a `tokio::sync::Mutex`.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,10 +22,8 @@ use super::stream::StreamHandle;
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
 
-/// How many long-running streams one host may hold at once.
-///
-/// The real use is one followed log per visible pane, so this is headroom,
-/// not a budget — its job is to stop a leak from accumulating quietly.
+/// How many long-running streams one host may hold at once. Headroom over the
+/// one-per-visible-pane real use; its job is to stop a quiet leak.
 pub const MAX_STREAMS_PER_HOST: usize = 4;
 
 /// A connected host: the session, what we learned about it, and its terminal.
@@ -43,30 +37,23 @@ pub struct LiveSession {
     /// What the first key exchange negotiated — the audit tab's tier 0.
     pub negotiated: Option<NegotiatedCrypto>,
     pub connected_at: String,
-    /// Every open shell on this host, keyed by shell id.
-    ///
-    /// A host holds several terminals — one tailing a log, one running
-    /// commands — and they all ride the single authenticated connection as
-    /// separate channels. That is what OpenSSH's `ControlMaster` does, and it
-    /// means the second terminal costs no handshake and no second password.
+    /// Every open shell on this host, keyed by shell id. All ride the single
+    /// authenticated connection as separate channels, like OpenSSH's
+    /// `ControlMaster`, so a second terminal costs no handshake.
     shells: Mutex<HashMap<u64, Arc<ShellHandle>>>,
-    /// Long-running command streams (a followed log, for now), keyed by
-    /// stream id. Separate from `shells` because they have no PTY and no
-    /// input, but they are drained at the same four moments so a followed
+    /// Long-running command streams, keyed by stream id. Separate from `shells`
+    /// (no PTY, no input) but drained at the same moments, so a followed
     /// journal cannot outlive its session.
     streams: Mutex<HashMap<u64, Arc<StreamHandle>>>,
     /// Serialises opening a shell, so the cap below cannot be raced past.
     /// A tokio mutex because it is held across `await`.
     shell_open: tokio::sync::Mutex<()>,
-    /// The password this session authenticated with, when it used one.
-    ///
-    /// Kept so `sudo` can reuse it instead of asking for the same string a
-    /// second time. Scoped to the session rather than the app: disconnecting
-    /// drops it, which is a narrower lifetime than the "remember me" vault.
+    /// The password this session authenticated with, kept so `sudo` can reuse
+    /// it. Scoped to the session — disconnecting drops it, a narrower lifetime
+    /// than the "remember me" vault.
     login_password: Mutex<Option<Zeroizing<String>>>,
-    /// The last `/proc/stat` reading, so CPU percentage can be a delta
-    /// between polls. Read and written only after an exec completes — never
-    /// held across an await. Naturally reset by reconnection.
+    /// The last `/proc/stat` reading, so CPU percentage is a delta between
+    /// polls. Written only after an exec completes, never across an await.
     prev_cpu: Mutex<Option<CpuTimes>>,
 }
 
@@ -132,8 +119,8 @@ impl LiveSession {
         self.shell_open.lock().await
     }
 
-    /// Look up one shell. Returns `None` once it has been closed, which is
-    /// how a late write from an unmounting pane fails harmlessly.
+    /// Look up one shell. `None` once closed, so a late write from an
+    /// unmounting pane fails harmlessly.
     pub fn shell(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
         self.shells
             .lock()
@@ -150,9 +137,8 @@ impl LiveSession {
     }
 
     /// Remove one shell, returning it so the caller can close the channel.
-    ///
-    /// Removing by id is what stops a pane tearing down late from closing a
-    /// shell that is not its own — an unknown id is a no-op, not an error.
+    /// Removing by id stops a late teardown closing someone else's shell; an
+    /// unknown id is a no-op, not an error.
     pub fn remove_shell(&self, shell_id: u64) -> Option<Arc<ShellHandle>> {
         self.shells
             .lock()
@@ -160,10 +146,8 @@ impl LiveSession {
             .and_then(|mut shells| shells.remove(&shell_id))
     }
 
-    /// Empty the map, returning everything that was in it.
-    ///
-    /// Used when the session goes away: leaving entries behind would hold
-    /// channel handles for the lifetime of the app.
+    /// Empty the map, returning everything that was in it. Used when the
+    /// session goes away; entries left behind would hold channel handles.
     pub fn drain_shells(&self) -> Vec<Arc<ShellHandle>> {
         self.shells
             .lock()
@@ -186,10 +170,9 @@ impl LiveSession {
         self.shells.lock().map(|shells| shells.len()).unwrap_or(0)
     }
 
-    /// Park a stream. The cap is checked by the caller *before* the channel
-    /// is opened — refusing after would mean closing a command already
-    /// running remotely. A race between two opens can overshoot by one,
-    /// which a leak-stop (unlike a security boundary) can tolerate.
+    /// Park a stream. The caller checks the cap before opening the channel;
+    /// refusing after would strand a command already running remotely. Two
+    /// concurrent opens can overshoot by one, which a leak-stop tolerates.
     pub fn add_stream(&self, handle: StreamHandle) -> Arc<StreamHandle> {
         let handle = Arc::new(handle);
         if let Ok(mut streams) = self.streams.lock() {
@@ -295,8 +278,7 @@ impl SessionRegistry {
     pub async fn disconnect(&self, host_id: &str) -> bool {
         match self.remove(host_id) {
             Some(live) => {
-                // Every shell, not just the active one — an entry left behind
-                // holds a channel handle for the lifetime of the app.
+                // Every shell, not just the active one.
                 for shell in live.drain_shells() {
                     shell.close().await;
                 }

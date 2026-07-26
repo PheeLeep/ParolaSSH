@@ -1,19 +1,15 @@
 //! One-round-trip performance sampling.
 //!
-//! Each sample is a single compound command over the existing session — five
-//! `cat`s and a `df` cost less than a second shell would — parsed here into
-//! numbers the pane can chart. Nothing is installed, nothing is privileged.
+//! Each sample is one compound command over the existing session, parsed here
+//! into numbers the pane can chart. Nothing is installed or privileged.
 //!
-//! CPU percentage needs two `/proc/stat` readings and comes from the delta
-//! between successive polls: the previous reading is kept on the session
-//! (`LiveSession::prev_cpu`), so the first sample honestly reports "no
-//! reading yet" instead of sleeping a second inside the command. The delta
-//! then spans the real polling interval, which is what a chart wants anyway.
+//! CPU percentage is a delta between two `/proc/stat` readings, so the previous
+//! one is kept on the session (`LiveSession::prev_cpu`) and the first sample
+//! reports "no reading yet" rather than sleeping inside the command.
 //!
-//! macOS and BSD have no `/proc`: they get the honest partial — load, uptime
-//! and disks — with a note saying why CPU and memory are absent. Windows
-//! reports through CIM in one PowerShell invocation, JSON out, because its
-//! `LoadPercentage` is already an instantaneous figure needing no delta.
+//! macOS and BSD have no `/proc` and get a partial (load, uptime, disks) with a
+//! note. Windows reports through CIM as JSON; its `LoadPercentage` is already
+//! instantaneous and needs no delta.
 
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -25,9 +21,8 @@ use crate::ssh::{SshError, SshResult};
 /// Section separator for the compound commands. Improbable in real output.
 const MARKER: &str = "---PAROLA---";
 
-/// One sample, as the pane receives it. Every field is optional-ish on
-/// purpose: a platform reports what it can and says so, rather than faking
-/// zeros for the rest.
+/// One sample, as the pane receives it. Fields are optional on purpose: a
+/// platform reports what it can rather than faking zeros.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostMetrics {
@@ -111,8 +106,7 @@ pub async fn sample(live: &LiveSession) -> SshResult<HostMetrics> {
 
     let metrics = match live.os {
         OsFamily::Linux => {
-            // The previous reading is read and replaced only after the exec
-            // finished — the lock is never held across an await.
+            // After the exec, so the lock is never held across an await.
             let previous = live.prev_cpu();
             let (metrics, current) = parse_linux(&output.stdout, previous, sampled_at_ms);
             if let Some(current) = current {
@@ -183,8 +177,7 @@ fn parse_proc_stat(text: &str) -> Option<CpuTimes> {
         return None;
     }
 
-    // idle + iowait count as idle; everything else in the first eight
-    // fields (user nice system idle iowait irq softirq steal) is busy.
+    // idle + iowait are idle; the rest of the first eight fields are busy.
     let idle = fields[3] + fields.get(4).copied().unwrap_or(0);
     let total: u64 = fields.iter().take(8).sum();
 
@@ -194,10 +187,8 @@ fn parse_proc_stat(text: &str) -> Option<CpuTimes> {
     })
 }
 
-/// Percentage of non-idle time between two readings.
-///
-/// Counters only ever grow; a shrink means the machine rebooted between
-/// samples, and the honest answer to that is "no reading", not a negative.
+/// Percentage of non-idle time between two readings. Counters only grow, so a
+/// shrink means a reboot — answered with "no reading", not a negative.
 pub fn cpu_percent(previous: CpuTimes, current: CpuTimes) -> Option<f64> {
     if current.total <= previous.total || current.busy < previous.busy {
         return None;
@@ -255,8 +246,7 @@ fn parse_df(text: &str) -> Vec<DiskInfo> {
             if total_kb == 0 {
                 return None;
             }
-            // A mount point may contain spaces; it is everything from the
-            // sixth field on.
+            // Mount points may contain spaces: everything from field six on.
             let mount = fields[5..].join(" ");
 
             Some(DiskInfo {
@@ -286,9 +276,8 @@ fn parse_loadavg(text: &str) -> Option<[f64; 3]> {
     Some([one, five, fifteen])
 }
 
-/// macOS/BSD: `uptime` (one line: time, uptime, users, load averages) plus
-/// `df`. CPU and memory need platform-specific counters not implemented yet,
-/// and the notes say so instead of showing zeros.
+/// macOS/BSD: `uptime` plus `df`. CPU and memory need platform-specific
+/// counters not implemented yet; the notes say so instead of showing zeros.
 pub fn parse_unix_fallback(stdout: &str, sampled_at_ms: i64) -> HostMetrics {
     let mut sections = stdout.split(MARKER);
     let uptime_line = sections.next().unwrap_or("");
@@ -365,8 +354,7 @@ pub fn parse_windows(stdout: &str, sampled_at_ms: i64) -> HostMetrics {
             (sampled_at_ms > boot_ms).then(|| ((sampled_at_ms - boot_ms) / 1000) as u64)
         });
 
-    // A single disk arrives as an object rather than a one-element array —
-    // ConvertTo-Json unwraps it even under @(); tolerate both.
+    // ConvertTo-Json unwraps one-element arrays even under @(); tolerate both.
     let disks = match value.get("disks") {
         Some(serde_json::Value::Array(items)) => items.iter().filter_map(windows_disk).collect(),
         Some(item @ serde_json::Value::Object(_)) => {

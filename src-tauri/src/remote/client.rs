@@ -1,13 +1,12 @@
 //! Connecting and authenticating.
 //!
-//! The host key decision happens in `Handler::check_server_key`, before any
-//! credential is sent. russh calls it during the key exchange, so refusing
-//! there means a password never leaves the machine — which is the whole point
-//! of checking known_hosts at all.
+//! The host key decision happens in `Handler::check_server_key` during the key
+//! exchange, before any credential is sent, so refusing there means a password
+//! never leaves the machine.
 //!
-//! Because that callback cannot block on a dialog, an unknown host fails the
-//! connection and reports its fingerprint. The UI shows it, the user decides,
-//! and a second attempt carries `trust_unknown` so the key is recorded.
+//! That callback cannot block on a dialog, so an unknown host fails the
+//! connection and reports its fingerprint; a second attempt carries
+//! `trust_unknown` to record the key.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -65,14 +64,12 @@ struct KeyVerdict {
     accepted_fingerprint: Option<String>,
 }
 
-/// What the key exchange actually negotiated, kept for the audit tab's
-/// tier-0 checks — these facts are free, the handshake already happened.
+/// What the key exchange negotiated, kept for the audit tab's tier-0 checks.
 ///
-/// Note that with russh's default `Preferred` lists no SHA-1 kex and no CBC
-/// cipher can ever be negotiated (a server offering only those fails the
-/// connection instead), so the checks that can really fire today are the
-/// host key algorithm and strict-kex support. The rest are kept because the
-/// preference lists may someday be widened for legacy devices.
+/// With russh's default `Preferred` lists, no SHA-1 kex or CBC cipher can be
+/// negotiated at all, so only the host key algorithm and strict-kex checks can
+/// fire today. The rest are kept in case those lists are widened for legacy
+/// devices.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NegotiatedCrypto {
@@ -115,12 +112,11 @@ impl client::Handler for Handler {
         );
 
         let problem = match known {
-            // Recorded and matching: the ordinary case.
+            // Recorded and matching.
             Ok(true) => None,
             // Not recorded. Trust it only if the user already said so.
             Ok(false) if self.trust_unknown => {
-                // A failure to record is not a reason to refuse the
-                // connection — it just means we will ask again next time.
+                // Failing to record just means we ask again next time.
                 let _ = learn_known_hosts_path(
                     &self.hostname,
                     self.port,
@@ -134,9 +130,8 @@ impl client::Handler for Handler {
                 fingerprint: fingerprint.clone(),
                 algorithm,
             }),
-            // A recorded key that no longer matches. Never auto-accepted:
-            // this is what a man-in-the-middle looks like, and `trust_unknown`
-            // was a decision about a *different* key than the one now offered.
+            // A recorded key that no longer matches — never auto-accepted, not
+            // even with `trust_unknown`, which answered about a different key.
             Err(russh::keys::Error::KeyChanged { .. }) => Some(HostKeyProblem {
                 kind: "changed".into(),
                 fingerprint: fingerprint.clone(),
@@ -170,11 +165,9 @@ impl client::Handler for Handler {
         Ok(accepted)
     }
 
-    /// Record what the key exchange settled on.
-    ///
-    /// This fires again on every rekey, but only the *first* observation is
-    /// kept: russh does not re-signal strict-kex during a rekey, so the
-    /// initial handshake is the one whose negotiation is fully described.
+    /// Record what the key exchange settled on. Fires again on every rekey, but
+    /// only the first observation is kept: russh does not re-signal strict-kex
+    /// on a rekey, so only the initial handshake is fully described.
     async fn kex_done(
         &mut self,
         _shared_secret: Option<&[u8]>,
@@ -245,8 +238,8 @@ impl Session {
             }
             Ok(Ok(handle)) => handle,
             Ok(Err(error)) => {
-                // A rejected host key surfaces here as a generic failure, so
-                // check what the handler recorded before blaming the network.
+                // A rejected host key surfaces as a generic failure, so check
+                // the handler's verdict before blaming the network.
                 if let Some(problem) = take_problem(&verdict) {
                     return Err(host_key_error(target, &problem));
                 }
@@ -273,9 +266,8 @@ impl Session {
 
     /// Run one command, optionally feeding it stdin, and collect its output.
     ///
-    /// `stdin` exists for `sudo -S`: the password goes down the channel rather
-    /// than onto the command line, where it would be visible in the remote
-    /// process list to every other user on the box.
+    /// `stdin` exists for `sudo -S`: a password on the command line would be
+    /// visible in the remote process list.
     pub async fn exec(&self, command: &str, stdin: Option<&[u8]>) -> SshResult<CommandOutput> {
         self.exec_with_timeout(command, stdin, COMMAND_TIMEOUT).await
     }
@@ -350,12 +342,9 @@ impl Session {
         })
     }
 
-    /// Cheap liveness check for the heartbeat.
-    ///
-    /// Opens and closes a channel rather than running a command: it costs one
-    /// round trip, spawns no remote process, and leaves nothing in the auth
-    /// log. A host that has been powered off fails here within the timeout
-    /// instead of looking connected until someone types into it.
+    /// Cheap liveness check for the heartbeat. Opens and closes a channel
+    /// rather than running a command: one round trip, no remote process, and
+    /// nothing in the auth log.
     pub async fn is_alive(&self) -> bool {
         let check = async {
             match self.handle.channel_open_session().await {
@@ -372,10 +361,8 @@ impl Session {
             .unwrap_or(false)
     }
 
-    /// Open a bare session channel for a caller that drives it itself.
-    ///
-    /// Exists so `shell` can request a PTY without this module having to know
-    /// about terminals, and without leaking the private `Handler` type.
+    /// Open a bare session channel for a caller that drives it itself, so
+    /// `shell` can request a PTY without this module knowing about terminals.
     pub async fn open_channel(&self) -> SshResult<russh::Channel<client::Msg>> {
         self.handle
             .channel_open_session()
@@ -458,11 +445,8 @@ async fn authenticate(
     }
 }
 
-/// Connect to the agent, then offer everything it holds.
-///
-/// Only the connection differs per platform: a Unix socket named by
-/// `SSH_AUTH_SOCK`, or the OpenSSH named pipe on Windows. The offering loop is
-/// shared, so a fix to it applies to both.
+/// Connect to the agent, then offer everything it holds. Only the connection
+/// differs per platform: `SSH_AUTH_SOCK` on Unix, a named pipe on Windows.
 #[cfg(unix)]
 async fn authenticate_with_agent(handle: &mut Handle<Handler>, target: &Target) -> SshResult<bool> {
     use russh::keys::agent::client::AgentClient;
@@ -492,10 +476,8 @@ async fn authenticate_with_agent(handle: &mut Handle<Handler>, target: &Target) 
     offer_agent_identities(handle, target, &mut agent).await
 }
 
-/// Try each identity in turn until the server accepts one.
-///
-/// A rejected key is not an error — an agent commonly holds keys for several
-/// hosts, and only the last failure is worth reporting.
+/// Try each identity in turn until the server accepts one. A rejected key is
+/// not an error — an agent commonly holds keys for several hosts.
 async fn offer_agent_identities<S>(
     handle: &mut Handle<Handler>,
     target: &Target,

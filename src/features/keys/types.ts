@@ -1,6 +1,5 @@
-/** Mirrors the serde shapes in `src-tauri/src/ssh/`. Kept hand-written to
- *  match the convention in `features/hosts/types.ts`; if these grow much
- *  further, generate them instead. */
+/** Mirrors the serde shapes in `src-tauri/src/ssh/`. Hand-written, like
+ *  `features/hosts/types.ts`; generate them if they grow much further. */
 
 export type KeyFormat = "openSsh" | "legacyPem" | "pkcs8" | "unknown";
 

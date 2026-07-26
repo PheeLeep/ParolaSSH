@@ -1,9 +1,8 @@
 //! The Tauri command surface for SSH keys.
 //!
-//! This is the only way the webview can reach the filesystem. There is
-//! deliberately no filesystem plugin scoped to `~/.ssh`: a narrow set of
-//! purpose-built commands means a compromised frontend can ask for key
-//! *metadata*, but has no verb that returns key material.
+//! The only way the webview reaches the filesystem. There is deliberately no
+//! filesystem plugin scoped to `~/.ssh`: with purpose-built commands only, a
+//! compromised frontend can ask for key metadata but never key material.
 
 use std::path::{Path, PathBuf};
 
@@ -22,11 +21,9 @@ fn ssh_dir() -> SshResult<PathBuf> {
     SshPaths::discover().map(|paths| paths.dir)
 }
 
-/// Confirm a path lies inside the SSH directory before acting on it.
-///
-/// Commands receive paths that originated from a scan, but the frontend is not
-/// a trust boundary we want to lean on — an id could be tampered with. Fixes
-/// are therefore constrained to the directory the audit actually covers.
+/// Confirm a path lies inside the SSH directory before acting on it. Paths come
+/// from a scan, but the frontend is not a trust boundary, so fixes stay
+/// constrained to the directory the audit covers.
 fn ensure_within_ssh_dir(path: &Path, ssh_dir: &Path) -> SshResult<()> {
     let canonical_target = path
         .canonicalize()
@@ -98,11 +95,9 @@ pub fn set_finding_suppressed(
     audit::run(&dir, &suppressions.as_set())
 }
 
-/// Tighten a file or directory to owner-only access.
-///
-/// The only fix applied automatically, and only on explicit request for one
-/// path at a time — a bulk chmod that guesses wrong on a symlinked dotfiles
-/// repository is worse than the finding it fixes.
+/// Tighten a file or directory to owner-only access. The only automatic fix,
+/// and only one explicitly requested path at a time — a bulk chmod that guesses
+/// wrong on a symlinked dotfiles repo is worse than the finding.
 #[tauri::command]
 pub fn restrict_permissions(path: String, is_dir: bool) -> SshResult<KeyPermissions> {
     let dir = ssh_dir()?;
@@ -119,12 +114,9 @@ pub fn generate_ssh_key(request: GenerateRequest) -> SshResult<GenerateOutcome> 
     generate::generate(&dir, request)
 }
 
-/// Permanently delete a private key, and optionally its `.pub` sidecar.
-///
-/// Irreversible, so it is deliberately narrow: the path must resolve inside
-/// the SSH directory *and* the file must parse as a private key. The UI is
-/// responsible for confirming intent — this command does not second-guess a
-/// request that passes both checks.
+/// Permanently delete a private key, and optionally its `.pub` sidecar. The
+/// path must resolve inside the SSH directory and the file must parse as a
+/// private key; confirming intent is the UI's job.
 #[tauri::command]
 pub fn delete_ssh_key(path: String, include_public: bool) -> SshResult<Vec<String>> {
     let dir = ssh_dir()?;
@@ -144,10 +136,8 @@ pub fn verify_key_passphrase(path: String, passphrase: String) -> SshResult<bool
     generate::verify_passphrase(&target, &passphrase)
 }
 
-/// Read a `.pub` file so the UI can show and copy it.
-///
-/// Restricted to public keys by extension — this command must never become a
-/// way to read `id_ed25519` itself.
+/// Read a `.pub` file so the UI can show and copy it. Restricted to public keys
+/// by extension, so it never becomes a way to read `id_ed25519` itself.
 #[tauri::command]
 pub fn read_public_key(path: String) -> SshResult<String> {
     let dir = ssh_dir()?;

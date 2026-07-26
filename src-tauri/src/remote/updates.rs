@@ -1,20 +1,15 @@
 //! What updates a host is waiting on. Read-only, forever.
 //!
-//! There is deliberately no install verb in this module and there never will
-//! be from this pane: silently changing packages on someone's server from a
-//! GUI is the same category of mistake as installing Lynis would be. The pane
-//! reports; the operator decides in a terminal.
+//! There is deliberately no install verb here: the pane reports, and the
+//! operator decides in a terminal.
 //!
-//! Detection and listing happen in **one round trip** per platform, with
-//! `PAROLA_` markers separating what the parser needs to know from what the
-//! tools printed. A host with no recognised package manager is an honest
-//! empty state, not an error — the same philosophy as the VPN module's
-//! `CliOutcome::Missing`.
+//! Detection and listing happen in one round trip per platform, with `PAROLA_`
+//! markers separating parser input from tool output. A host with no recognised
+//! package manager is an empty state, not an error.
 //!
-//! Windows honesty in particular: querying *pending* updates from the CLI
-//! needs the PSWindowsUpdate module, which most machines do not have. Absent
-//! module, the pane says so and shows recent installed hotfixes instead —
-//! and never installs the module to improve its own answer.
+//! On Windows, querying pending updates needs the PSWindowsUpdate module, which
+//! most machines lack. Without it the pane says so and shows recent installed
+//! hotfixes instead — it never installs the module to improve its own answer.
 
 use std::time::Duration;
 
@@ -68,9 +63,9 @@ pub enum UpdateReport {
     },
 }
 
-/// Everything Linux needs in one exec. `PAROLA_MGR` names the manager the
-/// host actually has; `PAROLA_EXIT` captures dnf's tri-state exit code inline
-/// because the compound command's own status would swallow it.
+/// Everything Linux needs in one exec. `PAROLA_MGR` names the manager present;
+/// `PAROLA_EXIT` captures dnf's tri-state exit code, which the compound
+/// command's own status would swallow.
 const LINUX_COMMAND: &str = "if command -v apt-get >/dev/null 2>&1; then \
      echo PAROLA_MGR=apt; apt list --upgradable 2>/dev/null; \
      elif command -v dnf >/dev/null 2>&1; then \
@@ -211,8 +206,8 @@ fn parse_dnf(stdout: &str) -> UpdateReport {
             if trimmed.starts_with("PAROLA_") || trimmed.is_empty() {
                 return None;
             }
-            // The "Obsoleting Packages" section lists replacements, not
-            // updates, and its rows would parse identically — skip it.
+            // "Obsoleting Packages" lists replacements, not updates, and its
+            // rows would parse identically.
             if trimmed.starts_with("Obsoleting Packages") {
                 in_obsoleting = true;
                 return None;
@@ -239,8 +234,8 @@ fn parse_dnf(stdout: &str) -> UpdateReport {
         .collect();
 
     if updates.is_empty() {
-        // Exit 100 promised rows; not finding any means the output surprised
-        // us, and saying "up to date" would be a lie.
+        // Exit 100 promised rows, so finding none means the output surprised
+        // us — "up to date" would be wrong.
         return UpdateReport::ManagerMissing {
             detail: "dnf reported pending updates but the list could not be read; \
                      check from a terminal."
@@ -255,10 +250,8 @@ fn parse_dnf(stdout: &str) -> UpdateReport {
     }
 }
 
-/// Parse the Windows first round: module presence + hotfix history. Pure.
-///
-/// Returns the history and whether the module exists; the caller runs the
-/// pending query only in the second case.
+/// Parse the Windows first round: module presence + hotfix history. Pure. The
+/// caller runs the pending query only when the module exists.
 pub fn parse_windows_first_round(output: &CommandOutput) -> (bool, Vec<HotfixItem>) {
     let stdout = &output.stdout;
     let module_present = stdout.contains("PAROLA_MODULE=yes");

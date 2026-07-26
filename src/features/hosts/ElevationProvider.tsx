@@ -14,21 +14,15 @@ import { ELEVATION_LABELS } from "./types";
 /**
  * One prompt for every privileged action, asked at the moment of elevating.
  *
- * Before this existed, each pane grew its own sudo password box and
- * password-less elevation — root, NOPASSWD sudo, a Windows administrator
- * token — ran with no confirmation at all. That is the wrong way round: the
- * thing worth confirming is that a command is about to run *as root on
- * someone else's machine*, and whether a password is involved is an accident
- * of how that host's sudo is configured.
- *
- * So the prompt always appears, and adapts:
+ * The prompt always appears — what is worth confirming is that a command runs
+ * as root on someone else's machine, not whether a password happens to be
+ * involved — and adapts to the host's elevation route:
  *
  *  - `sudoPassword` — asks for the account password, offering the one this
  *    session logged in with rather than making it be typed twice.
  *  - `notNeeded` / `sudoNoPassword` / `windowsAdminToken` — a consent step
- *    showing the literal command. Nothing to type; something to agree to.
- *  - `unavailable` — explains why there is no route to root and offers no
- *    button that pretends otherwise.
+ *    showing the literal command.
+ *  - `unavailable` — explains why there is no route to root.
  *
  * The password is handed back to the caller and never held here.
  */
@@ -41,16 +35,14 @@ export interface ElevationRequest {
   command?: string | null;
   /** True when the command interrupts or changes the machine. */
   destructive?: boolean;
-  /**
-   * Set when the action is still useful unelevated — the audit's read-only
-   * checks, for instance. Becomes a second button, labelled with this text.
-   */
+  /** Set when the action is still useful unelevated (the audit's read-only
+   *  checks, say). Becomes a second button labelled with this text. */
   unprivilegedLabel?: string;
 }
 
 export type ElevationGrant =
-  /** `password` is null when sudo needs none, or when the session's own
-   *  login password should be used — it never travels through the webview. */
+  /** Null when sudo needs no password, or when the session's own login
+   *  password should be used — that one never travels through the webview. */
   | { outcome: "granted"; password: string | null }
   /** The user chose to continue without elevating. */
   | { outcome: "unprivileged" }
@@ -65,8 +57,7 @@ export function ElevationProvider({ children }: { children: React.ReactNode }) {
   const settleRef = useRef<((grant: ElevationGrant) => void) | null>(null);
 
   const requestElevation = useCallback<RequestElevation>((request) => {
-    // A second request while one is open would strand the first promise, and
-    // a caller awaiting a prompt that vanished would hang forever.
+    // A second request while one is open would strand the first promise.
     settleRef.current?.({ outcome: "cancelled" });
     setPending(request);
     return new Promise<ElevationGrant>((resolve) => {
@@ -120,8 +111,8 @@ function ElevationPrompt({
 
   const cancel = () => onSettle({ outcome: "cancelled" });
 
-  // Rendered above whatever opened it — these prompts are raised from inside
-  // other modals, and Bootstrap's default stacking would bury this one.
+  // Raised from inside other modals, which Bootstrap's default stacking would
+  // otherwise render on top.
   const stacked = { style: { zIndex: 1075 }, backdropClassName: "elevation-backdrop" };
 
   if (!connection) {
@@ -155,8 +146,7 @@ function ElevationPrompt({
   const grant = () =>
     onSettle({
       outcome: "granted",
-      // Null tells the Rust side to fall back to the session's own login
-      // password; it never travels back to the webview to get here.
+      // Null tells the Rust side to use the session's own login password.
       password: usingLogin ? null : password || null,
     });
 

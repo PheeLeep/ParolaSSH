@@ -1,16 +1,11 @@
 //! Which VPN clients live on this machine, and are they up?
 //!
-//! ParolaSSH does not tunnel anything itself. The clients recognised here —
-//! Tailscale, Twingate, NetBird, ZeroTier, and plain WireGuard — all sit at
-//! the OS network layer, so connections to their addresses already flow
-//! through them — as long as the client is running. What the app gains by
-//! knowing about them is a better diagnosis: "no response from 100.x.y.z"
-//! leaves someone checking cables, while "Tailscale is disconnected" is a
-//! one-click repair.
+//! ParolaSSH does not tunnel anything itself — these clients sit at the OS
+//! network layer, so traffic already flows through them. Knowing about them
+//! only buys a better diagnosis than "no response from 100.x.y.z".
 //!
-//! Detection is deliberately shallow and read-only: find the client, ask its
-//! own CLI how it feels, and never touch its configuration. A machine without
-//! a given VPN installed is a normal outcome, not an error.
+//! Detection is shallow and read-only: find the client, ask its own CLI, never
+//! touch its configuration. A VPN that is not installed is a normal outcome.
 
 pub mod commands;
 mod netbird;
@@ -25,9 +20,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-/// How long a VPN client's own CLI gets to answer before we assume it is
-/// wedged. These are local commands that normally return in milliseconds;
-/// anything slower would stall the probe result it feeds into.
+/// How long a client's CLI gets before we assume it is wedged. These are local
+/// commands that normally return in milliseconds.
 const CLI_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The VPNs this module knows how to recognise.
@@ -54,10 +48,9 @@ impl VpnKind {
         }
     }
 
-    /// Whether this VPN assigns addresses out of 100.64.0.0/10. Decides who
-    /// a bare CGNAT address may be attributed to; ZeroTier uses RFC1918
-    /// pools and plain WireGuard uses whatever the config says, so blaming
-    /// either for a 100.x address would be a fabrication.
+    /// Whether this VPN assigns out of 100.64.0.0/10, so a bare CGNAT address
+    /// may be attributed to it. ZeroTier uses RFC1918 and WireGuard whatever
+    /// the config says.
     pub fn uses_cgnat(self) -> bool {
         matches!(self, Self::Tailscale | Self::Twingate | Self::Netbird)
     }
@@ -70,9 +63,8 @@ pub struct VpnStatus {
     pub kind: VpnKind,
     /// Whether the client software exists on this machine at all.
     pub installed: bool,
-    /// Whether it currently provides connectivity. Only meaningful when
-    /// `installed`, and best-effort where the client offers no status
-    /// command — see `twingate` for what that costs on macOS and Windows.
+    /// Whether it currently provides connectivity. Meaningful only when
+    /// `installed`, and best-effort where the client has no status command.
     pub up: bool,
     /// Plain-language state, ready to show: "connected", "needs login", …
     pub detail: String,
@@ -89,10 +81,8 @@ impl VpnStatus {
     }
 }
 
-/// Check every VPN we know how to recognise, concurrently.
-///
-/// Boxed so the roster is a plain list: adding a provider is one line here
-/// plus its module, nothing else.
+/// Check every VPN we know how to recognise, concurrently. Boxed so adding a
+/// provider is one line here plus its module.
 pub async fn detect_all() -> Vec<VpnStatus> {
     let checks: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = VpnStatus> + Send>>> = vec![
         Box::pin(tailscale::status()),
@@ -109,15 +99,13 @@ pub async fn detect_all() -> Vec<VpnStatus> {
 pub enum AddressHint {
     /// A `*.ts.net` MagicDNS name — unambiguously Tailscale.
     Tailscale,
-    /// An IP in 100.64.0.0/10, the carrier-grade NAT range both Tailscale
-    /// and Twingate assign from. Ambiguous between them — and, rarely, a
-    /// genuine ISP address — so it is a hint, never a verdict.
+    /// An IP in 100.64.0.0/10, which Tailscale, Twingate and NetBird all assign
+    /// from — and which is rarely a genuine ISP address. A hint, not a verdict.
     CarrierGradeNat,
 }
 
-/// Read what the address itself gives away. Purely lexical: nothing here
-/// resolves DNS, because the names in question only resolve while the VPN
-/// they belong to is up — exactly the situation being diagnosed.
+/// Read what the address gives away. Purely lexical — resolving DNS would be
+/// useless here, since these names only resolve while the VPN is up.
 pub fn address_hint(hostname: &str) -> Option<AddressHint> {
     let host = hostname.trim().trim_end_matches('.');
 
@@ -140,8 +128,7 @@ pub fn address_hint(hostname: &str) -> Option<AddressHint> {
 #[serde(rename_all = "camelCase")]
 pub struct VpnBinding {
     pub hostname: String,
-    /// Which VPN, when it can be told; `None` when the address sits in a
-    /// range both could own.
+    /// Which VPN, when it can be told; `None` when several could own the range.
     pub kind: Option<VpnKind>,
     /// Ready to show, e.g. "Twingate resource 'acme project'".
     pub description: String,
@@ -149,10 +136,9 @@ pub struct VpnBinding {
 
 /// Tie one address to the VPN that carries it, if any.
 ///
-/// Twingate's resource list wins over the lexical hints for the same reason
-/// as in `explain_unreachable`: it is the client stating ownership. A bare
-/// CGNAT address is only attributed when exactly one VPN is installed —
-/// with both present the glyph would be a guess, so it says so.
+/// Twingate's resource list outranks the lexical hints — it is the client
+/// stating ownership. A bare CGNAT address is attributed only when exactly one
+/// CGNAT VPN is installed; otherwise the glyph would be a guess.
 pub fn bind(
     hostname: &str,
     resources: &[twingate::TwingateResource],
@@ -173,9 +159,8 @@ pub fn bind(
             description: "Tailscale address".to_string(),
         }),
         AddressHint::CarrierGradeNat => {
-            // Only the VPNs that hand out 100.64.0.0/10 are candidates; a
-            // machine that additionally runs, say, WireGuard must not widen
-            // the ambiguity.
+            // Only CGNAT-assigning VPNs are candidates; a WireGuard alongside
+            // them must not widen the ambiguity.
             let installed: Vec<&VpnStatus> = statuses
                 .iter()
                 .filter(|status| status.installed && status.kind.uses_cgnat())
@@ -205,13 +190,10 @@ pub fn bind(
 }
 
 /// The extra sentence a failed probe earns when its address looks VPN-bound.
-///
-/// `None` when there is nothing useful to add: the address does not look
-/// like a VPN address, or nothing on this machine could explain the silence.
+/// `None` when there is nothing useful to add.
 pub async fn explain_unreachable(hostname: &str) -> Option<String> {
-    // Twingate's resource list outranks the lexical hints: resources are
-    // often plain LAN addresses like 192.168.1.0/24 that no heuristic could
-    // attribute, and the list is the client stating ownership, not a guess.
+    // Resources are often plain LAN addresses no heuristic could attribute, so
+    // the list outranks the lexical hints.
     let resources = twingate::resources().await;
     if let Some(resource) = resources.iter().find(|r| r.matches(hostname)) {
         return Some(twingate_advice(resource, &twingate::status().await));
@@ -221,11 +203,10 @@ pub async fn explain_unreachable(hostname: &str) -> Option<String> {
     advice(hint, &detect_all().await)
 }
 
-/// What to say when the dead address is a known Twingate resource.
-///
-/// Every branch hedges on "unless you are on the host's own network": a
-/// resource like 192.168.1.0/24 is reachable directly on premise, and this
-/// module cannot tell which side of the wall the machine is on right now.
+/// What to say when the dead address is a known Twingate resource. Every branch
+/// hedges on "unless you are on the host's own network", because a resource may
+/// be reachable directly on premise and this module cannot tell which side of
+/// the wall it is on.
 fn twingate_advice(resource: &twingate::TwingateResource, twingate: &VpnStatus) -> String {
     if !twingate.up {
         format!(
@@ -235,8 +216,8 @@ fn twingate_advice(resource: &twingate::TwingateResource, twingate: &VpnStatus) 
             resource.name, twingate.detail
         )
     } else if resource.needs_auth() {
-        // Worth naming the exact command: `ssh` to a resource that needs
-        // re-auth just hangs, giving the user no error to work from.
+        // Name the exact command: `ssh` to a resource needing re-auth just
+        // hangs, with no error to work from.
         format!(
             "This address is the Twingate resource '{}', which needs authentication \
              ({}). Run `twingate auth \"{}\"` or approve the Twingate notification, \
@@ -253,10 +234,8 @@ fn twingate_advice(resource: &twingate::TwingateResource, twingate: &VpnStatus) 
     }
 }
 
-/// Turn a hint plus the local VPN picture into advice, or stay quiet.
-///
-/// Split from `explain_unreachable` so the wording can be tested without a
-/// VPN client installed on the machine running the tests.
+/// Turn a hint plus the local VPN picture into advice, or stay quiet. Split
+/// from `explain_unreachable` so the wording is testable without a VPN client.
 fn advice(hint: AddressHint, statuses: &[VpnStatus]) -> Option<String> {
     match hint {
         AddressHint::Tailscale => {
@@ -274,8 +253,6 @@ fn advice(hint: AddressHint, statuses: &[VpnStatus]) -> Option<String> {
                     tailscale.detail
                 ))
             } else {
-                // The VPN is fine, so the silence is the host's own: off,
-                // or removed from the tailnet.
                 Some(
                     "Tailscale is connected on this machine, so the host itself is \
                      likely off or no longer on the tailnet."
@@ -291,10 +268,9 @@ fn advice(hint: AddressHint, statuses: &[VpnStatus]) -> Option<String> {
                 .collect();
 
             match down.as_slice() {
-                // Nothing installed is down. Either no VPN is here at all —
-                // then 100.x may be a genuine carrier address and we would
-                // only mislead — or every VPN is up and the base "host may
-                // be off" message already says what is left to say.
+                // Nothing down to blame: with no CGNAT VPN here, 100.x may be a
+                // genuine carrier address, and if all are up the base message
+                // already covers it.
                 [] => None,
                 [only] => Some(format!(
                     "This address is in the range VPNs like Tailscale and Twingate use, \
@@ -322,8 +298,7 @@ fn advice(hint: AddressHint, statuses: &[VpnStatus]) -> Option<String> {
 
 /// What happened when we tried a client's CLI.
 pub(crate) enum CliOutcome {
-    /// The program is not there (or not runnable) — not installed, as far as
-    /// this path is concerned.
+    /// Not there, or not runnable — either way, not installed.
     Missing,
     /// It ran but did not answer within `CLI_TIMEOUT`.
     TimedOut,
@@ -337,11 +312,8 @@ pub(crate) enum CliOutcome {
     },
 }
 
-/// Run one VPN client CLI with a timeout and no console window.
-///
-/// Everything here is diagnostic, so failure shapes collapse deliberately:
-/// a missing binary and a binary we may not execute both come back `Missing`,
-/// because either way this path cannot learn anything from it.
+/// Run one VPN client CLI with a timeout and no console window. A missing
+/// binary and one we may not execute both collapse to `Missing`.
 pub(crate) async fn run_cli(program: &str, args: &[&str]) -> CliOutcome {
     let mut command = tokio::process::Command::new(program);
     command
@@ -349,8 +321,7 @@ pub(crate) async fn run_cli(program: &str, args: &[&str]) -> CliOutcome {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // If the timeout drops the future, the child must die with it rather
-        // than linger as a zombie behind every probe.
+        // The timeout drops the future; the child must die with it.
         .kill_on_drop(true);
 
     // Without this, every status check on Windows flashes a console window.

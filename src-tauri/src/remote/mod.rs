@@ -1,12 +1,11 @@
 //! Talking to a remote machine.
 //!
-//! Split from `ssh` (which is about *local* key files) because the trust model
-//! is different: everything here crosses a network to a host that may not be
-//! what it claims. Host keys are checked against `~/.ssh/known_hosts` before a
-//! password is ever offered, and credentials live in memory for the lifetime
-//! of the session and no longer.
+//! Split from `ssh` (local key files) because the trust model differs:
+//! everything here crosses a network to a host that may not be what it claims.
+//! Host keys are checked against `~/.ssh/known_hosts` before a password is
+//! offered, and credentials live only for the session.
 //!
-//! The layering is deliberate:
+//! The layering:
 //!   * `client`   — connect and authenticate; owns the host key decision.
 //!   * `registry` — keeps authenticated sessions alive between commands.
 //!   * `power`    — builds shutdown/reboot commands per remote OS.

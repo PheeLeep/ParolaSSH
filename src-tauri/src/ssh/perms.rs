@@ -1,9 +1,8 @@
 //! File permissions, modelled per-platform rather than flattened.
 //!
-//! A `u32` mode is meaningless on Windows, and pretending a Windows file is
-//! "0600" would make the audit report a key as safe when every member of
-//! `Users` can read it. So the two worlds stay separate types and the audit
-//! rules branch on the variant.
+//! A `u32` mode is meaningless on Windows: calling such a file "0600" would
+//! report a key as safe while every member of `Users` can read it. So the two
+//! stay separate variants and the audit rules branch on them.
 
 use std::path::Path;
 
@@ -23,10 +22,9 @@ pub enum KeyPermissions {
         display: String,
     },
 
-    /// Windows ACL, reduced to the principals that hold an access entry.
-    ///
-    /// Constructed only on Windows, but compiled and unit-tested everywhere so
-    /// the rules that consume it cannot rot on a non-Windows machine.
+    /// Windows ACL, reduced to the principals holding an access entry.
+    /// Constructed only on Windows, but compiled and tested everywhere so the
+    /// rules consuming it cannot rot.
     #[cfg_attr(not(windows), allow(dead_code))]
     #[serde(rename_all = "camelCase")]
     Windows {
@@ -41,11 +39,9 @@ pub enum KeyPermissions {
 }
 
 impl KeyPermissions {
-    /// True when someone other than the owner can reach the file.
-    ///
-    /// Returns `None` when permissions could not be determined, so callers can
-    /// distinguish "not exposed" from "don't know" instead of defaulting to a
-    /// reassuring answer.
+    /// True when someone other than the owner can reach the file. `None` when
+    /// permissions could not be determined, so "not exposed" and "don't know"
+    /// stay distinguishable.
     pub fn is_exposed(&self) -> Option<bool> {
         match self {
             Self::Posix { mode, .. } => Some(mode & 0o077 != 0),
@@ -148,9 +144,8 @@ fn read_posix(path: &Path) -> KeyPermissions {
 fn read_windows(path: &Path) -> KeyPermissions {
     use std::process::Command;
 
-    // `icacls` is present on every supported Windows version. Shelling out to
-    // it keeps this branch free of unsafe DACL FFI, and the parsing below is
-    // pure so it can be unit-tested on any platform.
+    // Shelling out to `icacls` keeps this branch free of unsafe DACL FFI, and
+    // the parsing below stays pure and testable on any platform.
     let output = Command::new("icacls").arg(path).output();
 
     match output {
@@ -176,23 +171,15 @@ fn read_windows(path: &Path) -> KeyPermissions {
 
 /// Extract the principals and inheritance flag from `icacls` output.
 ///
-/// Output looks like:
-///
 /// ```text
 /// C:\Users\me\.ssh\id_ed25519 NT AUTHORITY\SYSTEM:(F)
 ///                             BUILTIN\Administrators:(F)
-///                             DESKTOP-1\me:(F)
-///
-/// Successfully processed 1 files; Failed processing 0 files
 /// ```
 ///
-/// The first line carries the path followed by the first ACE; subsequent ACEs
-/// are indented. Inherited entries are marked with `(I)`.
-///
-/// `path` is the file icacls was asked about. Both a path and a principal may
-/// contain spaces (`C:\My Keys\id_rsa`, `NT AUTHORITY\SYSTEM`), so the split
-/// cannot be inferred from the line alone — stripping the known path is the
-/// only unambiguous way to find where the first principal begins.
+/// The first line carries the path then the first ACE; later ACEs are indented,
+/// and inherited entries are marked `(I)`. Both paths and principals may
+/// contain spaces, so stripping the known `path` is the only unambiguous way to
+/// find where the first principal begins.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn parse_icacls(output: &str, path: &str) -> (Vec<String>, bool) {
     let mut principals = Vec::new();
@@ -230,11 +217,9 @@ pub fn parse_icacls(output: &str, path: &str) -> (Vec<String>, bool) {
     (principals, inherited)
 }
 
-/// Remove the leading file path from the first line of icacls output.
-///
-/// Falls back to the last space before the rights group when the path does not
-/// match verbatim — icacls may echo it in a different case or normalised form,
-/// and a principal without spaces is the common case.
+/// Remove the leading file path from the first line of icacls output. Falls
+/// back to the last space before the rights group when icacls echoes the path
+/// in a different case or normalised form.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn strip_path_prefix<'a>(line: &'a str, path: &str) -> Option<&'a str> {
     if !path.is_empty() && line.len() > path.len() {
@@ -254,10 +239,9 @@ fn split_ace(ace: &str) -> Option<(&str, &str)> {
     Some((&ace[..colon], &ace[colon..]))
 }
 
-/// Restrict a file so only its owner can read it.
-///
-/// POSIX sets `0600`; Windows drops inheritance and grants the current user
-/// full control. Directories get `0700` on POSIX.
+/// Restrict a file so only its owner can read it. POSIX sets `0600` (`0700` for
+/// directories); Windows drops inheritance and grants the current user full
+/// control.
 pub fn restrict_to_owner(path: &Path, is_dir: bool) -> SshResult<KeyPermissions> {
     #[cfg(unix)]
     {

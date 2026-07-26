@@ -36,15 +36,12 @@ const PRESETS = [
 /**
  * Shut down or reboot a connected host.
  *
- * The dialog leans on the Rust side for two things it refuses to guess at:
- * how this account elevates (sudo, an already-elevated Windows token, or not
- * at all), and the literal command that will run. Both are shown before the
- * button is armed — a remote reboot is not something to trigger from a button
- * whose behaviour is a mystery.
+ * Two things come from the Rust side rather than being guessed at: how this
+ * account elevates, and the literal command that will run. Both are shown
+ * before the button is armed.
  *
- * Elevating itself is not this dialog's job: pressing the button raises the
- * shared elevation prompt, which is the one place that asks for a sudo
- * password or consent to run as root.
+ * Elevating is not this dialog's job — the button raises the shared elevation
+ * prompt, which is the one place that asks for a password or consent.
  */
 export function PowerDialog({
   host,
@@ -143,8 +140,7 @@ export function PowerDialog({
   const canRun = !busy && !blocked && plan !== null && (!destructive || confirmed);
 
   const run = async () => {
-    // Every power action runs elevated, so the prompt is unconditional: what
-    // it asks for depends on how this host elevates, not on whether it does.
+    // Unconditional: what it asks for depends on how this host elevates.
     const grant = await requestElevation({
       hostId: host.id,
       summary: plan?.summary ?? "Power action",

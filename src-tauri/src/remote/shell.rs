@@ -1,23 +1,16 @@
 //! An interactive shell, streamed to the webview.
 //!
 //! The channel is split: a background task owns the read half and forwards
-//! output as Tauri events, while the write half stays in the registry so
-//! keystrokes and window resizes can be sent from a command. Streaming rather
-//! than polling is what makes `top` and `vim` behave.
+//! output as Tauri events, while the write half stays in the registry for
+//! keystrokes and resizes.
 //!
-//! Three things here are security- rather than feature-driven:
+//! Three invariants, all security- rather than feature-driven: events are
+//! addressed to the webview that asked rather than broadcast; output is batched
+//! so a chatty producer cannot wedge the IPC bridge; and UTF-8 is reassembled
+//! across packets, since a multi-byte character can straddle two.
 //!
-//! * **Events are addressed, not broadcast.** Terminal output can contain
-//!   anything the user chose to `cat`, so it goes only to the webview that
-//!   asked for the shell rather than to every window in the app.
-//! * **Output is batched.** A remote `yes` produces packets faster than the
-//!   IPC bridge can carry them, and an unbounded emit-per-packet loop would
-//!   wedge the UI. Batching bounds the event rate without dropping bytes.
-//! * **UTF-8 is reassembled across packets.** A multi-byte character can
-//!   straddle two packets, and decoding each independently would corrupt it.
-//!
-//! Every shell also carries an id, quoted back in each event, so a pane
-//! renders only its own output and can close only its own session.
+//! Every shell carries an id, quoted back in each event, so a pane renders only
+//! its own output and closes only its own session.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -37,13 +30,9 @@ pub const OUTPUT_EVENT: &str = "terminal://output";
 /// Emitted once, when the shell ends.
 pub const CLOSED_EVENT: &str = "terminal://closed";
 
-/// Identifies one shell for the lifetime of the process.
-///
-/// Without this a pane cannot tell its own output from that of a shell it
-/// replaced: both are addressed by host id, so a stale session's banner and
-/// prompt render into the new terminal alongside the real ones. React's
-/// StrictMode remount makes that the *normal* case in development, and a fast
-/// double-click makes it possible in production.
+/// Identifies one shell for the lifetime of the process. Without it a pane
+/// cannot tell its own output from that of a shell it replaced — React's
+/// StrictMode remount makes that the normal case in development.
 static NEXT_SHELL_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Serialize)]
@@ -66,8 +55,8 @@ struct ClosedEvent {
 
 /// The write end of a running shell.
 pub struct ShellHandle {
-    /// Process-unique. The pane that opened this shell quotes it back when
-    /// closing, so a late teardown cannot kill a newer session.
+    /// Process-unique, quoted back on close so a late teardown cannot kill a
+    /// newer session.
     pub id: u64,
     writer: Arc<ChannelWriteHalf<Msg>>,
 }
@@ -82,7 +71,7 @@ impl ShellHandle {
     }
 
     /// Tell the remote side the window changed, so full-screen programs redraw
-    /// at the right size instead of wrapping at 80 columns forever.
+    /// at the right size.
     pub async fn resize(&self, cols: u32, rows: u32) -> SshResult<()> {
         self.writer
             .window_change(cols.max(1), rows.max(1), 0, 0)
@@ -95,10 +84,7 @@ impl ShellHandle {
     }
 }
 
-/// How long output is allowed to accumulate before it is sent.
-///
-/// About one frame. Short enough that typing feels immediate, long enough that
-/// a flood of small packets becomes one event instead of thousands.
+/// How long output accumulates before it is sent — about one frame.
 const FLUSH_WINDOW: Duration = Duration::from_millis(16);
 
 /// Force a flush once a batch reaches this size, so a fast producer does not
@@ -119,8 +105,8 @@ pub async fn open(
     let shell_id = NEXT_SHELL_ID.fetch_add(1, Ordering::Relaxed);
     let channel = session.open_channel().await?;
 
-    // `xterm-256color` matches what the frontend renders, so remote programs
-    // pick colours the terminal can actually show.
+    // Matches what the frontend renders, so remote programs pick showable
+    // colours.
     channel
         .request_pty(
             true,
@@ -141,8 +127,7 @@ pub async fn open(
 
     let (mut reader, writer) = channel.split();
 
-    // Decoded text goes to the batching task rather than straight out as an
-    // event, so the reader never blocks on the IPC bridge.
+    // Via the batching task, so the reader never blocks on the IPC bridge.
     let (sender, receiver) = mpsc::unbounded_channel::<ShellMsg>();
 
     tokio::spawn(batch_and_emit(
@@ -163,15 +148,13 @@ pub async fn open(
                 ChannelMsg::ExtendedData { ref data, ext } if ext == 1 => {
                     stderr.push(data).map(ShellMsg::Err)
                 }
-                // Keep reading after this: output may still be in flight
-                // behind the status, and dropping it would truncate the last
-                // line of whatever the user ran.
+                // Keep reading: output may still be in flight behind the
+                // status, and dropping it would truncate the last line.
                 ChannelMsg::ExitStatus { exit_status } => Some(ShellMsg::Exit(exit_status)),
                 _ => None,
             };
 
-            // A send failure means the emitter is gone, so nothing is
-            // listening and there is no point draining the rest.
+            // The emitter is gone, so nothing is listening.
             if let Some(message) = decoded {
                 if sender.send(message).is_err() {
                     break;
@@ -179,8 +162,7 @@ pub async fn open(
             }
         }
 
-        // Dropping the sender ends the batching task, which emits whatever is
-        // still buffered before reporting the close.
+        // Ends the batching task, which flushes before reporting the close.
         drop(sender);
     });
 
@@ -203,7 +185,7 @@ async fn batch_and_emit(
             return;
         }
         // Addressed to one webview: output may contain anything the user
-        // displayed, and other windows have no business seeing it.
+        // displayed.
         let _ = app.emit_to(
             webview_label.as_str(),
             OUTPUT_EVENT,
@@ -220,7 +202,7 @@ async fn batch_and_emit(
 
     loop {
         // Block until there is something to send, so an idle shell costs
-        // nothing rather than waking every 16 ms.
+        // nothing.
         let Some(first) = receiver.recv().await else {
             break;
         };
@@ -277,9 +259,7 @@ fn take(
     }
 }
 
-/// Reassembles UTF-8 across packet boundaries.
-///
-/// Shared with `stream.rs`, which has the same problem on command output.
+/// Reassembles UTF-8 across packet boundaries. Shared with `stream.rs`.
 #[derive(Default)]
 pub(crate) struct Decoder {
     pending: Vec<u8>,
@@ -294,18 +274,16 @@ impl Decoder {
             Ok(text) => (text.to_string(), self.pending.len()),
             Err(error) => {
                 let valid_up_to = error.valid_up_to();
-                // SAFETY-adjacent: `valid_up_to` is by definition a valid
-                // boundary, so this slice always decodes.
+                // `valid_up_to` is a valid boundary, so this always decodes.
                 let text = String::from_utf8_lossy(&self.pending[..valid_up_to]).to_string();
 
                 match error.error_len() {
-                    // Genuinely invalid bytes: emit a replacement and move on,
-                    // otherwise the stream would stall on them forever.
+                    // Invalid bytes: emit a replacement rather than stall.
                     Some(length) => (
                         format!("{text}\u{FFFD}"),
                         valid_up_to + length,
                     ),
-                    // Truncated but valid so far — keep the tail for next time.
+                    // Truncated but valid so far: keep the tail for next time.
                     None => (text, valid_up_to),
                 }
             }

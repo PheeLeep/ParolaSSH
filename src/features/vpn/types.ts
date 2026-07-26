@@ -53,13 +53,9 @@ export const VPN_LABELS: Record<VpnKind, string> = {
   wireguard: "WireGuard",
 };
 
-/**
- * The caution shown when several VPNs are connected at once.
- *
- * Deliberately a caution, not an error: two VPNs can coexist on different
- * routes, but Twingate itself warns on starting beside another one — so the
- * app flags the situation and lets the user judge it.
- */
+/** The caution shown when several VPNs are connected at once. A caution, not
+ *  an error: two VPNs can coexist on different routes, but Twingate itself
+ *  warns when started beside another. */
 export function conflictNote(names: string[]): string {
   return (
     `${names.join(" and ")} are connected at the same time — they can compete ` +

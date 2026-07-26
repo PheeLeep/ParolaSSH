@@ -1,10 +1,7 @@
 import { useEffect } from "react";
 
-/**
- * Where the native menu is still wanted: text fields need copy/paste, and
- * xterm relies on the browser menu for its paste entry (it parks a hidden
- * textarea under the pointer on right-click precisely so that works).
- */
+/** Where the native menu is still wanted: text fields need copy/paste, and
+ *  xterm relies on the browser menu for its paste entry. */
 function keepsNativeMenu(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -14,15 +11,9 @@ function keepsNativeMenu(target: EventTarget | null): boolean {
 
 const DEVTOOLS_KEYS = new Set(["i", "j", "c"]);
 
-/**
- * Suppresses the webview's own chrome so the app reads as a desktop program
- * rather than a web page.
- *
- * Worth being clear about what this is: presentation, not protection. The
- * frontend of any Tauri app is inspectable by someone who wants to look, and
- * release builds already ship without devtools unless the feature is turned
- * on. This just stops "Inspect Element" showing up mid-demo.
- */
+/** Suppresses the webview's own chrome so the app reads as a desktop program.
+ *  Presentation, not protection — any Tauri frontend is inspectable, and this
+ *  only keeps "Inspect Element" from showing up mid-demo. */
 export function useContextMenuGuard(): void {
   useEffect(() => {
     const onContextMenu = (event: MouseEvent) => {
@@ -30,8 +21,7 @@ export function useContextMenuGuard(): void {
       event.preventDefault();
     };
 
-    // Left available during development — otherwise debugging this very app
-    // would mean commenting the guard out.
+    // Left available in development, so debugging does not mean editing this.
     const onKeyDown = (event: KeyboardEvent) => {
       if (import.meta.env.DEV) return;
 

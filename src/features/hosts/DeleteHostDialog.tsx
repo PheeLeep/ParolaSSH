@@ -5,14 +5,9 @@ import { errorMessage } from "./api";
 import { useHosts } from "./HostsProvider";
 import type { HostRow } from "./HostsProvider";
 
-/**
- * Confirm removing a saved connection.
- *
- * Deliberately lighter than the key deletion dialog: this removes a bookmark,
- * not a credential. Nothing on the remote machine changes, so a single
- * confirmation is proportionate — but the address is spelled out, because
- * labels in a long list look alike.
- */
+/** Confirm removing a saved connection. Lighter than the key deletion dialog —
+ *  this removes a bookmark, not a credential — but the address is spelled out,
+ *  because labels in a long list look alike. */
 export function DeleteHostDialog({
   host,
   onClose,

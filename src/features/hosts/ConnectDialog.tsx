@@ -12,16 +12,13 @@ import type { ConnectionInfo, PassphraseNeed } from "./types";
  *
  * Three things make this more than a password box:
  *
- *  1. An unknown host key stops the connection *before* a password is sent,
- *     and this dialog is where the fingerprint is shown and accepted. A
- *     changed key is not offered as something to click through.
- *  2. "Remember" means until the app quits, and says so — no keychain is
- *     involved, and implying otherwise would be a lie about where a password
- *     ended up.
- *  3. A key connection asks the Rust side whether the key is actually locked
- *     before showing a passphrase box. An unencrypted key has nothing to
- *     unlock, so it connects as directly as agent auth does — a prompt that
- *     can only be answered with Enter teaches people to dismiss prompts.
+ *  1. An unknown host key stops the connection before a password is sent, and
+ *     this is where the fingerprint is shown and accepted. A changed key is
+ *     never offered as click-through.
+ *  2. "Remember" means until the app quits, and says so — no keychain.
+ *  3. A key connection asks the Rust side whether the key is really locked
+ *     before showing a passphrase box, so an unencrypted key connects as
+ *     directly as agent auth.
  */
 export function ConnectDialog({
   host,
@@ -67,7 +64,7 @@ export function ConnectDialog({
       try {
         answer = await api.hostKeyPassphraseNeed(host.id);
       } catch (caught) {
-        // Could not tell, so ask — the attempt will report the real problem.
+        // Could not tell, so ask; the attempt reports the real problem.
         answer = { kind: "unknown", detail: errorMessage(caught) };
       }
       if (cancelled) return;
@@ -106,8 +103,7 @@ export function ConnectDialog({
       onClose();
     } catch (caught) {
       if (isUnknownHostKey(caught)) {
-        // Ask about the key rather than reporting a failure: the password was
-        // never sent, so nothing has leaked and the retry is safe.
+        // The password was never sent, so asking again is safe.
         setUnknownKey(hostKeyFingerprint(caught) ?? "unknown fingerprint");
         setError(null);
       } else {

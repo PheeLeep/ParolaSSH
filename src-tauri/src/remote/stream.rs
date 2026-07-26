@@ -1,21 +1,13 @@
 //! A long-running remote command, streamed to the webview.
 //!
-//! `Session::exec` deliberately caps every command at thirty seconds, which is
-//! right for "run this and give me the output" and wrong for `journalctl -f`,
-//! which by definition never finishes. This is the other path: no PTY, no
-//! timeout, output forwarded as events until the command ends or the pane
-//! closes it.
+//! `Session::exec` caps every command at thirty seconds, which is wrong for
+//! `journalctl -f`. This is the other path: no PTY, no timeout, output
+//! forwarded as events until the command ends or the pane closes it.
 //!
-//! The security posture is inherited from `shell.rs` unchanged: events are
-//! **addressed** to the webview that asked (a followed log can contain
-//! anything the machine writes to it), output is **batched** so a chatty
-//! producer cannot wedge the IPC bridge, and **UTF-8 is reassembled** across
-//! packet boundaries with the same `Decoder`.
-//!
-//! The batching loop is a deliberate copy of the one in `shell.rs` rather
-//! than a shared generic: the two differ only in payload shape, and a type
-//! parameter threaded through the emitter costs more to read than sixty
-//! duplicated lines.
+//! Security posture is inherited from `shell.rs` unchanged — addressed events,
+//! batched output, UTF-8 reassembled with the same `Decoder`. The batching loop
+//! is a deliberate copy rather than a shared generic: the two differ only in
+//! payload shape, and threading a type parameter through reads worse.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -37,8 +29,7 @@ pub const OUTPUT_EVENT: &str = "stream://output";
 pub const CLOSED_EVENT: &str = "stream://closed";
 
 /// Identifies one stream for the lifetime of the process, for the same reason
-/// shells carry ids: a pane must be able to tell its own output from that of
-/// a stream it replaced, and close only its own.
+/// shells carry ids.
 static NEXT_STREAM_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Serialize)]
@@ -65,12 +56,9 @@ pub struct StreamHandle {
 }
 
 impl StreamHandle {
-    /// Stop the remote command and close the channel.
-    ///
-    /// The TERM signal is best-effort: modern sshd delivers it and the
-    /// command dies at once; older servers ignore channel signals, and then
-    /// the command dies on SIGPIPE at its next write after the close. Either
-    /// way it is bounded — nothing keeps running unobserved forever.
+    /// Stop the remote command and close the channel. TERM is best-effort:
+    /// servers that ignore channel signals let the command die on SIGPIPE at
+    /// its next write instead, so either way it is bounded.
     pub async fn close(&self) {
         let _ = self.writer.signal(Sig::TERM).await;
         let _ = self.writer.close().await;
@@ -121,8 +109,7 @@ pub async fn open(
                 ChannelMsg::ExtendedData { ref data, ext } if ext == 1 => {
                     stderr.push(data).map(StreamMsg::Err)
                 }
-                // Keep reading after the status: output may still be in
-                // flight behind it.
+                // Keep reading: output may still be in flight behind the status.
                 ChannelMsg::ExitStatus { exit_status } => Some(StreamMsg::Exit(exit_status)),
                 _ => None,
             };

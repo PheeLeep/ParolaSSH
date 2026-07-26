@@ -56,12 +56,9 @@ pub enum KdfInfo {
     Unknown,
 }
 
-/// Whether the `.pub` sidecar actually belongs to the private key.
-///
-/// A stale `.pub` is a real failure mode rather than a tidiness issue: it is
-/// the file people copy onto servers and into GitHub, so a mismatch means
-/// authentication fails with no useful error — the server offers a key the
-/// client cannot prove it holds.
+/// Whether the `.pub` sidecar actually belongs to the private key. A stale one
+/// is the file people copy to servers, so a mismatch means authentication fails
+/// with no useful error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PublicKeyPairing {
@@ -132,13 +129,9 @@ pub struct OrphanPublicKey {
     pub comment: Option<String>,
 }
 
-/// What has to be asked of the user before a private key can be loaded.
-///
-/// A prompt that cannot possibly be answered is worse than no prompt: it
-/// teaches people to type a secret into any box that appears, and it slows
-/// down the common case of an unencrypted key for nothing. So the question is
-/// asked only when the file really is locked — every other variant here is a
-/// specific reason to ask rather than a cautious default.
+/// What has to be asked of the user before a private key can be loaded. Asked
+/// only when the file really is locked — every variant is a specific reason to
+/// prompt, never a cautious default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PassphraseNeed {
@@ -146,18 +139,15 @@ pub enum PassphraseNeed {
     NotNeeded,
     /// Encrypted with a KDF — the passphrase is what decrypts it.
     Required,
-    /// A FIDO/PIV key. The secret lives on the token, not in the file, so the
-    /// token may still want a PIN and a touch; the file half can be encrypted
-    /// as well. Both mean the prompt stays, worded for hardware.
+    /// A FIDO/PIV key. The secret lives on the token, which may want a PIN and
+    /// a touch, so the prompt stays but is worded for hardware.
     Hardware { algorithm: String },
     /// Unreadable or unparseable. Ask, and let the attempt report why.
     Unknown { detail: String },
 }
 
-/// Decide whether loading `path` needs anything from the user.
-///
-/// Reads only what `inspect` already reads, and returns no key material — the
-/// answer is a shape for a dialog, not a description of the key.
+/// Decide whether loading `path` needs anything from the user. Returns no key
+/// material — only the shape of the dialog to show.
 pub fn passphrase_need(path: &Path) -> PassphraseNeed {
     let key = match inspect(path) {
         Ok(Some(key)) => key,
@@ -169,8 +159,7 @@ pub fn passphrase_need(path: &Path) -> PassphraseNeed {
         Err(error) => return PassphraseNeed::Unknown { detail: error.to_string() },
     };
 
-    // An unparseable file tells us nothing about its encryption, and the
-    // algorithm it reports is a guess — check it before trusting either.
+    // An unparseable file tells us nothing about its encryption.
     if let Some(detail) = key.parse_error {
         return PassphraseNeed::Unknown { detail };
     }
@@ -185,8 +174,7 @@ pub fn passphrase_need(path: &Path) -> PassphraseNeed {
 
     match key.kdf {
         KdfInfo::None => PassphraseNeed::NotNeeded,
-        // Not flagged as encrypted, but the KDF is not one we recognise: that
-        // is a "we do not know", not a "no passphrase".
+        // Unrecognised KDF is a "we do not know", not a "no passphrase".
         _ => PassphraseNeed::Unknown {
             detail: format!(
                 "{} uses a key-derivation scheme this build does not recognise.",
@@ -220,8 +208,8 @@ pub fn scan(ssh_dir: &Path, extra_paths: &[PathBuf]) -> SshResult<KeyScan> {
             }
 
             let name = entry.file_name().to_string_lossy().to_string();
-            // Compare case-insensitively: Windows and default macOS
-            // filesystems will happily hand back `Config` or `Known_Hosts`.
+            // Case-insensitive: Windows and default macOS filesystems hand back
+            // `Config` or `Known_Hosts`.
             let lower = name.to_lowercase();
 
             if lower.ends_with(".pub") {
@@ -274,8 +262,7 @@ fn public_path_for(private: &Path) -> PathBuf {
 pub fn inspect(path: &Path) -> SshResult<Option<SshKey>> {
     let mut bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
-        // A key we cannot read is not a key we can audit; skip rather than
-        // failing the whole scan.
+        // Skip unreadable files rather than failing the whole scan.
         Err(_) => return Ok(None),
     };
 
@@ -318,15 +305,13 @@ pub fn inspect(path: &Path) -> SshResult<Option<SshKey>> {
             Ok(parsed) => describe_openssh(&mut key, &parsed),
             Err(error) => key.parse_error = Some(error.to_string()),
         },
-        // ssh-key does not decode these, and we would not want to: the point
-        // is to flag them, and the header carries everything needed for that.
+        // ssh-key does not decode these; the header carries enough to flag them.
         KeyFormat::LegacyPem | KeyFormat::Pkcs8 => describe_legacy(&mut key, &head),
         KeyFormat::Unknown => unreachable!("filtered above"),
     }
 
-    // Whatever the private key itself yielded, before any `.pub` fallback —
-    // comparing the sidecar against a fingerprint that *came from* the sidecar
-    // would always match and prove nothing.
+    // From the private key only: comparing the sidecar against a fingerprint
+    // that came from the sidecar would always match.
     let private_fingerprint = key.fingerprint.clone();
 
     let described_public = key
@@ -352,12 +337,9 @@ pub fn inspect(path: &Path) -> SshResult<Option<SshKey>> {
         },
     };
 
-    // Fall back to the `.pub` file for anything still missing.
-    //
-    // This is not only for unparseable legacy keys: in the OpenSSH format the
-    // comment lives *inside* the encrypted blob, so a passphrase-protected key
-    // reports no comment until the sidecar file is consulted. That is exactly
-    // what ssh-keygen does.
+    // Fall back to the `.pub` file for anything still missing. In the OpenSSH
+    // format the comment lives inside the encrypted blob, so a locked key
+    // reports none until the sidecar is read — same as ssh-keygen.
     if let Some(public) = described_public {
         key.fingerprint = key.fingerprint.or(public.fingerprint);
         key.comment = key.comment.or(public.comment);
@@ -373,9 +355,9 @@ pub fn inspect(path: &Path) -> SshResult<Option<SshKey>> {
 
 /// Delete a private key, and optionally its `.pub` sidecar.
 ///
-/// Refuses anything that is not actually a private key, so a tampered path
-/// cannot turn this into a way to remove `config` or `known_hosts`. The caller
-/// is still responsible for confirming the path is inside the SSH directory.
+/// Refuses anything that is not a private key, so a tampered path cannot remove
+/// `config` or `known_hosts`. The caller still confirms the path is in the SSH
+/// directory.
 pub fn delete(path: &Path, include_public: bool) -> SshResult<Vec<String>> {
     if inspect(path)?.is_none() {
         return Err(SshError::invalid(
@@ -392,8 +374,8 @@ pub fn delete(path: &Path, include_public: bool) -> SshResult<Vec<String>> {
     if include_public {
         let public = public_path_for(path);
         if public.is_file() {
-            // The private half is already gone; a failure here is worth
-            // reporting but must not read as "nothing was deleted".
+            // The private half is already gone, so this must not read as
+            // "nothing was deleted".
             std::fs::remove_file(&public).map_err(|error| {
                 SshError::Io(format!(
                     "The private key was deleted, but {} could not be removed: {error}",
@@ -420,8 +402,8 @@ fn describe_openssh(key: &mut SshKey, parsed: &PrivateKey) {
     key.kdf = match parsed.kdf() {
         Kdf::None => KdfInfo::None,
         Kdf::Bcrypt { rounds, .. } => KdfInfo::Bcrypt { rounds: *rounds },
-        // `Kdf` is #[non_exhaustive]; a future variant is better reported as
-        // unknown than mistaken for "no passphrase".
+        // `Kdf` is #[non_exhaustive]: report a future variant as unknown rather
+        // than as "no passphrase".
         _ => KdfInfo::Unknown,
     };
 
@@ -452,8 +434,7 @@ fn describe_legacy(key: &mut SshKey, head: &str) {
     }
     .to_string();
 
-    // `Proc-Type: 4,ENCRYPTED` plus `DEK-Info` is the old OpenSSL scheme: one
-    // MD5 pass over the passphrase, which a GPU chews through.
+    // The old OpenSSL scheme: one MD5 pass over the passphrase.
     if head.contains("Proc-Type:") && head.contains("ENCRYPTED") {
         key.encrypted = true;
         let cipher = head

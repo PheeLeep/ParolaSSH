@@ -6,14 +6,9 @@ import { PowerDialog } from "./PowerDialog";
 import { useHosts, type HostRow } from "./HostsProvider";
 import { draftFromHost, emptyDraft, type HostDraft } from "./types";
 
-/**
- * The host dialogs, shared by the list and the detail pane.
- *
- * Both need the same five actions and the same four modals; keeping them in
- * one hook means a fix to the connect flow does not have to be made twice.
- * The caller renders `dialogs` wherever it likes — they are modals, so the
- * position in the tree does not matter.
- */
+/** The host dialogs, shared by the list and the detail pane, so a fix to the
+ *  connect flow is made once. The caller renders `dialogs` anywhere — they are
+ *  modals, so tree position does not matter. */
 export function useHostActions(options: { onOpenTerminal?: (host: HostRow) => void } = {}) {
   const { connect, disconnect, getConnection } = useHosts();
 

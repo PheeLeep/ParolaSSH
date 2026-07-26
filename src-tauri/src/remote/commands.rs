@@ -1,8 +1,7 @@
 //! Tauri commands for reaching a remote machine.
 //!
-//! Passwords arrive as arguments here and are turned into `Zeroizing` values
-//! immediately. They are never written to the host store, never logged, and
-//! never interpolated into a command string.
+//! Passwords arrive as arguments and become `Zeroizing` immediately; they are
+//! never persisted, logged, or interpolated into a command string.
 
 use std::time::Duration;
 
@@ -43,24 +42,17 @@ pub struct ConnectionInfo {
     pub connected_at: String,
     /// Shells already open on this host — empty for a fresh connection.
     pub shell_ids: Vec<u64>,
-    /// Whether the session holds the password it logged in with, so `sudo`
-    /// can reuse it instead of asking for the same string again.
+    /// Whether the session holds the password it logged in with, for `sudo`.
     pub has_login_password: bool,
 }
 
-/// Check the port before spending time on a handshake.
-///
-/// Exposed on its own because "is 22 even the right port?" is the first
-/// question when a connection fails, and answering it does not need
-/// credentials.
+/// Check the port before spending time on a handshake. Needs no credentials.
 #[tauri::command]
 pub async fn probe_host(hostname: String, port: u16) -> SshResult<ProbeResult> {
     let mut result = probe::probe(hostname.trim(), port).await?;
 
     // Silence from a VPN address is usually the VPN's doing, not the host's.
-    // The check lives here rather than in `probe` so the probe itself stays a
-    // pure network primitive; this layer is the one that knows about the
-    // machine the app is running on.
+    // Kept out of `probe` so that stays a pure network primitive.
     if !result.reachable {
         if let Some(advice) = crate::vpn::explain_unreachable(&result.hostname).await {
             result.message = format!("{} {advice}", result.message);
@@ -84,8 +76,8 @@ pub async fn connect_host(
     remember: bool,
     trust_unknown: bool,
 ) -> SshResult<ConnectionInfo> {
-    // Take ownership as a `Zeroizing` immediately: from here on the plaintext
-    // is wiped when it goes out of scope instead of lingering in freed heap.
+    // `Zeroizing` from here on, so the plaintext is wiped rather than left in
+    // freed heap.
     let password = password.map(Zeroizing::new);
     let config_dir = config_dir(&app)?;
     let host = HostStore::read(&config_dir)
@@ -104,8 +96,7 @@ pub async fn connect_host(
     let session = match Session::connect(&target, &credentials, trust_unknown).await {
         Ok(session) => session,
         Err(error) => {
-            // A rejected password must not be replayed on the next attempt —
-            // repeated failures are how accounts get locked out.
+            // Never replay a rejected password: repeated failures lock accounts.
             if host.auth_method == AuthMethod::Password {
                 vault.forget(&host_id);
             }
@@ -119,8 +110,7 @@ pub async fn connect_host(
         }
     }
 
-    // Learn the OS and elevation route once, at connect time: every later
-    // power action needs both, and they cannot change under a live session.
+    // Read once at connect time: neither can change under a live session.
     let report = power::check_privileges(&session).await?;
 
     let connected_at = now_iso8601();
@@ -137,11 +127,8 @@ pub async fn connect_host(
         connected_at.clone(),
     ));
 
-    // Hold the login password for the life of the session so `sudo` can reuse
-    // it. On a Unix host the two are the same string in almost every case, and
-    // asking twice for it teaches people to type passwords into any box that
-    // appears. It is dropped when the session is, independently of whether the
-    // user asked for it to be remembered across connections.
+    // Held for the life of the session so `sudo` can reuse it, and dropped with
+    // the session regardless of whether `remember` was set.
     if host.auth_method == AuthMethod::Password {
         if let Some(password) = password.clone() {
             live.set_login_password(password);
@@ -191,12 +178,10 @@ pub fn forget_password(vault: State<'_, SecretVault>, host_id: String) {
     vault.forget(&host_id);
 }
 
-/// What, if anything, the connect dialog must ask for before using this
-/// host's key.
+/// What the connect dialog must ask for before using this host's key.
 ///
-/// Keyed by host id rather than by path so the webview cannot turn this into
-/// a way to probe arbitrary files: the only paths it reaches are ones already
-/// saved as a connection. The answer carries no key material.
+/// Keyed by host id, not path, so the webview cannot probe arbitrary files.
+/// Carries no key material.
 #[tauri::command]
 pub fn host_key_passphrase_need(app: AppHandle, host_id: String) -> SshResult<PassphraseNeed> {
     let host = HostStore::read(&config_dir(&app)?)
@@ -205,8 +190,6 @@ pub fn host_key_passphrase_need(app: AppHandle, host_id: String) -> SshResult<Pa
         .ok_or_else(|| SshError::invalid("That connection no longer exists."))?;
 
     if host.auth_method != AuthMethod::Publickey {
-        // No key file in play; whatever else this host needs is not a
-        // passphrase, and the dialog already knows what to ask for.
         return Ok(PassphraseNeed::NotNeeded);
     }
 
@@ -230,9 +213,6 @@ pub async fn privilege_report(
 }
 
 /// The exact command a power request would run, without running it.
-///
-/// The confirm dialog shows this. A power button that will not say what it
-/// does is a power button nobody should press.
 #[tauri::command]
 pub fn preview_power(
     registry: State<'_, SessionRegistry>,
@@ -254,9 +234,8 @@ pub async fn power_host(
 ) -> SshResult<PowerOutcome> {
     let live = registry.require(&host_id)?;
 
-    // sudo needs the account password. Prefer an explicit one from the dialog
-    // — someone may sudo as a different account than they logged in as — then
-    // the password this session authenticated with, then the remembered one.
+    // Precedence: the dialog's password, the session's login password, then the
+    // remembered one.
     let sudo_password: Option<Zeroizing<String>> = password
         .map(Zeroizing::new)
         .or_else(|| live.login_password())
@@ -271,8 +250,7 @@ pub async fn power_host(
     )
     .await?;
 
-    // An immediate shutdown or reboot takes the session with it; leaving a
-    // dead entry in the registry would show the host as connected forever.
+    // An immediate shutdown or reboot takes the session with it.
     let terminal = request.delay_minutes == 0
         && !matches!(request.action, power::PowerAction::Cancel)
         && outcome.succeeded;
@@ -296,18 +274,14 @@ pub struct HostHealth {
     pub latency_ms: Option<u64>,
 }
 
-/// How long a single host gets to answer before the heartbeat gives up on it.
-///
-/// Short, because every saved host is checked on the same cycle and a
-/// black-holed address must not hold up the rest of the list.
+/// Short: every saved host is checked on one cycle, so a black-holed address
+/// must not hold up the rest.
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Check every saved host: are they up, and are our sessions still good?
 ///
-/// Called on a timer by the UI. Connected hosts get a channel-open round trip
-/// on the existing session — which also notices a machine that rebooted out
-/// from under us — and everything else gets a plain TCP probe. All of it runs
-/// concurrently, so the cycle costs about one timeout, not one per host.
+/// Connected hosts get a round trip on the existing session, everything else a
+/// TCP probe. Runs concurrently, so a cycle costs about one timeout in total.
 #[tauri::command]
 pub async fn heartbeat(
     app: AppHandle,
@@ -329,9 +303,8 @@ pub async fn heartbeat(
                     };
                 }
 
-                // The session is gone. Fall through to a plain probe so the
-                // UI can still distinguish "host up, session dropped" from
-                // "host down"; the dead entry is reaped below.
+                // Session gone: fall through to a probe so the UI can still
+                // tell "host up, session dropped" from "host down".
             }
 
             let (reachable, latency_ms) =
@@ -348,8 +321,7 @@ pub async fn heartbeat(
 
     let health = futures_util::future::join_all(checks).await;
 
-    // Drop sessions that failed their liveness check, so the registry does not
-    // keep handing out a handle to a connection that is no longer there.
+    // Reap sessions that failed their liveness check.
     for entry in &health {
         if !entry.connected && registry.is_connected(&entry.host_id) {
             registry.disconnect(&entry.host_id).await;
@@ -359,25 +331,17 @@ pub async fn heartbeat(
     Ok(health)
 }
 
-/// Most shells one host may hold at once.
-///
-/// Each live terminal keeps an xterm instance with its own scrollback — a
-/// megabyte or two of buffer plus a renderer context, and browsers cap live
-/// WebGL contexts near sixteen. The ceiling is the renderer, not memory, so
-/// the cap is deliberately well under it.
+/// Most shells one host may hold at once. Bounded by live WebGL renderer
+/// contexts (browsers cap those near sixteen), not by memory.
 const MAX_SHELLS_PER_HOST: usize = 8;
 
 /// Open an interactive shell. Output arrives as `terminal://output` events.
 ///
-/// Opening does not replace anything: a host can hold several terminals, all
-/// riding the one authenticated connection as separate channels. The returned
-/// id addresses every later call — write, resize, close — and tags every event
-/// so a pane renders only its own bytes.
+/// A host can hold several terminals as separate channels on the one
+/// connection. The returned id addresses every later call and tags every event.
 ///
-/// There is deliberately no general "run this string" command alongside this
-/// one. A terminal is an arbitrary-execution primitive the user is driving and
-/// watching; a silent `run_command(String)` would be the same power with none
-/// of the visibility.
+/// There is deliberately no general `run_command(String)` alongside this: a
+/// terminal is arbitrary execution the user drives and watches.
 #[tauri::command]
 pub async fn open_shell(
     app: AppHandle,
@@ -389,8 +353,8 @@ pub async fn open_shell(
 ) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
 
-    // Held across the check and the insert, so concurrent opens cannot both
-    // see room under the cap and both take it.
+    // Held across check and insert, so concurrent opens cannot both take the
+    // last slot under the cap.
     let _guard = live.lock_shell_open().await;
 
     if live.shell_count() >= MAX_SHELLS_PER_HOST {
@@ -410,10 +374,8 @@ pub async fn open_shell(
     Ok(shell_id)
 }
 
-/// Shell ids currently open on a host, oldest first.
-///
-/// Lets the UI rebuild its tab strip after a reload without opening anything
-/// new — the shells outlive the window that created them.
+/// Shell ids currently open on a host, oldest first. Lets the UI rebuild its
+/// tab strip after a reload; shells outlive the window that created them.
 #[tauri::command]
 pub fn list_shells(registry: State<'_, SessionRegistry>, host_id: String) -> Vec<u64> {
     registry
@@ -450,20 +412,16 @@ pub async fn resize_shell(
     let Some(live) = registry.get(&host_id) else {
         return Ok(());
     };
-    // A resize arriving after the shell closed is normal — a pane is still
-    // laying out as it unmounts — so it is ignored rather than an error.
+    // A resize arriving after the shell closed is normal (a pane still laying
+    // out as it unmounts), so it is ignored rather than an error.
     if let Some(shell) = live.shell(shell_id) {
         shell.resize(cols, rows).await?;
     }
     Ok(())
 }
 
-/// Close one shell and drop it from the session.
-///
-/// Closing by id is what keeps tabs safe: a pane tearing down can only ever
-/// close its own terminal, and an id that has already gone is a no-op rather
-/// than an error. This is the only path that removes a map entry, so it is
-/// also where the leak would be if it were missing.
+/// Close one shell and drop it from the session. Closing by id means a pane can
+/// only close its own terminal; an id already gone is a no-op, not an error.
 #[tauri::command]
 pub async fn close_shell(
     registry: State<'_, SessionRegistry>,
@@ -483,10 +441,8 @@ pub async fn close_shell(
 
 /// Close one long-running stream (a followed log) and drop it.
 ///
-/// Closing by id is safe for the same reason `close_shell` is: a pane can
-/// only ever close its own stream, and an id already gone is a no-op. There
-/// is deliberately no matching generic *open*: each stream-producing feature
-/// exposes its own typed command, so nothing here becomes a run-anything verb.
+/// Safe by id for the same reason as `close_shell`. There is deliberately no
+/// generic *open*: each stream-producing feature exposes its own typed command.
 #[tauri::command]
 pub async fn close_stream(
     registry: State<'_, SessionRegistry>,
@@ -547,8 +503,7 @@ pub async fn service_action(
     let live = registry.require(&host_id)?;
     let plan = services::plan_action(live.os, &live.elevation, &request)?;
 
-    // Same precedence as power: the dialog's password, then the one this
-    // session logged in with, then the remembered one.
+    // Same precedence as power.
     let sudo_password: Option<Zeroizing<String>> = password
         .map(Zeroizing::new)
         .or_else(|| live.login_password())
@@ -570,8 +525,7 @@ pub async fn service_action(
 /// A service's recent history: the last journal lines, or SCM events.
 ///
 /// `display_name` matters only on Windows, where SCM events name services by
-/// display name rather than service name; the filter runs in Rust, never in
-/// the remote query.
+/// display name; the filter runs in Rust, never in the remote query.
 #[tauri::command]
 pub async fn service_log(
     registry: State<'_, SessionRegistry>,
@@ -605,8 +559,8 @@ pub async fn follow_service_log(
     let live = registry.require(&host_id)?;
     let command = services::follow_command(live.os, &unit)?;
 
-    // Checked before the channel opens, so a refusal never leaves a command
-    // already running remotely with nothing tracking it.
+    // Checked before the channel opens, so a refusal never strands a command
+    // running remotely with nothing tracking it.
     if live.stream_count() >= super::registry::MAX_STREAMS_PER_HOST {
         return Err(SshError::invalid(
             "This host already has too many followed logs open. Close one before \
@@ -614,8 +568,7 @@ pub async fn follow_service_log(
         ));
     }
 
-    // Addressed like terminal output, and for the same reason: a followed
-    // log contains whatever the machine writes to it.
+    // Addressed to the calling window only, like terminal output.
     let label = webview.label().to_string();
 
     let handle = stream::open(&live.session, app, label, host_id, &command).await?;
@@ -625,10 +578,8 @@ pub async fn follow_service_log(
     Ok(stream_id)
 }
 
-/// One performance sample from a connected host.
-///
-/// Called on a short timer by the Performance pane while it is visible, and
-/// only then — the pane owns the cadence, so an unopened tab costs nothing.
+/// One performance sample. The Performance pane owns the cadence and polls
+/// only while visible.
 #[tauri::command]
 pub async fn sample_metrics(
     registry: State<'_, SessionRegistry>,
@@ -659,8 +610,7 @@ pub async fn check_updates(
                     installed_history: history,
                 });
             }
-            // The module exists, so the real query is worth its slow round
-            // trip — it goes out to Microsoft's servers.
+            // Slow: this round trip goes out to Microsoft's servers.
             let pending = live
                 .session
                 .exec_with_timeout(
@@ -678,13 +628,9 @@ pub async fn check_updates(
 /// Audit a connected host: tier 0 from the handshake, tier 1 from read-only
 /// commands, tier 2 as Lynis detection only.
 ///
-/// `password` follows the sudo chain and is used only for the privileged
-/// retry when the unprivileged `sshd -T` was refused.
-///
-/// `elevate` is the user's answer to the elevation prompt. `false` means they
-/// declined it, and it is honoured literally: no sudo retry runs, not even
-/// with a password the session already holds. Declining has to mean declining,
-/// or the prompt is decoration.
+/// `password` is used only for the privileged retry when the unprivileged
+/// `sshd -T` was refused. `elevate: false` is honoured literally — no sudo
+/// retry runs, even with a password the session already holds.
 #[tauri::command]
 pub async fn remote_audit(
     app: AppHandle,
@@ -714,8 +660,7 @@ pub async fn remote_audit(
             let stdin = match &live.elevation {
                 Elevation::SudoPassword => match sudo_password {
                     Some(password) => Some(format!("{}\n", password.as_str()).into_bytes()),
-                    // No password to offer: skip the retry and let the note
-                    // explain, rather than watching sudo fail.
+                    // No password to offer: skip the retry, let the note explain.
                     None => None,
                 },
                 _ => Some(Vec::new()),
@@ -755,10 +700,8 @@ pub async fn remote_audit(
         &suppressed,
     );
 
-    // Declining the prompt is not the same as having no route to root, and
-    // the note must not tell someone to configure the sudo they already have.
-    // Only rewritten when something was actually skipped — an unprivileged
-    // run that answered everything leaves no note to correct.
+    // Declining is not the same as having no route to root, so the note must
+    // not tell someone to configure sudo they already have.
     if live.os.is_unix() && !elevate && live.elevation.is_usable() && report.tier1_note.is_some() {
         report.tier1_note = Some(
             "The checks that need root were skipped: elevation was declined for this \
@@ -767,8 +710,8 @@ pub async fn remote_audit(
         );
     }
 
-    // A Windows host runs no tier-1 commands; say so instead of showing an
-    // unexplained half-report.
+    // A Windows host runs no tier-1 commands; say so rather than show a
+    // half-report.
     if !live.os.is_unix() {
         report.tier1_note = Some(
             "Posture checks are implemented for Unix sshd; Windows posture checks \

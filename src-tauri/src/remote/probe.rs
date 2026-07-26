@@ -1,12 +1,10 @@
 //! Is anything listening, and is it SSH?
 //!
-//! Worth doing before a full connection because the failures are so different.
-//! A closed port, a firewall black hole, and a wrong password all end with
-//! "could not connect", but only one of them is fixed by changing the port
-//! field — so the probe reports which it was.
+//! Worth doing before a full connection: a closed port, a firewall black hole,
+//! and a wrong password all end with "could not connect", but only one is fixed
+//! by changing the port field, so the probe reports which it was.
 //!
-//! Port 22 is only a default. A host moved to 2222 is common enough that the
-//! probe reads the banner rather than assuming what it found is SSH at all.
+//! It reads the banner rather than assuming port 22 means SSH.
 
 use std::time::{Duration, Instant};
 

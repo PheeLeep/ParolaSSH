@@ -1,26 +1,19 @@
 //! Remote security posture, tiered by what it costs the host.
 //!
-//! * **Tier 0 — free.** Facts from the key exchange russh already performed:
-//!   negotiated kex, cipher, MACs, host key algorithm, strict-kex support.
-//!   No remote command runs at all. Note that with russh's default
-//!   preference lists a SHA-1 kex or CBC cipher can never actually be
-//!   negotiated — a server offering only those fails to connect — so those
-//!   rules are dormant guards. The checks that fire in practice are the
-//!   `ssh-rsa` host key and missing strict kex.
-//! * **Tier 1 — a handful of read-only commands.** `sshd -T` posture,
-//!   `authorized_keys` permissions, world-writable PATH directories, and —
-//!   only when elevation is available, because `/etc/shadow` demands it —
-//!   accounts with empty passwords. Degrades honestly: what could not be
+//! * **Tier 0 — free.** Facts from the key exchange russh already performed.
+//!   No remote command runs. With russh's default preference lists a SHA-1 kex
+//!   or CBC cipher can never be negotiated, so those rules are dormant guards;
+//!   the ones that fire are `ssh-rsa` host key and missing strict kex.
+//! * **Tier 1 — read-only commands.** `sshd -T` posture, `authorized_keys`
+//!   permissions, world-writable PATH directories, and (only with elevation,
+//!   which `/etc/shadow` demands) empty-password accounts. What could not be
 //!   checked is named in a note, never guessed at.
-//! * **Tier 2 — detection only.** Whether Lynis is installed, and its
-//!   version. Running it (minutes, pegs a core) is deliberately not built
-//!   yet, and installing it from a GUI never will be.
+//! * **Tier 2 — detection only.** Whether Lynis is installed, and its version.
+//!   Running it is not built yet; installing it from a GUI never will be.
 //!
-//! The report shape follows `ssh::audit` (the local key audit): same
-//! `Severity`, same counts, same diminishing-returns scoring. Findings are
-//! *not* the local `Finding` type because its `Remediation` can be an action
-//! this app executes locally — remote remediation is instruction text only,
-//! shown, never run.
+//! Report shape follows `ssh::audit`: same `Severity`, counts, and scoring.
+//! Findings are not the local `Finding` type, whose `Remediation` can be an
+//! action this app runs — remote remediation is instruction text only.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -38,8 +31,7 @@ pub const SUPPRESSIONS_FILE: &str = "remote-audit-suppressions.json";
 #[serde(rename_all = "camelCase")]
 pub struct RemoteFinding {
     /// Stable across runs: `rule|target`. Suppressions key off
-    /// `host_id|rule|target`, so a dismissal on one box never hides the same
-    /// issue on another.
+    /// `host_id|rule|target`, so a dismissal on one box does not affect others.
     pub id: String,
     pub rule_id: String,
     pub severity: Severity,
@@ -179,9 +171,9 @@ pub const TIER1_COMMAND: &str = "sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; \
      echo ---PAROLA:lynis---; \
      command -v lynis >/dev/null 2>&1 && lynis --version 2>/dev/null | head -1";
 
-/// The privileged retry, run only when the unprivileged `sshd -T` failed and
-/// the session has a sudo route: the daemon config again, plus the
-/// empty-password check that `/etc/shadow`'s permissions rightly gate.
+/// The privileged retry, run only when the unprivileged `sshd -T` failed and a
+/// sudo route exists: the daemon config again, plus the empty-password check
+/// that `/etc/shadow` gates.
 pub const TIER1_PRIVILEGED_COMMAND: &str = r#"sudo -S -p '' sh -c 'sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; echo ---PAROLA:shadow---; awk -F: "(\$2==\"\")" /etc/shadow | cut -d: -f1'"#;
 
 /// Split marker-separated output into (first section, named sections). Pure.
@@ -496,8 +488,8 @@ pub fn needs_privileged_retry(unprivileged: &CommandOutput) -> bool {
 }
 
 // ------------------------------------------------------------------ scoring
-// Same shape as ssh::audit — one rule costs its weight once, half again for
-// repeats, nothing beyond — so the two reports' numbers mean the same thing.
+// Same shape as ssh::audit: one rule costs its weight once, half again for
+// repeats, nothing beyond.
 
 fn severity_weight(severity: Severity) -> u32 {
     match severity {

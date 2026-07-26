@@ -2,15 +2,10 @@ import { Shield, TriangleAlert } from "lucide-react";
 import { conflictNote, VPN_LABELS } from "./types";
 import { useVpn } from "./VpnProvider";
 
-/**
- * One pill summarising every VPN on the machine; clicking opens the VPN page.
- *
- * Four states, quietest first: nothing rendered when no client is installed
- * (for most users this indicator does not exist), a muted "VPN" when clients
- * are installed but none is up, the connected VPN's name when exactly one is,
- * and an amber caution when several are up at once — the one state that can
- * actually break connections, so it is the one allowed to raise its voice.
- */
+/** One pill summarising every VPN on the machine; clicking opens the VPN page.
+ *  Four states, quietest first: nothing when no client is installed, a muted
+ *  "VPN" when none is up, the VPN's name when exactly one is, and an amber
+ *  caution when several are — the only state that can break connections. */
 export function VpnIndicator({ onOpen }: { onOpen: () => void }) {
   const { statuses } = useVpn();
   const installed = statuses.filter((status) => status.installed);

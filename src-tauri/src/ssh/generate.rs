@@ -52,11 +52,8 @@ pub struct GenerateOutcome {
     pub public_key_openssh: String,
 }
 
-/// Validate a requested file name.
-///
-/// Rejects anything that could escape the SSH directory. Path separators are
-/// checked for both platforms because a name typed on Linux may still contain
-/// a backslash, and `..` is refused outright.
+/// Validate a requested file name, rejecting anything that could escape the SSH
+/// directory. Both platforms' separators are checked, and `..` is refused.
 pub fn validate_file_name(name: &str) -> SshResult<&str> {
     let trimmed = name.trim();
 
@@ -184,10 +181,9 @@ pub fn generate(ssh_dir: &Path, request: GenerateRequest) -> SshResult<GenerateO
     };
     passphrase.zeroize();
 
-    // Encrypting rebuilds the public half from raw key data, which drops the
-    // comment — re-apply it so the `.pub` file carries it. This matters
-    // because an encrypted key's internal comment is unreadable without the
-    // passphrase, so the sidecar is the only place the UI can get it from.
+    // Encrypting rebuilds the public half and drops the comment, so re-apply
+    // it: an encrypted key's internal comment is unreadable without the
+    // passphrase, leaving the sidecar as the UI's only source.
     if let Some(comment) = &comment {
         key.set_comment(comment);
     }
@@ -214,20 +210,16 @@ pub fn generate(ssh_dir: &Path, request: GenerateRequest) -> SshResult<GenerateO
     })
 }
 
-/// Write the private key, ensuring it is owner-only from the moment it exists.
-///
-/// On Unix the file is created with mode 0600 in the same syscall that creates
-/// it. Elsewhere it is written and then immediately restricted — a narrower
-/// window than writing first and fixing later, which is what `restrict_to_owner`
-/// closes.
+/// Write the private key, owner-only from the moment it exists. Unix creates it
+/// with mode 0600 in the same syscall; elsewhere it is written and immediately
+/// restricted.
 fn write_private_key(path: &Path, key: &PrivateKey) -> SshResult<()> {
     #[cfg(unix)]
     {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
 
-        // `Zeroizing<String>` — the encoded key is wiped from memory on drop,
-        // including on the error paths below.
+        // `Zeroizing<String>`: wiped on drop, including on the error paths.
         let pem = key
             .to_openssh(LineEnding::LF)
             .map_err(|error| SshError::invalid(format!("Could not encode the key: {error}")))?;

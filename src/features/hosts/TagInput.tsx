@@ -2,14 +2,8 @@ import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Form } from "react-bootstrap";
 import { X } from "lucide-react";
 
-/**
- * Chip-style tag entry.
- *
- * Enter, Tab, and comma all commit — people type all three, and losing a tag
- * because the wrong key was pressed is the kind of small friction that stops
- * anyone tagging anything. Backspace on an empty field removes the last chip,
- * which is what every other tag input does.
- */
+/** Chip-style tag entry. Enter, Tab, and comma all commit, since people type
+ *  all three; backspace on an empty field removes the last chip. */
 export function TagInput({
   value,
   onChange,

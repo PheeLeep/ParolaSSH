@@ -1,10 +1,8 @@
 /** The native window this webview lives in.
  *
- *  The window is undecorated on Windows and Linux, so the navbar doubles as
- *  the titlebar: it carries `data-tauri-drag-region` and renders its own
- *  minimize / maximize / close buttons. macOS keeps native decorations with
- *  an overlay titlebar instead (see tauri.macos.conf.json), because drawing
- *  fake traffic lights convinces nobody.
+ *  Undecorated on Windows and Linux, so the navbar doubles as the titlebar:
+ *  it carries `data-tauri-drag-region` and its own window buttons. macOS keeps
+ *  native decorations with an overlay titlebar (see tauri.macos.conf.json).
  */
 
 import { getCurrentWindow } from "@tauri-apps/api/window";

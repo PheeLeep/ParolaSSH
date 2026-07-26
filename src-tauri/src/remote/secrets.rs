@@ -1,14 +1,11 @@
 //! Passwords, for as long as the app is running and no longer.
 //!
-//! Deliberately not a keychain. Writing a password somewhere durable is a
-//! decision with consequences on three platforms — Credential Manager,
-//! Keychain, and a Secret Service that may not even be installed on a Linux
-//! box — and getting it subtly wrong is worse than not offering it. So the
-//! vault is a `HashMap` that dies with the process: "remember" means "until
-//! you quit", and the UI says exactly that.
+//! Deliberately not a keychain: durable storage means three platform backends
+//! (Credential Manager, Keychain, a Secret Service that may not be installed),
+//! and getting that subtly wrong is worse than not offering it. So the vault is
+//! a `HashMap` that dies with the process, and the UI says "until you quit".
 //!
-//! Values are `Zeroizing`, so a password is wiped from memory when it is
-//! dropped rather than left in a freed allocation.
+//! Values are `Zeroizing`, so a password is wiped on drop.
 
 use std::collections::HashMap;
 use std::sync::Mutex;

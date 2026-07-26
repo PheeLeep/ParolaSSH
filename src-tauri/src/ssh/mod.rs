@@ -1,12 +1,10 @@
 //! SSH key storage, inspection and security auditing.
 //!
-//! Everything in here is deliberately kept behind narrow Tauri commands rather
-//! than exposed through a filesystem plugin: the webview must never be able to
-//! read a private key. Functions return metadata (algorithm, fingerprint,
-//! permissions) and the private key bytes are dropped as soon as parsing is
-//! done.
+//! Kept behind narrow Tauri commands rather than a filesystem plugin: the
+//! webview must never read a private key. Functions return metadata only, and
+//! private key bytes are dropped as soon as parsing is done.
 //!
-//! Every entry point takes an explicit `ssh_dir: &Path` so the audit can be
+//! Every entry point takes an explicit `ssh_dir: &Path`, so the audit can be
 //! tested against fixture directories on any platform.
 
 pub mod audit;

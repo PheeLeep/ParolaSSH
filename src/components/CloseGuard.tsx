@@ -6,16 +6,12 @@ import { useHosts } from "../features/hosts/HostsProvider";
 import { appWindow } from "../lib/appWindow";
 
 /**
- * Decides what closing the window means.
+ * Decides what closing the window means. With no live sessions it just closes;
+ * with sessions up the close is intercepted so the user can pick between
+ * quitting, hiding to the tray with sessions alive, or staying.
  *
- * With no live SSH sessions the window just closes and the app exits. With
- * sessions up, closing silently would tear them all down — so the close is
- * intercepted and the user picks: disconnect and quit, hide to the system
- * tray with the sessions kept alive, or stay.
- *
- * The Rust session registry is asked directly rather than trusting cached UI
- * state — a session that died since the last heartbeat should not block the
- * exit.
+ * The Rust registry is asked directly rather than trusting cached UI state, so
+ * a session that died since the last heartbeat does not block the exit.
  */
 export function CloseGuard() {
   const { hosts } = useHosts();
@@ -45,8 +41,8 @@ export function CloseGuard() {
   );
 
   const quit = () => {
-    // Skips the close-requested round trip; the Rust exit handler still
-    // closes every session cleanly on the way out.
+    // Skips the close-requested round trip; the Rust exit handler still closes
+    // every session cleanly.
     void appWindow.destroy();
   };
 

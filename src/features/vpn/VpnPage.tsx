@@ -15,19 +15,18 @@ import {
 import { useVpn } from "./VpnProvider";
 import type { Navigate } from "../../navigation";
 
-/** Overview first, then one tab per installed client — never a tab for an
- *  absent client: a dead "not installed" tab would be pure noise. */
+/** Overview first, then one tab per installed client. Absent clients get no
+ *  tab — a dead "not installed" pane is noise. */
 type VpnTab = "overview" | VpnKind;
 
 type BoundHost = { host: HostRow; binding: VpnBinding };
 
 /**
- * Everything the app knows about the VPNs on this machine, one client per
- * tab in the same strip the host detail page uses.
+ * Everything the app knows about the VPNs on this machine, one client per tab.
  *
- * Strictly an observer — there is no connect button here, and that is a
- * trust decision, not a gap: starting a VPN means elevating privileges and
- * changing routes machine-wide, which belongs to the VPN's own UI.
+ * Strictly an observer: there is no connect button, deliberately — starting a
+ * VPN elevates privileges and changes routes machine-wide, which belongs to
+ * the VPN's own UI.
  */
 export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
   const { statuses, resources, bindingFor, lastChecked, refresh } = useVpn();
@@ -38,8 +37,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
   const installed = statuses.filter((status) => status.installed);
   const up = installed.filter((status) => status.up);
 
-  // A client can disappear between polls (uninstalled, or detection lost
-  // it); its tab must not linger as a blank pane.
+  // A client can disappear between polls; its tab must not linger blank.
   const installedKey = installed.map((status) => status.kind).join(",");
   useEffect(() => {
     if (tab !== "overview" && !installedKey.split(",").includes(tab)) {
@@ -356,13 +354,9 @@ function BoundHostsCard({
   );
 }
 
-/**
- * The auth column, compacted to one word so rows stay one line tall.
- *
- * "Auth expires in 4 days" becomes a green "4 days"; anything the backend
- * flagged as blocking becomes a red "expired"/"required". The client's full
- * wording survives in the tooltip.
- */
+/** The auth column, compacted to one word so rows stay one line tall.
+ *  "Auth expires in 4 days" becomes a green "4 days", anything blocking a red
+ *  "expired"/"required". The client's full wording stays in the tooltip. */
 function AuthPill({ resource }: { resource: VpnResource }) {
   let variant = "";
   let text = resource.authStatus;

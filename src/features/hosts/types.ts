@@ -37,12 +37,8 @@ export interface HostDraft {
   notes: string | null;
 }
 
-/**
- * What connecting has to ask for before a private key can be loaded.
- *
- * `notNeeded` is the whole point: an unencrypted key has no passphrase to
- * type, so the dialog must not ask for one.
- */
+/** What connecting must ask for before a private key can be loaded.
+ *  `notNeeded` matters most: an unencrypted key must not raise a prompt. */
 export type PassphraseNeed =
   | { kind: "notNeeded" }
   | { kind: "required" }

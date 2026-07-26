@@ -10,9 +10,8 @@ pub mod vpn;
 use remote::registry::SessionRegistry;
 use remote::secrets::SecretVault;
 
-/// The tray keeps the app reachable while its window is hidden — closing the
-/// window with live SSH sessions offers "minimize to tray" instead of tearing
-/// the connections down, and this icon is the way back in afterwards.
+/// The tray keeps the app reachable while its window is hidden, so closing it
+/// with live SSH sessions can minimize instead of tearing connections down.
 #[cfg(desktop)]
 mod tray {
     use tauri::menu::{Menu, MenuItem};
@@ -40,9 +39,8 @@ mod tray {
             )
             .tooltip("ParolaSSH")
             .menu(&menu)
-            // Left click restores the window; the menu stays on right click.
-            // (Some Linux status-notifier hosts only ever show the menu — the
-            // "Show" entry is there so those users are not locked out.)
+            // Left click restores the window, right click opens the menu. Some
+            // Linux status-notifier hosts only show the menu, hence "Show".
             .show_menu_on_left_click(false)
             .on_tray_icon_event(|tray, event| {
                 if let TrayIconEvent::Click {
@@ -56,8 +54,7 @@ mod tray {
             })
             .on_menu_event(|app, event| match event.id.as_ref() {
                 "show" => show_main(app),
-                // `exit` fires RunEvent::Exit below, which disconnects every
-                // SSH session before the process goes away.
+                // Fires RunEvent::Exit below, which disconnects every session.
                 "quit" => app.exit(0),
                 _ => {}
             })
@@ -71,13 +68,9 @@ mod tray {
 pub fn run() {
     let builder = tauri::Builder::default();
 
-    // Only ever one ParolaSSH. A second copy would hold its own registry of
-    // SSH sessions and its own copy of any remembered password, and would
-    // race the first over `hosts.json` — two windows editing the same list
-    // with last-write-wins is how saved connections quietly disappear.
-    //
-    // Registered before every other plugin, as the plugin requires: launching
-    // again hands the arguments to the running instance and returns.
+    // Only ever one ParolaSSH: a second copy would hold its own sessions and
+    // remembered passwords, and would race the first over `hosts.json`.
+    // Registered before every other plugin, as the plugin requires.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         // Treat a second launch as "show me the one I already have".
@@ -98,8 +91,7 @@ pub fn run() {
             let _ = app;
             Ok(())
         })
-        // Live SSH sessions and in-memory passwords. Both are process-scoped
-        // on purpose: quitting the app drops every credential it holds.
+        // Both process-scoped on purpose: quitting drops every credential.
         .manage(SessionRegistry::new())
         .manage(SecretVault::new())
         .invoke_handler(tauri::generate_handler![
@@ -156,9 +148,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app, event| {
-            // Close every SSH session on the way out rather than letting the
-            // process exit drop the sockets — the remote sshd then logs a
-            // clean disconnect instead of a broken pipe.
+            // Close every session on the way out, so the remote sshd logs a
+            // clean disconnect rather than a broken pipe.
             if let tauri::RunEvent::Exit = event {
                 let registry = <tauri::AppHandle as tauri::Manager<_>>::state::<SessionRegistry>(app);
                 tauri::async_runtime::block_on(registry.disconnect_all());

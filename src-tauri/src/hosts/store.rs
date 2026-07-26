@@ -1,9 +1,8 @@
 //! Persistence for saved connections.
 //!
 //! One JSON file in the app config directory. Writes go through a temporary
-//! file and a rename so a crash mid-save leaves the previous list intact
-//! rather than a truncated one — losing every saved host to a half-written
-//! file is a far worse failure than losing the last edit.
+//! file and a rename, so a crash mid-save leaves the previous list intact
+//! rather than a truncated one.
 
 use std::path::{Path, PathBuf};
 
@@ -22,10 +21,8 @@ pub struct HostStore {
 }
 
 impl HostStore {
-    /// Read the list, treating a missing or unreadable file as empty.
-    ///
-    /// A corrupt file returning "no hosts" rather than an error is deliberate:
-    /// the app stays usable, and the next save rewrites the file cleanly.
+    /// Read the list, treating a missing or unreadable file as empty, so a
+    /// corrupt file leaves the app usable and the next save rewrites it.
     pub fn read(config_dir: &Path) -> Self {
         std::fs::read_to_string(config_dir.join(FILE_NAME))
             .ok()
@@ -58,11 +55,9 @@ impl HostStore {
         self.hosts.iter().find(|host| host.id == id)
     }
 
-    /// Insert or update, returning the stored record.
-    ///
-    /// An unknown id is an error rather than a silent insert: it means the UI
-    /// is editing something that was deleted in another window, and quietly
-    /// resurrecting it would be surprising.
+    /// Insert or update, returning the stored record. An unknown id errors
+    /// rather than inserting: it means another window deleted the record, and
+    /// resurrecting it silently would surprise.
     pub fn upsert(&mut self, draft: ValidDraft) -> SshResult<HostRecord> {
         match draft.id.clone() {
             Some(id) => {
@@ -98,8 +93,8 @@ impl HostStore {
         Ok(self.hosts.remove(index))
     }
 
-    /// Stamp a successful connection. Missing ids are ignored — a host deleted
-    /// mid-session should not turn a working connection into an error.
+    /// Stamp a successful connection. Missing ids are ignored, so a host
+    /// deleted mid-session does not fail a working connection.
     pub fn touch(&mut self, id: &str, timestamp: String) {
         if let Some(host) = self.hosts.iter_mut().find(|host| host.id == id) {
             host.last_connected = Some(timestamp);
@@ -112,10 +107,8 @@ pub fn store_path(config_dir: &Path) -> PathBuf {
     config_dir.join(FILE_NAME)
 }
 
-/// Random enough to never collide within one list.
-///
-/// Not a UUID: these ids only have to be unique inside a single JSON file, and
-/// avoiding the dependency keeps the build lean.
+/// Random enough to never collide within one list. Not a UUID: uniqueness is
+/// only needed inside a single JSON file.
 fn new_id() -> String {
     let mut bytes = [0u8; 8];
     rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut bytes);
@@ -123,10 +116,8 @@ fn new_id() -> String {
     format!("h-{hex}")
 }
 
-/// ISO 8601 UTC, to the second.
-///
-/// Hand-rolled from the epoch rather than pulling in `chrono` for one format
-/// string — the frontend parses it with `Date.parse`, which needs the `Z`.
+/// ISO 8601 UTC, to the second. Hand-rolled rather than pulling in `chrono` for
+/// one format string; the trailing `Z` is what `Date.parse` needs.
 pub fn now_iso8601() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

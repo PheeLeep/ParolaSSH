@@ -10,8 +10,8 @@
 //! cargo test --test live_remote -- --nocapture --test-threads=1
 //! ```
 //!
-//! The power test schedules a reboot far enough out to be harmless and then
-//! cancels it, so the machine stays up. Nothing here reboots anything.
+//! The power test schedules a reboot far out and then cancels it, so nothing
+//! here actually reboots the machine.
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};

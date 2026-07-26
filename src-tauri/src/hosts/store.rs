@@ -1,14 +1,15 @@
 //! Persistence for saved connections.
 //!
-//! One JSON file in the app config directory. Writes go through a temporary
-//! file and a rename, so a crash mid-save leaves the previous list intact
-//! rather than a truncated one.
+//! One JSON file in the app config directory, written owner-only through
+//! `private_file` — it is a list of every machine you administer, so it is not
+//! left at whatever `umask` allows.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use super::model::{HostRecord, ValidDraft};
+use crate::private_file;
 use crate::ssh::{SshError, SshResult};
 
 const FILE_NAME: &str = "hosts.json";
@@ -31,24 +32,10 @@ impl HostStore {
     }
 
     pub fn write(&self, config_dir: &Path) -> SshResult<()> {
-        std::fs::create_dir_all(config_dir)
-            .map_err(|error| SshError::io("Could not create the settings directory", error))?;
-
         let text = serde_json::to_string_pretty(self)
             .map_err(|error| SshError::invalid(format!("Could not encode connections: {error}")))?;
 
-        let final_path = config_dir.join(FILE_NAME);
-        let temp_path = config_dir.join(format!("{FILE_NAME}.tmp"));
-
-        std::fs::write(&temp_path, text)
-            .map_err(|error| SshError::io("Could not save connections", error))?;
-
-        // Rename is atomic on the same filesystem on every platform we target,
-        // though on Windows it only replaces an existing file via this call.
-        std::fs::rename(&temp_path, &final_path).map_err(|error| {
-            let _ = std::fs::remove_file(&temp_path);
-            SshError::io("Could not save connections", error)
-        })
+        private_file::write(config_dir, FILE_NAME, &text)
     }
 
     pub fn get(&self, id: &str) -> Option<&HostRecord> {

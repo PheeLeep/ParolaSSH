@@ -17,7 +17,7 @@ Where things stand. Updated as work lands.
 | Host key verification | ✅ | Checked during key exchange, before any password is sent |
 | Power — shutdown / reboot / cancel | ✅ | Linux, macOS, BSD, Windows; scheduled or immediate |
 | sudo vs UAC elevation | ✅ | `sudo -S` over stdin; UAC explained rather than silently failing |
-| sudo password reuse | ✅ | Session holds the login password; overridable per action |
+| sudo password reuse | ✅ | Session holds the login password; overridable per action. Taken from the *resolved* credential, so a reconnect that recalled its password from the vault can still elevate |
 | 30-second heartbeat | ✅ | Channel round trip when connected, TCP probe otherwise |
 | Interactive terminal (single) | ✅ | PTY, streamed, resizable, UTF-8 reassembly |
 | Sessions view | ✅ | Every open shell across hosts, live count in the sidebar, links straight to the tab |
@@ -34,6 +34,7 @@ Where things stand. Updated as work lands.
 | Shell ids on every event | A stale shell's output can't render in a newer pane |
 | Followed logs inherit all three rules | Addressed events, batching, stream ids — a journal contains whatever the machine logs |
 | No generic stream-open verb | Each feature opens its own typed command; only `close_stream(id)` is generic |
+| `hosts.json` written owner-only | It is a list of every machine you administer — the same "readable map" the audit scores an unhashed `known_hosts` for. Was `0644` under the default umask |
 
 ---
 
@@ -197,8 +198,8 @@ decides in a terminal.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 142 |
-| Rust fixtures | `cargo test --test audit_fixtures` | 36 |
+| Rust unit | `cargo test --lib` | 149 |
+| Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs the VM) | see below | 7 |
 | Frontend | `npx tsc --noEmit` | typecheck only |
 

@@ -1,6 +1,7 @@
 mod app_paths;
 mod commands;
 pub mod hosts;
+mod private_file;
 pub mod remote;
 // Public so the integration tests in `tests/` can drive the audit against
 // fixture directories.

@@ -13,6 +13,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::{SshError, SshResult};
+use crate::private_file;
 
 const FILE_NAME: &str = "audit-suppressions.json";
 
@@ -43,14 +44,10 @@ impl Suppressions {
     }
 
     pub fn write_named(&self, config_dir: &Path, file_name: &str) -> SshResult<()> {
-        std::fs::create_dir_all(config_dir)
-            .map_err(|error| SshError::io("Could not create the settings directory", error))?;
-
         let text = serde_json::to_string_pretty(self)
             .map_err(|error| SshError::invalid(format!("Could not encode settings: {error}")))?;
 
-        std::fs::write(config_dir.join(file_name), text)
-            .map_err(|error| SshError::io("Could not save settings", error))
+        private_file::write(config_dir, file_name, &text)
     }
 
     pub fn as_set(&self) -> HashSet<String> {

@@ -104,8 +104,15 @@ pub async fn connect_host(
         }
     };
 
-    if remember && host.auth_method == AuthMethod::Password {
-        if let Some(password) = password.as_deref() {
+    // The resolved credential, not the argument: on a reconnect the password
+    // comes from the vault and the argument is `None`.
+    let login_password = match &credentials {
+        Credentials::Password(password) => Some(password.clone()),
+        _ => None,
+    };
+
+    if remember {
+        if let Some(password) = &login_password {
             vault.remember(&host_id, password.as_str());
         }
     }
@@ -129,10 +136,8 @@ pub async fn connect_host(
 
     // Held for the life of the session so `sudo` can reuse it, and dropped with
     // the session regardless of whether `remember` was set.
-    if host.auth_method == AuthMethod::Password {
-        if let Some(password) = password.clone() {
-            live.set_login_password(password);
-        }
+    if let Some(password) = login_password {
+        live.set_login_password(password);
     }
 
     Ok(ConnectionInfo {
@@ -785,5 +790,78 @@ fn build_credentials(
         }
 
         AuthMethod::Agent => Ok(Credentials::Agent),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn host(auth_method: AuthMethod) -> HostRecord {
+        HostRecord {
+            id: "h-1".into(),
+            label: "Test".into(),
+            hostname: "example.test".into(),
+            port: 22,
+            username: "operator".into(),
+            auth_method,
+            key_path: None,
+            group: String::new(),
+            tags: Vec::new(),
+            notes: None,
+            last_connected: None,
+        }
+    }
+
+    fn password_of(credentials: &Credentials) -> Option<String> {
+        match credentials {
+            Credentials::Password(password) => Some(password.to_string()),
+            _ => None,
+        }
+    }
+
+    /// The invariant `connect_host` relies on to hand sudo a password: on a
+    /// reconnect the UI sends nothing and the vault supplies the credential.
+    /// Reading the argument instead of the resolved credential is what left a
+    /// remembered-password session unable to elevate.
+    #[test]
+    fn a_reconnect_resolves_its_password_from_the_vault() {
+        let vault = SecretVault::new();
+        vault.remember("h-1", "from-the-vault");
+
+        let credentials = build_credentials(&host(AuthMethod::Password), None, &vault).unwrap();
+        assert_eq!(password_of(&credentials).as_deref(), Some("from-the-vault"));
+    }
+
+    #[test]
+    fn a_supplied_password_wins_over_the_vault() {
+        let vault = SecretVault::new();
+        vault.remember("h-1", "stale");
+
+        let credentials =
+            build_credentials(&host(AuthMethod::Password), Some("typed-now"), &vault).unwrap();
+        assert_eq!(password_of(&credentials).as_deref(), Some("typed-now"));
+    }
+
+    #[test]
+    fn key_and_agent_carry_no_login_password() {
+        let vault = SecretVault::new();
+        vault.remember("h-1", "irrelevant");
+
+        // A key's passphrase is not a login password and must never reach sudo.
+        let mut keyed = host(AuthMethod::Publickey);
+        keyed.key_path = Some("~/.ssh/id_ed25519".into());
+        let credentials = build_credentials(&keyed, Some("passphrase"), &vault).unwrap();
+        assert!(password_of(&credentials).is_none());
+
+        let credentials = build_credentials(&host(AuthMethod::Agent), None, &vault).unwrap();
+        assert!(password_of(&credentials).is_none());
+    }
+
+    #[test]
+    fn password_auth_without_any_source_is_refused() {
+        let vault = SecretVault::new();
+        assert!(build_credentials(&host(AuthMethod::Password), None, &vault).is_err());
+        assert!(build_credentials(&host(AuthMethod::Password), Some(""), &vault).is_err());
     }
 }

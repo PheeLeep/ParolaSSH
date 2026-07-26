@@ -223,6 +223,10 @@ impl Session {
 
         let config = Arc::new(client::Config {
             inactivity_timeout: Some(Duration::from_secs(3600)),
+            // russh's 2 MiB default clamps a pipelined download: the server may
+            // send only that much before waiting on a window adjust. Worth ~10%
+            // on a 1 GiB fetch. Credit, not an allocation.
+            window_size: 8 * 1024 * 1024,
             ..Default::default()
         });
 

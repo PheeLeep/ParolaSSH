@@ -11,6 +11,8 @@
 //!   * `power`    — builds shutdown/reboot commands per remote OS.
 //!   * `shell`    — interactive PTY, streamed to the webview as events.
 //!   * `stream`   — long-running command output, streamed without a PTY.
+//!   * `sftp`     — browsing a remote filesystem; never follows a symlink.
+//!   * `transfers`— the app-wide upload/download queue, shared by every host.
 //!   * `services` — list, act on, and read logs of system services.
 //!   * `metrics`  — one-round-trip performance sampling.
 //!   * `updates`  — read-only pending-update queries per package manager.
@@ -26,8 +28,11 @@ pub mod probe;
 pub mod registry;
 pub mod secrets;
 pub mod services;
+pub mod sftp;
 pub mod shell;
 pub mod stream;
+pub mod transfer_task;
+pub mod transfers;
 pub mod updates;
 
 use serde::Serialize;

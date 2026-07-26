@@ -52,11 +52,35 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 | Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
 | Updates | ✅ | apt/dnf pending list; Windows shows hotfix history when PSWindowsUpdate is absent |
 | Audit | ✅ | Tiers 0–1 built, tier 2 is detect-only; details below |
-| Files | 💭 | SFTP via `russh-sftp`; a real UI on its own |
+| Files | ✅ | SFTP browse, upload, download, delete; symlinks listed but never followed |
 
-The Files tab still states what it will run rather than showing an empty
-"coming soon" pane — you cannot tell a missing feature from one that found
-nothing.
+### Files — the two rules ✅
+
+Symlinks and device files are listed with their target and refused for every
+operation. Following one is how a host makes a download read `/dev/zero`
+forever or land outside the folder you picked, and resolving safely means a
+containment check racing the server's own filesystem. `refuse_unless_regular`
+is the single gate, shared by descend, download and delete.
+
+SFTP has no sudo — the subsystem runs as the login user and there is no
+elevation to offer. A denied path says so and names the fix (reconnect as a
+user with access) rather than showing a prompt that cannot work. Note that the
+denial only surfaces on *open*: `stat` needs no read permission, so
+`/etc/shadow` stats fine and fails when its bytes are asked for.
+
+### Transfers — one queue for every host ✅
+
+Rationed globally rather than per host, because what fills up is the local
+uplink: five downloads from five hosts saturate a connection exactly as five
+from one would. Default three at once, settable 1–8 in Settings. Priority is
+High/Normal/Low, ties broken by arrival, with each waiting row showing its
+position. Lowering the cap never interrupts a transfer already running.
+
+Downloads stage as `{name}.part` and are renamed only after the last byte, so a
+cancel or a dropped link never leaves a truncated file wearing the real name,
+and they are created `0600` on Unix so a fetched private key is never
+world-readable. Nothing resumes across a restart; a host that disconnects fails
+its transfers visibly instead of letting them vanish.
 
 ### Terminal — leak prevention ✅
 

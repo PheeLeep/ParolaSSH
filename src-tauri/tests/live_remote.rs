@@ -26,7 +26,7 @@
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
-use parolassh_lib::remote::{audit, metrics, probe, services, updates, OsFamily};
+use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, updates, OsFamily};
 use zeroize::Zeroizing;
 
 struct LiveConfig {
@@ -619,3 +619,345 @@ async fn the_login_password_is_reused_for_sudo() {
 
     session.close().await;
 }
+
+/* ── Files (SFTP) ─────────────────────────────────────────────────────── */
+
+/// Create a remote file and fill it.
+///
+/// Not `SftpSession::write`, which opens with `WRITE` alone and so fails with
+/// `NoSuchFile` on anything that does not already exist. `create` is the one
+/// that sets `CREATE | TRUNCATE | WRITE`, and is what the upload path uses.
+async fn write_new(sftp: &russh_sftp::client::SftpSession, path: &str, data: &[u8]) {
+    use tokio::io::AsyncWriteExt;
+
+    let mut file = sftp.create(path.to_string()).await.unwrap();
+    file.write_all(data).await.unwrap();
+    file.flush().await.unwrap();
+    file.shutdown().await.unwrap();
+}
+
+/// A full round trip over the subsystem: upload a file, read it back, and
+/// confirm the bytes survived.
+///
+/// Everything is written under `/tmp` and removed again, so a failed run leaves
+/// at most one stray file on a throwaway box.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn uploads_and_downloads_a_file_intact() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let dir = format!("/tmp/parolassh-sftp-{}", now_ms());
+    sftp.create_dir(dir.clone()).await.unwrap();
+
+    // Deliberately not text: a transfer that mangles high bytes or embedded
+    // NULs would still pass a "hello world" check.
+    let payload: Vec<u8> = (0..=255u8).cycle().take(300_000).collect();
+    let remote_file = format!("{dir}/payload.bin");
+    write_new(&sftp, &remote_file, &payload).await;
+
+    let read_back = sftp.read(remote_file.clone()).await.unwrap();
+    assert_eq!(read_back.len(), payload.len(), "the file changed size in flight");
+    assert_eq!(read_back, payload, "the bytes did not survive the round trip");
+
+    // The listing must agree about size and kind.
+    let listing = sftp::list_dir(&sftp, &dir).await.unwrap();
+    let entry = listing
+        .entries
+        .iter()
+        .find(|entry| entry.name == "payload.bin")
+        .expect("the file we just wrote should be listed");
+    assert_eq!(entry.kind, sftp::EntryKind::File);
+    assert_eq!(entry.size, payload.len() as u64);
+
+    sftp.remove_file(remote_file).await.unwrap();
+    sftp.remove_dir(dir).await.unwrap();
+    session.close().await;
+}
+
+/// The symlink policy, against a real link rather than a constructed enum.
+///
+/// This is the test that matters most: `list_dir` reads kinds from the
+/// server's `readdir` attributes, and if any server reported them with `stat`
+/// semantics instead of `lstat`, a link would arrive looking like an ordinary
+/// file and the refusal would never fire.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn a_symlink_is_reported_as_one_and_refused() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let dir = format!("/tmp/parolassh-link-{}", now_ms());
+    sftp.create_dir(dir.clone()).await.unwrap();
+
+    let real = format!("{dir}/real.txt");
+    write_new(&sftp, &real, b"contents").await;
+
+    // Made with `ln -s` rather than the SFTP helper: what matters is that we
+    // correctly *read* a link created the ordinary way, and the protocol's own
+    // symlink request has a well-known argument-order disagreement between the
+    // draft and OpenSSH that is not ours to take a side in.
+    let link = format!("{dir}/link.txt");
+    let made = session
+        .exec(&format!("ln -s {real} {link}"), None)
+        .await
+        .unwrap();
+    assert!(made.succeeded(), "could not create the test link: {}", made.failure_text());
+
+    let listing = sftp::list_dir(&sftp, &dir).await.unwrap();
+    let entry = listing
+        .entries
+        .iter()
+        .find(|entry| entry.name == "link.txt")
+        .expect("the link should be listed, not hidden");
+
+    assert_eq!(
+        entry.kind,
+        sftp::EntryKind::Symlink,
+        "readdir must report links with lstat semantics, or the gate never fires"
+    );
+    assert_eq!(
+        entry.target.as_deref(),
+        Some(real.as_str()),
+        "the target is shown so the user can open it directly"
+    );
+
+    // And the gate the download path uses must refuse it.
+    let refused = sftp::stat_regular_file(&sftp, &link).await;
+    assert!(refused.is_err(), "a symlink must never be opened for transfer");
+    assert!(
+        refused.unwrap_err().to_string().contains("symbolic link"),
+        "the refusal should say why"
+    );
+
+    // The real file behind it is still transferable.
+    assert_eq!(sftp::stat_regular_file(&sftp, &real).await.unwrap(), 8);
+
+    sftp.remove_file(link).await.unwrap();
+    sftp.remove_file(real).await.unwrap();
+    sftp.remove_dir(dir).await.unwrap();
+    session.close().await;
+}
+
+/// A path we have no business reading explains that SFTP cannot elevate.
+///
+/// The refusal comes from the *open*, not the stat: `stat` needs only search
+/// permission on the parent directories, so `/etc/shadow` stats perfectly well
+/// as an ordinary user and fails the moment you ask for its contents. A
+/// download therefore only learns it is denied at the last step, which is
+/// exactly where `explain_error` runs.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn a_denied_path_says_sftp_cannot_elevate() {
+    let config = config();
+    let session = connect(&config).await;
+
+    let whoami = session.exec("id -u", None).await.unwrap();
+    if whoami.stdout.trim() == "0" {
+        skip("connected as root, so nothing is denied");
+        session.close().await;
+        return;
+    }
+
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    // Root-owned, mode 0640, on every Linux box.
+    assert!(
+        sftp::stat_regular_file(&sftp, "/etc/shadow").await.is_ok(),
+        "stat needs no read permission — if this fails the premise has changed"
+    );
+
+    let opened = sftp.open("/etc/shadow".to_string()).await;
+    let error = match opened {
+        Err(error) => sftp::explain_error("Could not open /etc/shadow", &error.to_string()),
+        Ok(_) => panic!("an ordinary user must not be able to read /etc/shadow"),
+    };
+
+    let text = error.to_string();
+    assert!(
+        text.contains("cannot elevate"),
+        "a denial must say sudo is not an option here, got: {text}"
+    );
+    assert!(
+        text.contains("reconnect as a user"),
+        "and must say what to do instead, got: {text}"
+    );
+
+    session.close().await;
+}
+
+/// The browser starts somewhere real, and the path is absolute and clean.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn the_home_directory_is_an_absolute_path_we_can_list() {
+    let config = config();
+    let session = connect(&config).await;
+    let sftp = sftp::connect(&session).await.unwrap();
+
+    let home = sftp::home_dir(&sftp).await.unwrap();
+    assert!(home.starts_with('/'), "home should be absolute, got {home}");
+    assert!(!home.ends_with('/') || home == "/", "no trailing slash: {home}");
+
+    // Listing it must work, and `.`/`..` must not appear as entries.
+    let listing = sftp::list_dir(&sftp, &home).await.unwrap();
+    assert_eq!(listing.path, home);
+    assert!(
+        !listing.entries.iter().any(|e| e.name == "." || e.name == ".."),
+        "the dot entries are noise in a file browser"
+    );
+
+    session.close().await;
+}
+
+
+/// A gigabyte of random bytes, up and back down, hashed at both ends.
+///
+/// The point is not that SFTP works — the smaller round trip covers that. It is
+/// that the *chunking* holds at a size where an off-by-one in an offset, a lost
+/// buffer tail, or a `.part` renamed early would actually show up, on a file far
+/// larger than any buffer involved. Random content matters: a file of zeros
+/// would hide a chunk written twice, or one skipped entirely.
+///
+/// Both directions go through the real `transfer_task` functions, not a
+/// hand-rolled copy, so what is verified is the code the app runs.
+///
+/// Needs ~1 GB free on the VM and ~2 GB locally, and takes a few minutes.
+/// Everything is removed at the end, including on the remote side.
+#[tokio::test]
+#[ignore = "needs a live host and ~1GB free: see the module docs"]
+async fn a_gigabyte_survives_the_round_trip_intact() {
+    use std::sync::atomic::AtomicBool;
+
+    let config = config();
+    let session = connect(&config).await;
+
+    let scratch = tempfile::tempdir().unwrap();
+    let source_path = scratch.path().join("payload.bin");
+    let returned_path = scratch.path().join("returned.bin");
+    let remote_path = format!("/tmp/parolassh-1g-{}.bin", now_ms());
+
+    // 1 GiB of non-repeating bytes, generated rather than read from
+    // /dev/urandom so the test does not depend on the host's entropy device.
+    const SIZE: u64 = 1024 * 1024 * 1024;
+    eprintln!("building a {SIZE}-byte random file at {}", source_path.display());
+    let local_digest = build_random_file(&source_path, SIZE);
+    eprintln!("local sha256  = {local_digest}");
+
+    let no_cancel = AtomicBool::new(false);
+    let seen = std::sync::Mutex::new(0_u64);
+    let progress = |done: u64, _total: Option<u64>| {
+        *seen.lock().unwrap() = done;
+    };
+
+    // ── Up ──
+    let started = std::time::Instant::now();
+    transfer_task::upload(
+        &session,
+        &remote_path,
+        source_path.to_str().unwrap(),
+        &no_cancel,
+        &progress,
+    )
+    .await
+    .expect("the upload should succeed");
+    eprintln!("uploaded in {:?}", started.elapsed());
+    assert_eq!(*seen.lock().unwrap(), SIZE, "progress must end at the full size");
+
+    // The server's own view of what it received, computed by the server.
+    let remote_sum = session
+        .exec_with_timeout(
+            &format!("sha256sum {remote_path}"),
+            None,
+            std::time::Duration::from_secs(600),
+        )
+        .await
+        .unwrap();
+    assert!(remote_sum.succeeded(), "{}", remote_sum.failure_text());
+    let remote_digest = remote_sum.stdout.split_whitespace().next().unwrap().to_string();
+    eprintln!("remote sha256 = {remote_digest}");
+    assert_eq!(
+        remote_digest, local_digest,
+        "the uploaded file does not match what we sent"
+    );
+
+    // ── And back down ──
+    let started = std::time::Instant::now();
+    transfer_task::download(
+        &session,
+        &remote_path,
+        returned_path.to_str().unwrap(),
+        &no_cancel,
+        &progress,
+    )
+    .await
+    .expect("the download should succeed");
+    eprintln!("downloaded in {:?}", started.elapsed());
+
+    assert_eq!(
+        std::fs::metadata(&returned_path).unwrap().len(),
+        SIZE,
+        "the returned file is the wrong size"
+    );
+    let returned_digest = sha256_file(&returned_path);
+    eprintln!("returned sha256 = {returned_digest}");
+    assert_eq!(
+        returned_digest, local_digest,
+        "the round trip changed the file"
+    );
+
+    // The staging file must be gone, not merely renamed past.
+    let part = transfer_task::part_path_for(&returned_path);
+    assert!(!part.exists(), "the .part file should not survive a success");
+
+    let cleaned = session
+        .exec(&format!("rm -f {remote_path}"), None)
+        .await
+        .unwrap();
+    assert!(cleaned.succeeded(), "{}", cleaned.failure_text());
+    session.close().await;
+}
+
+/// Write `size` bytes of non-repeating content and return its SHA-256.
+///
+/// A xorshift keeps this fast and dependency-free while still producing bytes
+/// that no chunking bug could accidentally reproduce.
+fn build_random_file(path: &std::path::Path, size: u64) -> String {
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+
+    let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+    let mut hasher = Sha256::new();
+
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    let mut block = vec![0_u8; 1 << 20];
+    let mut written = 0_u64;
+
+    while written < size {
+        for slot in block.chunks_exact_mut(8) {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            slot.copy_from_slice(&state.to_le_bytes());
+        }
+        let take = std::cmp::min(block.len() as u64, size - written) as usize;
+        file.write_all(&block[..take]).unwrap();
+        hasher.update(&block[..take]);
+        written += take as u64;
+    }
+
+    file.flush().unwrap();
+    format!("{:x}", hasher.finalize())
+}
+
+fn sha256_file(path: &std::path::Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut file = std::fs::File::open(path).unwrap();
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher).unwrap();
+    format!("{:x}", hasher.finalize())
+}
+
+

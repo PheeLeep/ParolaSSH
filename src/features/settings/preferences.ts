@@ -1,3 +1,5 @@
+import * as api from "../hosts/api";
+
 /** Which pane opens on launch. */
 export type StartupView = "welcome" | "hosts";
 
@@ -110,4 +112,55 @@ export function subscribeTerminalFont(
   return () => {
     fontListeners.delete(listener);
   };
+}
+
+/* ── Transfers ─────────────────────────────────────────────────────────── */
+
+export const MAX_CONCURRENT_STORAGE_KEY = "parolassh:max-concurrent-transfers";
+
+export const DEFAULT_MAX_CONCURRENT_TRANSFERS = 3;
+export const MIN_MAX_CONCURRENT_TRANSFERS = 1;
+export const MAX_MAX_CONCURRENT_TRANSFERS = 8;
+
+export function clampConcurrency(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_CONCURRENT_TRANSFERS;
+  return Math.min(
+    MAX_MAX_CONCURRENT_TRANSFERS,
+    Math.max(MIN_MAX_CONCURRENT_TRANSFERS, Math.round(value)),
+  );
+}
+
+export function readMaxConcurrentTransfers(): number {
+  try {
+    const stored = localStorage.getItem(MAX_CONCURRENT_STORAGE_KEY);
+    if (stored !== null) return clampConcurrency(Number(stored));
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+  }
+  return DEFAULT_MAX_CONCURRENT_TRANSFERS;
+}
+
+/** Store the cap and tell Rust, which is the one that enforces it. The webview
+ *  only remembers the choice; the queue lives in the backend. */
+export async function writeMaxConcurrentTransfers(value: number): Promise<number> {
+  const clamped = clampConcurrency(value);
+  try {
+    localStorage.setItem(MAX_CONCURRENT_STORAGE_KEY, String(clamped));
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+  // Rust clamps too, and its answer wins — the two ranges are meant to agree,
+  // and if they ever drift the enforcing side is the truthful one.
+  return api.setMaxConcurrentTransfers(clamped);
+}
+
+/** Push the remembered cap to Rust at launch. The backend starts at its own
+ *  default each run, so without this a saved preference would be ignored until
+ *  the user opened Settings and changed it. */
+export async function applyStoredConcurrency(): Promise<void> {
+  try {
+    await api.setMaxConcurrentTransfers(readMaxConcurrentTransfers());
+  } catch {
+    // The default is already in force; nothing to recover.
+  }
 }

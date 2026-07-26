@@ -22,8 +22,8 @@
 
 <!-- Screenshots go here -->
 
-Routine work — services, updates, load, power — lives in panes, while the real
-terminal stays one click away. It **reports and acts on your command**: it never
+Routine work — services, updates, load, power, files — lives in panes, while the
+real terminal stays one click away. It **reports and acts on your command**: it never
 installs packages, never changes a server's configuration on its own, and never
 sends a credential you did not choose.
 
@@ -45,6 +45,22 @@ sends a credential you did not choose.
 | Performance | CPU, memory, load, disks; user-set 1–30 s sampling |
 | Updates | Pending apt/dnf packages; Windows hotfix history |
 | Audit | Handshake crypto, `sshd -T` posture, key permissions — with per-host dismissals |
+| Files | SFTP browser — upload, download, delete, new folder; symlinks shown but never followed |
+
+**File transfers**
+- One queue for every host: what gets rationed is your uplink, not any one server
+- 3 transfers at once by default, 1–8 in Settings; lowering it never interrupts a running one
+- High / Normal / Low priority, ties broken by arrival, each waiting row showing its place
+- Transfers page tracks everything live, whichever host started it and wherever you navigate
+- Downloads stage as `.part` and are renamed only after the last byte, `0600` from creation —
+  a cancelled or dropped transfer never leaves a truncated file wearing the real name
+- Every transfer is length-checked; pipelined reads move ~85 MB/s over a LAN
+
+> **Two things SFTP will not do.** Symlinks and device files are listed with their
+> target and refused for every operation — following one is how a host makes a
+> download read `/dev/zero` forever or land outside the folder you picked. And the
+> subsystem runs as the user you signed in as with no sudo available, so a denied
+> path says so and names the fix rather than offering an elevation that cannot work.
 
 **Keys & audit**
 - Browse, generate and delete keys in `~/.ssh`, with permission repair
@@ -97,9 +113,9 @@ PAROLASSH_LIVE_HOST=… PAROLASSH_LIVE_USER=… PAROLASSH_LIVE_PASSWORD=… \
 ## Where things live
 
 ```
-src/features/…      hosts, keys, sessions, vpn, settings (React)
+src/features/…      hosts, keys, sessions, transfers, vpn, settings (React)
 src-tauri/src/ssh/    local key store, audit, known_hosts
-src-tauri/src/remote/ sessions, shells, services, metrics, updates
+src-tauri/src/remote/ sessions, shells, services, metrics, updates, sftp, transfers
 src-tauri/src/vpn/    per-provider status detection
 docs/ROADMAP.md       what's shipped, what's decided, and why
 ```

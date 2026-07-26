@@ -3,6 +3,8 @@
 //! Passwords arrive as arguments and become `Zeroizing` immediately; they are
 //! never persisted, logged, or interpolated into a command string.
 
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{AppHandle, State};
@@ -16,6 +18,9 @@ use super::secrets::SecretVault;
 use super::services::{
     self, ServiceActionRequest, ServiceEntry, ServiceLog, ServiceOutcome, ServicePlan,
 };
+use super::sftp::{self, DirListing};
+use super::transfer_task;
+use super::transfers::{Direction, Priority, TransferManager, TransferRecord, TransferRequest};
 use super::{shell, stream, OsFamily};
 use crate::app_paths::config_dir;
 use crate::hosts::model::{AuthMethod, HostRecord};
@@ -160,10 +165,16 @@ pub async fn connect_host(
 
 #[tauri::command]
 pub async fn disconnect_host(
+    app: AppHandle,
     registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
     host_id: String,
 ) -> SshResult<bool> {
-    Ok(registry.disconnect(&host_id).await)
+    let disconnected = registry.disconnect(&host_id).await;
+    // After the session is gone, so a transfer cannot be promoted onto a
+    // connection that is being torn down.
+    release_host_transfers(&app, &registry, &transfers, &host_id).await;
+    Ok(disconnected)
 }
 
 /// Which hosts currently have a live session, so the list can show it.
@@ -291,6 +302,7 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(3);
 pub async fn heartbeat(
     app: AppHandle,
     registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
 ) -> SshResult<Vec<HostHealth>> {
     let hosts = HostStore::read(&config_dir(&app)?).hosts;
 
@@ -326,10 +338,13 @@ pub async fn heartbeat(
 
     let health = futures_util::future::join_all(checks).await;
 
-    // Reap sessions that failed their liveness check.
+    // Reap sessions that failed their liveness check, and stop anything that
+    // was transferring over them — otherwise a dropped link leaves a progress
+    // bar creeping against a connection that no longer exists.
     for entry in &health {
         if !entry.connected && registry.is_connected(&entry.host_id) {
             registry.disconnect(&entry.host_id).await;
+            release_host_transfers(&app, &registry, &transfers, &entry.host_id).await;
         }
     }
 
@@ -793,6 +808,340 @@ fn build_credentials(
 
         AuthMethod::None => Ok(Credentials::None),
     }
+}
+
+/* ── Files (SFTP) ─────────────────────────────────────────────────────── */
+
+/// List one remote directory.
+///
+/// A failure drops the cached browse channel before returning: the usual cause
+/// is a channel the server closed under us, and the next call should reopen
+/// rather than fail forever.
+#[tauri::command]
+pub async fn list_remote_dir(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    path: String,
+) -> SshResult<DirListing> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    match sftp::list_dir(&sftp, &path).await {
+        Ok(listing) => Ok(listing),
+        Err(error) => {
+            live.browse.reset().await;
+            Err(error)
+        }
+    }
+}
+
+/// Where a fresh file browser should open.
+#[tauri::command]
+pub async fn remote_home_dir(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<String> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    match sftp::home_dir(&sftp).await {
+        Ok(path) => Ok(path),
+        Err(error) => {
+            live.browse.reset().await;
+            Err(error)
+        }
+    }
+}
+
+/// Create a directory on the remote host.
+#[tauri::command]
+pub async fn create_remote_dir(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    path: String,
+    name: String,
+) -> SshResult<String> {
+    // The name is the user's, but it still must not be a path: a "folder"
+    // called `../..` would create somewhere they are not looking.
+    sftp::safe_local_name(&name)?;
+
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+    let target = sftp::join(&path, &name);
+
+    sftp.create_dir(target.clone())
+        .await
+        .map_err(|error| sftp::explain_error(&format!("Could not create {target}"), &error.to_string()))?;
+
+    Ok(target)
+}
+
+/// Delete one remote file or empty directory.
+///
+/// Refuses a symlink like everything else does — unlinking a link is safe in
+/// itself, but the row the user clicked says "latest.log" and they would
+/// reasonably expect the log to go. Refusing keeps the policy one sentence long.
+#[tauri::command]
+pub async fn delete_remote_entry(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    path: String,
+    is_dir: bool,
+) -> SshResult<()> {
+    let live = registry.require(&host_id)?;
+    let sftp = live.browse.get_or_open(&live.session).await?;
+
+    let metadata = sftp
+        .symlink_metadata(path.clone())
+        .await
+        .map_err(|error| sftp::explain_error(&format!("Could not read {path}"), &error.to_string()))?;
+    let kind = sftp::EntryKind::from(metadata.file_type());
+    if let Some(refusal) = sftp::refuse_unless_regular(kind, &path) {
+        return Err(refusal);
+    }
+
+    let result = if is_dir {
+        sftp.remove_dir(path.clone()).await
+    } else {
+        sftp.remove_file(path.clone()).await
+    };
+
+    result.map_err(|error| sftp::explain_error(&format!("Could not delete {path}"), &error.to_string()))
+}
+
+/// Queue a download. Returns the transfer id; the file arrives via events.
+#[tauri::command]
+pub async fn enqueue_download(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    host_id: String,
+    remote_path: String,
+    local_dir: String,
+    priority: Option<Priority>,
+) -> SshResult<u64> {
+    let live = registry.require(&host_id)?;
+
+    let remote_path = sftp::normalize(&remote_path);
+    let name = remote_path.rsplit('/').next().unwrap_or_default().to_string();
+    // The server chose this name; it does not get to choose where it lands.
+    let safe_name = sftp::safe_local_name(&name)?;
+
+    let dir = PathBuf::from(&local_dir);
+    if !dir.is_dir() {
+        return Err(SshError::invalid(
+            "Choose a folder that exists to download into.",
+        ));
+    }
+    let local_path = transfer_task::available_path(&dir, &safe_name);
+
+    let id = transfers.enqueue(TransferRequest {
+        host_id: host_id.clone(),
+        host_label: host_label(&app, &host_id),
+        direction: Direction::Download,
+        remote_path,
+        local_path: local_path.to_string_lossy().to_string(),
+        name: safe_name,
+        priority: priority.unwrap_or_default(),
+        bytes_total: None,
+    });
+
+    let _ = live;
+    pump_transfers(&app, &registry, &transfers).await;
+    Ok(id)
+}
+
+/// Queue an upload of a local file into a remote directory.
+#[tauri::command]
+pub async fn enqueue_upload(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    host_id: String,
+    local_path: String,
+    remote_dir: String,
+    priority: Option<Priority>,
+) -> SshResult<u64> {
+    registry.require(&host_id)?;
+
+    let source = PathBuf::from(&local_path);
+    let metadata = std::fs::metadata(&source)
+        .map_err(|error| SshError::io("Could not read the file you chose", error))?;
+    if !metadata.is_file() {
+        return Err(SshError::invalid(
+            "Only regular files can be uploaded — pick a file, not a folder.",
+        ));
+    }
+
+    let name = source
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .ok_or_else(|| SshError::invalid("That file has no name to upload it under."))?;
+    let remote_path = sftp::join(&remote_dir, &name);
+
+    let id = transfers.enqueue(TransferRequest {
+        host_id: host_id.clone(),
+        host_label: host_label(&app, &host_id),
+        direction: Direction::Upload,
+        remote_path,
+        local_path,
+        name,
+        priority: priority.unwrap_or_default(),
+        bytes_total: Some(metadata.len()),
+    });
+
+    pump_transfers(&app, &registry, &transfers).await;
+    Ok(id)
+}
+
+/// Every transfer the app knows about, newest first.
+#[tauri::command]
+pub fn list_transfers(transfers: State<'_, Arc<TransferManager>>) -> Vec<TransferRecord> {
+    transfers.snapshot()
+}
+
+/// How many transfers are running, waiting, and how many slots there are.
+#[tauri::command]
+pub fn transfer_summary(transfers: State<'_, Arc<TransferManager>>) -> TransferSummary {
+    let (running, queued) = transfers.pending_counts();
+    TransferSummary {
+        running,
+        queued,
+        max_concurrent: transfers.max_concurrent(),
+    }
+}
+
+/// Stop a transfer. A queued one settles at once; a running one stops at its
+/// next chunk. Freeing a slot immediately pumps the queue.
+#[tauri::command]
+pub async fn cancel_transfer(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    transfer_id: u64,
+) -> SshResult<()> {
+    transfers.cancel(transfer_id);
+    transfer_task::emit_changed(&app);
+    pump_transfers(&app, &registry, &transfers).await;
+    Ok(())
+}
+
+/// Re-rank a waiting transfer.
+#[tauri::command]
+pub async fn set_transfer_priority(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    transfer_id: u64,
+    priority: Priority,
+) -> SshResult<()> {
+    transfers.set_priority(transfer_id, priority);
+    transfer_task::emit_changed(&app);
+    // A bump cannot free a slot, but it can change who takes the next one.
+    pump_transfers(&app, &registry, &transfers).await;
+    Ok(())
+}
+
+/// Change how many transfers may run at once. Raising it starts more now.
+#[tauri::command]
+pub async fn set_max_concurrent_transfers(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    value: usize,
+) -> SshResult<usize> {
+    let applied = transfers.set_max_concurrent(value);
+    pump_transfers(&app, &registry, &transfers).await;
+    transfer_task::emit_changed(&app);
+    Ok(applied)
+}
+
+/// Drop settled rows from the list. Pending ones stay.
+#[tauri::command]
+pub fn clear_finished_transfers(app: AppHandle, transfers: State<'_, Arc<TransferManager>>) -> usize {
+    let cleared = transfers.clear_finished();
+    transfer_task::emit_changed(&app);
+    cleared
+}
+
+/// Start whatever the queue says should be running.
+///
+/// Called after every event that could free or claim a slot. The pump guard is
+/// held across the spawns so two callers cannot both see the same free slot;
+/// this is the one place a lock is deliberately held across an await, matching
+/// `LiveSession::lock_shell_open`.
+pub async fn pump_transfers(
+    app: &AppHandle,
+    registry: &SessionRegistry,
+    transfers: &Arc<TransferManager>,
+) {
+    let _guard = transfers.lock_pump().await;
+
+    let orders = transfers.take_ready(&|host_id| registry.is_connected(host_id));
+    for order in orders {
+        let Some(live) = registry.get(&order.host_id) else {
+            // Disconnected between the check and here. Fail it rather than
+            // spawn a task that can only fail on its first round trip.
+            transfers.finish(order.id, Some("The host disconnected.".to_string()));
+            continue;
+        };
+
+        tokio::spawn(transfer_task::run(
+            app.clone(),
+            Arc::clone(transfers),
+            live,
+            order.id,
+            order.host_id,
+            order.direction,
+            order.remote_path,
+            order.local_path,
+            order.cancel,
+        ));
+    }
+
+    transfer_task::emit_changed(app);
+}
+
+/// Fail everything belonging to a host that has gone away, then let the queue
+/// hand the freed slots to whoever is still connected.
+///
+/// Lives here rather than on `SessionRegistry` so the registry keeps knowing
+/// nothing about transfers — the two are joined at the command layer, not
+/// wired into each other.
+pub async fn release_host_transfers(
+    app: &AppHandle,
+    registry: &SessionRegistry,
+    transfers: &Arc<TransferManager>,
+    host_id: &str,
+) {
+    if transfers.fail_host(host_id, "The host disconnected.") > 0 {
+        transfer_task::emit_changed(app);
+    }
+    pump_transfers(app, registry, transfers).await;
+}
+
+/// The host's display name, for a transfer row that must still make sense after
+/// the connection is gone.
+fn host_label(app: &AppHandle, host_id: &str) -> String {
+    config_dir(app)
+        .ok()
+        .map(|dir| HostStore::read(&dir))
+        .and_then(|store| {
+            store
+                .hosts
+                .iter()
+                .find(|host| host.id == host_id)
+                .map(|host| host.label.clone())
+        })
+        .unwrap_or_else(|| host_id.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferSummary {
+    pub running: usize,
+    pub queued: usize,
+    pub max_concurrent: usize,
 }
 
 #[cfg(test)]

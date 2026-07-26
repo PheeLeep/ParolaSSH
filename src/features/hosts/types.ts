@@ -159,6 +159,78 @@ export interface StreamClosed {
   exitCode: number | null;
 }
 
+/* ── Files (SFTP) ──────────────────────────────────────────────────────── */
+
+/** `symlink` and `other` exist to be refused, not opened — keeping them as
+ *  distinct kinds is what lets a row explain why it is inert. */
+export type EntryKind = "dir" | "file" | "symlink" | "other";
+
+export interface RemoteEntry {
+  name: string;
+  path: string;
+  kind: EntryKind;
+  size: number;
+  /** Unix seconds, or null when the server sent no mtime. */
+  modified: number | null;
+  /** Permission bits, or null on a server with no Unix modes. */
+  mode: number | null;
+  /** Where a symlink points. Shown, never followed. */
+  target: string | null;
+}
+
+export interface DirListing {
+  path: string;
+  entries: RemoteEntry[];
+  /** The directory held more entries than one listing returns. */
+  truncated: boolean;
+}
+
+/* ── Transfers ─────────────────────────────────────────────────────────── */
+
+export type TransferDirection = "upload" | "download";
+export type TransferPriority = "low" | "normal" | "high";
+export type TransferState =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "canceled";
+
+export interface TransferRecord {
+  id: number;
+  hostId: string;
+  /** Denormalized, so a row still names its host after disconnecting. */
+  hostLabel: string;
+  direction: TransferDirection;
+  remotePath: string;
+  localPath: string;
+  name: string;
+  priority: TransferPriority;
+  state: TransferState;
+  bytesDone: number;
+  bytesTotal: number | null;
+  /** 1-based place among everything waiting; null once running or settled. */
+  queuePosition: number | null;
+  error: string | null;
+  queuedAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface TransferProgress {
+  transferId: number;
+  hostId: string;
+  bytesDone: number;
+  bytesTotal: number | null;
+  state: TransferState;
+}
+
+export interface TransferSummary {
+  running: number;
+  queued: number;
+  maxConcurrent: number;
+}
+
 /* ── Services ──────────────────────────────────────────────────────────── */
 
 export type ServiceState = "running" | "stopped" | "failed" | "other";

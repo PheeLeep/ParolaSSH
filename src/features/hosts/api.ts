@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ConnectionInfo,
+  DirListing,
   HostDraft,
   HostHealth,
   HostMetrics,
@@ -26,6 +27,10 @@ import type {
   StreamOutput,
   TerminalClosed,
   TerminalOutput,
+  TransferPriority,
+  TransferProgress,
+  TransferRecord,
+  TransferSummary,
   UpdateReport,
 } from "./types";
 
@@ -244,6 +249,84 @@ export const setRemoteFindingSuppressed = (
   findingId: string,
   suppressed: boolean,
 ) => invoke<void>("set_remote_finding_suppressed", { hostId, findingId, suppressed });
+
+/* ── Files (SFTP) ──────────────────────────────────────────────────────── */
+
+export const listRemoteDir = (hostId: string, path: string) =>
+  invoke<DirListing>("list_remote_dir", { hostId, path });
+
+/** Where a fresh browser opens — the subsystem's own answer, not a guess. */
+export const remoteHomeDir = (hostId: string) =>
+  invoke<string>("remote_home_dir", { hostId });
+
+export const createRemoteDir = (hostId: string, path: string, name: string) =>
+  invoke<string>("create_remote_dir", { hostId, path, name });
+
+export const deleteRemoteEntry = (hostId: string, path: string, isDir: boolean) =>
+  invoke<void>("delete_remote_entry", { hostId, path, isDir });
+
+/* ── Transfers ─────────────────────────────────────────────────────────── */
+
+export const enqueueDownload = (
+  hostId: string,
+  remotePath: string,
+  localDir: string,
+  priority?: TransferPriority | null,
+) =>
+  invoke<number>("enqueue_download", {
+    hostId,
+    remotePath,
+    localDir,
+    priority: priority ?? null,
+  });
+
+export const enqueueUpload = (
+  hostId: string,
+  localPath: string,
+  remoteDir: string,
+  priority?: TransferPriority | null,
+) =>
+  invoke<number>("enqueue_upload", {
+    hostId,
+    localPath,
+    remoteDir,
+    priority: priority ?? null,
+  });
+
+export const listTransfers = () => invoke<TransferRecord[]>("list_transfers");
+
+export const transferSummary = () => invoke<TransferSummary>("transfer_summary");
+
+export const cancelTransfer = (transferId: number) =>
+  invoke<void>("cancel_transfer", { transferId });
+
+export const setTransferPriority = (
+  transferId: number,
+  priority: TransferPriority,
+) => invoke<void>("set_transfer_priority", { transferId, priority });
+
+export const setMaxConcurrentTransfers = (value: number) =>
+  invoke<number>("set_max_concurrent_transfers", { value });
+
+export const clearFinishedTransfers = () =>
+  invoke<number>("clear_finished_transfers");
+
+/** Byte-level progress for one transfer. Unlike the terminal and stream events
+ *  these are broadcast, not addressed to a webview: the Transfers page is
+ *  global and must keep updating while the user is anywhere in the app. */
+export function onTransferProgress(
+  handler: (event: TransferProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<TransferProgress>("sftp://progress", ({ payload }) =>
+    handler(payload),
+  );
+}
+
+/** The queue's shape changed — something was added, promoted, re-ranked or
+ *  settled. Carries no payload; the listener re-reads the list. */
+export function onTransfersChanged(handler: () => void): Promise<UnlistenFn> {
+  return listen("sftp://changed", () => handler());
+}
 
 /* ── Errors ────────────────────────────────────────────────────────────── */
 

@@ -34,7 +34,7 @@ export const HOST_FEATURES: FeatureDef[] = [
   { id: "performance", label: "Performance", Icon: Gauge, ready: true, needsSession: true },
   { id: "updates", label: "Updates", Icon: Package, ready: true, needsSession: true },
   { id: "audit", label: "Audit", Icon: ShieldCheck, ready: true, needsSession: true },
-  { id: "files", label: "Files", Icon: FolderOpen, ready: false, needsSession: true },
+  { id: "files", label: "Files", Icon: FolderOpen, ready: true, needsSession: true },
 ];
 
 export function HostFeatureNav({

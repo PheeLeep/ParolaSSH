@@ -2,6 +2,7 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 import { Collapse, Form, InputGroup } from "react-bootstrap";
 import {
   AppWindow,
+  ArrowUpDown,
   ChevronDown,
   House,
   Info,
@@ -14,6 +15,7 @@ import {
 import { useHosts } from "../features/hosts/HostsProvider";
 import { StatusDot } from "../features/hosts/StatusIndicator";
 import * as terminals from "../features/hosts/terminalStore";
+import * as transfers from "../features/transfers/transferStore";
 import { AnimatedValue } from "./AnimatedValue";
 import { useKeys } from "../features/keys/KeysProvider";
 import type { SshHost } from "../features/hosts/types";
@@ -33,6 +35,11 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   // the tree — subscribe to the store rather than lifting its state.
   useSyncExternalStore(terminals.subscribe, terminals.getVersion);
   const sessionCount = terminals.liveCount();
+
+  // Same reason, one store over: a transfer queued from a host pane must show
+  // up here even though nothing in this tree started it.
+  useSyncExternalStore(transfers.subscribe, transfers.getVersion);
+  const transferCount = transfers.pendingCount();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -207,6 +214,20 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
           {sessionCount > 0 && (
             <span className="sidebar-item__meta">
               <AnimatedValue value={sessionCount} />
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          className={`sidebar-item${view.kind === "transfers" ? " is-active" : ""}`}
+          onClick={() => onNavigate({ kind: "transfers" })}
+        >
+          <ArrowUpDown aria-hidden="true" />
+          <span className="sidebar-item__label">Transfers</span>
+          {transferCount > 0 && (
+            <span className="sidebar-item__meta">
+              <AnimatedValue value={transferCount} />
             </span>
           )}
         </button>

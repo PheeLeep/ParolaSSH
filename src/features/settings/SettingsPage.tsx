@@ -21,11 +21,16 @@ import { useTheme, type ThemeMode } from "../../theme/ThemeProvider";
 import * as keysApi from "../keys/api";
 import type { SshLocation } from "../keys/types";
 import {
+  MAX_MAX_CONCURRENT_TRANSFERS,
   MAX_TERMINAL_FONT_SIZE,
+  MIN_MAX_CONCURRENT_TRANSFERS,
   MIN_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_FAMILIES,
+  clampConcurrency,
+  readMaxConcurrentTransfers,
   readStartupView,
   readTerminalFont,
+  writeMaxConcurrentTransfers,
   writeStartupView,
   writeTerminalFont,
   type StartupView,
@@ -38,6 +43,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { mode: motionMode, setMode: setMotionMode } = useMotion();
   const [startup, setStartup] = useState<StartupView>(readStartupView);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
+  const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
   const [sshDir, setSshDir] = useState<SshLocation | null>(null);
 
   useEffect(() => {
@@ -58,6 +64,13 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeStartup = (next: StartupView) => {
     setStartup(next);
     writeStartupView(next);
+  };
+
+  // Rust enforces the cap and clamps it; its answer is what we show back, so
+  // the number on screen is always the one actually in force.
+  const changeConcurrency = (next: number) => {
+    setConcurrency(clampConcurrency(next));
+    void writeMaxConcurrentTransfers(next).then(setConcurrency);
   };
 
   // Open terminals follow this immediately, except where a tab set its own.
@@ -133,6 +146,42 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
                 { value: "hosts", label: "All hosts", Icon: Server },
               ]}
             />
+          </SettingRow>
+        </Card.Body>
+      </Card>
+
+      <Card className="mb-3">
+        <Card.Body>
+          <h2 className="section-title mb-3">Transfers</h2>
+
+          <SettingRow
+            title="Transfers at once"
+            hint="How many uploads and downloads run in parallel across every host. The rest wait in the queue, highest priority first. Lowering this never interrupts a transfer already running."
+            last
+          >
+            <div className="d-flex align-items-center gap-2">
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                aria-label="Fewer at once"
+                disabled={concurrency <= MIN_MAX_CONCURRENT_TRANSFERS}
+                onClick={() => changeConcurrency(concurrency - 1)}
+              >
+                <Minus className="icon-sm" aria-hidden="true" />
+              </Button>
+              <span className="font-monospace" style={{ minWidth: "2ch", textAlign: "center" }}>
+                {concurrency}
+              </span>
+              <Button
+                variant="outline-secondary"
+                size="sm"
+                aria-label="More at once"
+                disabled={concurrency >= MAX_MAX_CONCURRENT_TRANSFERS}
+                onClick={() => changeConcurrency(concurrency + 1)}
+              >
+                <Plus className="icon-sm" aria-hidden="true" />
+              </Button>
+            </div>
           </SettingRow>
         </Card.Body>
       </Card>

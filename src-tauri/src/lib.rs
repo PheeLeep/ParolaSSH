@@ -8,8 +8,11 @@ pub mod remote;
 pub mod ssh;
 pub mod vpn;
 
+use std::sync::Arc;
+
 use remote::registry::SessionRegistry;
 use remote::secrets::SecretVault;
+use remote::transfers::TransferManager;
 
 /// The tray keeps the app reachable while its window is hidden, so closing it
 /// with live SSH sessions can minimize instead of tearing connections down.
@@ -67,7 +70,7 @@ mod tray {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
     // Only ever one ParolaSSH: a second copy would hold its own sessions and
     // remembered passwords, and would race the first over `hosts.json`.
@@ -95,6 +98,10 @@ pub fn run() {
         // Both process-scoped on purpose: quitting drops every credential.
         .manage(SessionRegistry::new())
         .manage(SecretVault::new())
+        // One queue for every host: what transfers ration is the local uplink,
+        // not any single server. `Arc` because running tasks outlive the
+        // command that spawned them and need their own handle.
+        .manage(Arc::new(TransferManager::new()))
         .invoke_handler(tauri::generate_handler![
             commands::ssh_location,
             commands::list_ssh_keys,
@@ -146,6 +153,20 @@ pub fn run() {
             // Remote audit
             remote::commands::remote_audit,
             remote::commands::set_remote_finding_suppressed,
+            // Files (SFTP)
+            remote::commands::list_remote_dir,
+            remote::commands::remote_home_dir,
+            remote::commands::create_remote_dir,
+            remote::commands::delete_remote_entry,
+            // Transfers — one queue across every host
+            remote::commands::enqueue_download,
+            remote::commands::enqueue_upload,
+            remote::commands::list_transfers,
+            remote::commands::transfer_summary,
+            remote::commands::cancel_transfer,
+            remote::commands::set_transfer_priority,
+            remote::commands::set_max_concurrent_transfers,
+            remote::commands::clear_finished_transfers,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

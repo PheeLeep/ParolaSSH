@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppNavbar } from "./components/AppNavbar";
 import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
@@ -12,8 +12,13 @@ import { KeysPage } from "./features/keys/KeysPage";
 import { KeysProvider } from "./features/keys/KeysProvider";
 import { SessionsPage } from "./features/sessions/SessionsPage";
 import { AboutPage } from "./features/settings/AboutPage";
-import { readStartupView } from "./features/settings/preferences";
+import {
+  applyStoredConcurrency,
+  readStartupView,
+} from "./features/settings/preferences";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import * as transfers from "./features/transfers/transferStore";
+import { TransfersPage } from "./features/transfers/TransfersPage";
 import { VpnPage } from "./features/vpn/VpnPage";
 import { VpnProvider } from "./features/vpn/VpnProvider";
 import { WelcomeScreen } from "./features/welcome/WelcomeScreen";
@@ -59,6 +64,14 @@ function AppShell() {
   useContextMenuGuard();
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
+  // Transfers run whether or not their page is open, so the store listens from
+  // launch — otherwise the sidebar badge would only come alive once someone
+  // visited Transfers. `start` is idempotent.
+  useEffect(() => {
+    transfers.start();
+    void applyStoredConcurrency();
+  }, []);
+
   return (
     <div className="app-shell">
       <CloseGuard />
@@ -89,6 +102,7 @@ function AppShell() {
             )}
             {view.kind === "audit" && <AuditPage onNavigate={setView} />}
             {view.kind === "sessions" && <SessionsPage onNavigate={setView} />}
+            {view.kind === "transfers" && <TransfersPage onNavigate={setView} />}
             {view.kind === "vpn" && <VpnPage onNavigate={setView} />}
             {view.kind === "settings" && <SettingsPage onNavigate={setView} />}
             {view.kind === "about" && <AboutPage onNavigate={setView} />}

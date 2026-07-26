@@ -11,6 +11,7 @@ export type View =
   | { kind: "key"; keyId: string }
   | { kind: "audit" }
   | { kind: "sessions" }
+  | { kind: "transfers" }
   | { kind: "vpn" }
   | { kind: "settings" }
   | { kind: "about" };

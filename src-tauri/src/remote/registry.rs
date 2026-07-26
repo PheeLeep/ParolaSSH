@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 use super::client::{NegotiatedCrypto, Session};
 use super::metrics::CpuTimes;
 use super::power::Elevation;
+use super::sftp::BrowseSession;
 use super::shell::ShellHandle;
 use super::stream::StreamHandle;
 use super::OsFamily;
@@ -55,6 +56,9 @@ pub struct LiveSession {
     /// The last `/proc/stat` reading, so CPU percentage is a delta between
     /// polls. Written only after an exec completes, never across an await.
     prev_cpu: Mutex<Option<CpuTimes>>,
+    /// The SFTP channel the file browser listens on, opened on first use.
+    /// Transfers deliberately do not share it — see `sftp::BrowseSession`.
+    pub browse: BrowseSession,
 }
 
 impl LiveSession {
@@ -82,6 +86,7 @@ impl LiveSession {
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
             prev_cpu: Mutex::new(None),
+            browse: BrowseSession::default(),
         }
     }
 

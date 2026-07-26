@@ -51,6 +51,28 @@ pub fn write(dir: &Path, file_name: &str, text: &str) -> SshResult<()> {
     })
 }
 
+/// Create (or truncate) a file for streaming, owner-only on Unix.
+///
+/// The same guarantee as `write`, for content too large to hold in a `String` —
+/// a downloaded file arrives in chunks, and a fetched private key must not be
+/// world-readable for the minutes it takes to land. The caller owns the atomic
+/// rename; downloads write to a `.part` and rename on success.
+pub fn create_owner_only(path: &Path) -> SshResult<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Applies at creation, so there is no world-readable window.
+        options.mode(0o600);
+    }
+
+    options
+        .open(path)
+        .map_err(|error| SshError::io("Could not create the download file", error))
+}
+
 #[cfg(unix)]
 fn write_owner_only(path: &Path, text: &str) -> SshResult<()> {
     use std::io::Write;

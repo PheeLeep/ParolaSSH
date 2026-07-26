@@ -8,10 +8,10 @@ import { TerminalTabs } from "./TerminalTabs";
 import { AuditPane } from "./panes/AuditPane";
 import { OsBadge, OverviewPane } from "./panes/OverviewPane";
 import { PerformancePane } from "./panes/PerformancePane";
-import { PlannedPane } from "./panes/PlannedPane";
 import { ServicesPane } from "./panes/ServicesPane";
 import { UpdatesPane } from "./panes/UpdatesPane";
 import { useHostActions } from "./useHostActions";
+import { FilesPane } from "../transfers/FilesPane";
 import { VpnGlyph } from "../vpn/VpnGlyph";
 import { PaneBoundary } from "../../components/PaneBoundary";
 import type { Navigate } from "../../navigation";
@@ -71,9 +71,9 @@ export function HostDetail({
 
   const selected = HOST_FEATURES.find((entry) => entry.id === feature);
   const locked = Boolean(selected?.needsSession) && !connected;
-  // Only the terminal wants the whole window; the other panes read better
-  // at their natural height.
-  const fill = feature === "terminal" && !locked;
+  // The terminal and the file browser want the whole window; the other panes
+  // read better at their natural height.
+  const fill = (feature === "terminal" || feature === "files") && !locked;
 
   return (
     <div className={`page${fill ? " page--fill" : ""}`}>
@@ -160,7 +160,7 @@ export function HostDetail({
           ) : feature === "audit" ? (
             <AuditPane hostId={hostId} />
           ) : (
-            <PlannedPane feature={feature} os={connection?.os} />
+            <FilesPane hostId={hostId} />
           )}
         </PaneBoundary>
       </div>

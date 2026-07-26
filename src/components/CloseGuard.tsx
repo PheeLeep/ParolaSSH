@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button, Modal } from "react-bootstrap";
 import { TriangleAlert } from "lucide-react";
 import * as api from "../features/hosts/api";
 import { useHosts } from "../features/hosts/HostsProvider";
+import * as transfers from "../features/transfers/transferStore";
 import { appWindow } from "../lib/appWindow";
 
 /**
@@ -16,6 +17,12 @@ import { appWindow } from "../lib/appWindow";
 export function CloseGuard() {
   const { hosts } = useHosts();
   const [connectedIds, setConnectedIds] = useState<string[] | null>(null);
+
+  // A running transfer always implies a live session, so the connection check
+  // above is what opens this dialog; this only sharpens the warning, because
+  // losing a half-finished download is worse than losing an idle shell.
+  useSyncExternalStore(transfers.subscribe, transfers.getVersion);
+  const transferCount = transfers.activeCount();
 
   useEffect(() => {
     const unlisten = appWindow.onCloseRequested(async (event) => {
@@ -65,6 +72,14 @@ export function CloseGuard() {
         <p>
           You are still connected to <strong>{labels.join(", ")}</strong>.
         </p>
+        {transferCount > 0 && (
+          <p className="text-danger">
+            {transferCount === 1
+              ? "1 file transfer is still running"
+              : `${transferCount} file transfers are still running`}{" "}
+            and will be lost — nothing resumes after a restart.
+          </p>
+        )}
         <p className="mb-0 text-body-secondary">
           Quitting disconnects every session. Minimizing to the tray keeps
           them alive — ParolaSSH stays in the system tray, ready to reopen.

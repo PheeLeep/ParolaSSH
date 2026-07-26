@@ -45,6 +45,7 @@ pub struct HotfixItem {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum UpdateReport {
     /// Pending updates, listed.
+    #[serde(rename_all = "camelCase")]
     List {
         manager: String,
         updates: Vec<UpdateItem>,
@@ -57,6 +58,7 @@ pub enum UpdateReport {
     ManagerMissing { detail: String },
     /// Windows without PSWindowsUpdate: pending updates cannot be queried,
     /// but the installed history can still be shown.
+    #[serde(rename_all = "camelCase")]
     ModuleMissing {
         detail: String,
         installed_history: Vec<HotfixItem>,
@@ -473,6 +475,26 @@ mod tests {
 
         let empty = parse_windows_pending(&output(""));
         assert!(matches!(empty, UpdateReport::UpToDate { .. }));
+    }
+
+    /// The UI reads these keys directly; snake_case here renders as `undefined`
+    /// and throws mid-render.
+    #[test]
+    fn multi_word_fields_serialize_camel_case() {
+        let list = serde_json::to_string(&UpdateReport::List {
+            manager: "apt".into(),
+            updates: Vec::new(),
+            security_count: Some(1),
+        })
+        .unwrap();
+        assert!(list.contains("\"securityCount\""), "{list}");
+
+        let module = serde_json::to_string(&UpdateReport::ModuleMissing {
+            detail: "no module".into(),
+            installed_history: Vec::new(),
+        })
+        .unwrap();
+        assert!(module.contains("\"installedHistory\""), "{module}");
     }
 
     #[test]

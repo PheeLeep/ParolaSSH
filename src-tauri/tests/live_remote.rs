@@ -1,17 +1,28 @@
 //! End-to-end checks against a real machine.
 //!
-//! Skipped unless `PAROLASSH_LIVE_HOST` is set, because it needs a throwaway
-//! box you are willing to have rebooted at:
+//! Every test here is `#[ignore]`d, so a default `cargo test` reports them
+//! *ignored*. They used to return early when the environment was unset, which
+//! libtest counted as **passed** — a green suite that had connected to nothing.
+//!
+//! Run them deliberately, against a throwaway box you are willing to have
+//! rebooted:
 //!
 //! ```sh
 //! PAROLASSH_LIVE_HOST=192.168.56.10 \
 //! PAROLASSH_LIVE_USER=pheeleep \
 //! PAROLASSH_LIVE_PASSWORD=secret \
-//! cargo test --test live_remote -- --nocapture --test-threads=1
+//! cargo test --test live_remote -- --ignored --nocapture --test-threads=1
 //! ```
 //!
-//! The power test schedules a reboot far out and then cancels it, so nothing
-//! here actually reboots the machine.
+//! Asking for them without naming a machine is a hard failure, not a silent
+//! pass — see `config`.
+//!
+//! The power test schedules a reboot far out then cancels it, and verifies the
+//! cancel per platform, so nothing here reboots the machine.
+//!
+//! Linux and Windows both assert; `skip` remains only for macOS/BSD, which no
+//! VM covers yet. A skip still reports `ok` — libtest has no runtime "skipped"
+//! outcome — so prefer a per-OS assertion over calling it.
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
@@ -25,18 +36,45 @@ struct LiveConfig {
     password: String,
 }
 
-fn config() -> Option<LiveConfig> {
-    let hostname = std::env::var("PAROLASSH_LIVE_HOST").ok()?;
-    Some(LiveConfig {
-        hostname,
+/// Read the target machine from the environment.
+///
+/// Missing configuration panics. These tests only run when asked for by name,
+/// so getting here without a host means the run was meant to happen and
+/// cannot — which is a failure, not something to pass quietly.
+fn config() -> LiveConfig {
+    fn required(name: &str) -> String {
+        std::env::var(name).unwrap_or_else(|_| {
+            panic!(
+                "{name} is not set, so there is nothing to test against. These \
+                 tests are #[ignore]d and you asked for them explicitly; see \
+                 the module docs for the full invocation."
+            )
+        })
+    }
+
+    LiveConfig {
+        hostname: required("PAROLASSH_LIVE_HOST"),
         port: std::env::var("PAROLASSH_LIVE_PORT")
             .ok()
             .and_then(|port| port.parse().ok())
             .unwrap_or(22),
-        username: std::env::var("PAROLASSH_LIVE_USER").expect("PAROLASSH_LIVE_USER must be set"),
-        password: std::env::var("PAROLASSH_LIVE_PASSWORD")
-            .expect("PAROLASSH_LIVE_PASSWORD must be set"),
-    })
+        username: required("PAROLASSH_LIVE_USER"),
+        password: required("PAROLASSH_LIVE_PASSWORD"),
+    }
+}
+
+/// A host-capability skip. Still reports `ok` — libtest has no runtime
+/// "skipped" — so this only makes the gap findable. Prefer a per-OS assertion.
+fn skip(reason: &str) {
+    eprintln!("=== SKIPPED (still reported as ok): {reason} ===");
+}
+
+/// Wall clock in epoch milliseconds, for metrics that measure against it.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 async fn connect(config: &LiveConfig) -> Session {
@@ -55,11 +93,9 @@ async fn connect(config: &LiveConfig) -> Session {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn probes_the_port_before_authenticating() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let result = probe::probe(&config.hostname, config.port).await.unwrap();
     println!("probe: {}", result.message);
@@ -70,11 +106,9 @@ async fn probes_the_port_before_authenticating() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn a_wrong_password_is_refused_clearly() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let target = Target {
         hostname: config.hostname.clone(),
@@ -98,11 +132,9 @@ async fn a_wrong_password_is_refused_clearly() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn authenticates_and_reports_how_it_would_elevate() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
 
@@ -123,18 +155,23 @@ async fn authenticates_and_reports_how_it_would_elevate() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn runs_a_command_and_captures_both_streams() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
 
-    let output = session
-        .exec("echo to-stdout; echo to-stderr >&2; exit 3", None)
-        .await
-        .unwrap();
+    // Both streams plus a non-zero status, phrased for the shell that will
+    // actually parse it. cmd.exe has no `;` separator and writes to stderr as
+    // `1>&2`, so the POSIX form silently produced no output at all here.
+    let command = if report.os == OsFamily::Windows {
+        "echo to-stdout&echo to-stderr 1>&2&exit 3"
+    } else {
+        "echo to-stdout; echo to-stderr >&2; exit 3"
+    };
+
+    let output = session.exec(command, None).await.unwrap();
 
     assert_eq!(output.stdout.trim(), "to-stdout");
     assert_eq!(output.stderr.trim(), "to-stderr");
@@ -145,11 +182,9 @@ async fn runs_a_command_and_captures_both_streams() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn lists_services_and_finds_sshd_among_them() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
@@ -172,21 +207,44 @@ async fn lists_services_and_finds_sshd_among_them() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn samples_metrics_twice_and_reads_a_cpu_delta() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
-    if report.os != OsFamily::Linux {
-        eprintln!("skipping: the CPU-delta path is Linux-specific");
+    let command = metrics::sample_command(report.os).unwrap();
+
+    // Windows needs no delta: `LoadPercentage` is instantaneous, so one sample
+    // carries CPU. The opposite of the Linux invariant below.
+    if report.os == OsFamily::Windows {
+        let output = session.exec(command, None).await.unwrap();
+        assert!(output.succeeded(), "{}", output.failure_text());
+
+        // Uptime is `now - LastBootUpTime`, so a real clock is required.
+        let sample = metrics::parse_windows(&output.stdout, now_ms());
+        println!(
+            "windows: cpu={:?} disks={} uptime={:?}s memory={:?}",
+            sample.cpu_percent,
+            sample.disks.len(),
+            sample.uptime_seconds,
+            sample.memory
+        );
+
+        assert!(sample.cpu_percent.is_some(), "LoadPercentage should parse");
+        assert!(sample.memory.is_some(), "Win32_OperatingSystem should parse");
+        assert!(!sample.disks.is_empty(), "a Windows host has at least C:");
+        assert!(sample.uptime_seconds.is_some(), "LastBootUpTime should parse");
+
         session.close().await;
         return;
     }
 
-    let command = metrics::sample_command(report.os).unwrap();
+    if report.os != OsFamily::Linux {
+        skip("the delta path below reads /proc; this host is neither Linux nor Windows");
+        session.close().await;
+        return;
+    }
 
     let first = session.exec(command, None).await.unwrap();
     let (sample, previous) = metrics::parse_linux(&first.stdout, None, 0);
@@ -205,16 +263,51 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn checks_updates_without_installing_anything() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
+
+    // Windows answers in two rounds: detect PSWindowsUpdate and read hotfix
+    // history, then query pending updates only if the module was there. The
+    // point of the assertion is that the module is never installed to improve
+    // the answer.
+    if report.os == OsFamily::Windows {
+        let output = session
+            .exec(updates::check_command(report.os).unwrap(), None)
+            .await
+            .unwrap();
+        assert!(output.succeeded(), "{}", output.failure_text());
+
+        let (module_present, hotfixes) = updates::parse_windows_first_round(&output);
+        println!("module={module_present} hotfixes={}", hotfixes.len());
+
+        if module_present {
+            let pending = session
+                .exec_with_timeout(
+                    updates::windows_pending_command(),
+                    None,
+                    updates::WINDOWS_PENDING_TIMEOUT,
+                )
+                .await
+                .unwrap();
+            println!("pending: {:?}", updates::parse_windows_pending(&pending));
+        } else {
+            // The documented fallback: say so, and show history instead.
+            assert!(
+                !updates::module_missing_detail().is_empty(),
+                "the absent module must be explained, not hidden"
+            );
+        }
+
+        session.close().await;
+        return;
+    }
+
     if report.os != OsFamily::Linux {
-        eprintln!("skipping: the live VM path covers Linux");
+        skip("apt/dnf assertions below; this host is neither Linux nor Windows");
         session.close().await;
         return;
     }
@@ -240,16 +333,34 @@ async fn checks_updates_without_installing_anything() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn tier1_audit_reads_sshd_posture_with_sudo() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
+    // Tier 1 is Unix-only, but tier 0 comes from the handshake and must still
+    // produce a report that says plainly that tier 1 did not run.
     if !report.os.is_unix() {
-        eprintln!("skipping: tier 1 is Unix-only");
+        let assembled = audit::assemble(
+            "live-test",
+            session.negotiated.as_ref(),
+            None,
+            &std::collections::HashSet::new(),
+        );
+        println!(
+            "tier0 only: score={} findings={} tier1_ran={}",
+            assembled.score,
+            assembled.findings.len(),
+            assembled.tier1_ran
+        );
+
+        assert!(!assembled.tier1_ran, "tier 1 cannot have run on a non-Unix host");
+        assert!(
+            session.negotiated.is_some(),
+            "tier 0 needs what the key exchange negotiated"
+        );
+
         session.close().await;
         return;
     }
@@ -302,11 +413,9 @@ async fn tier1_audit_reads_sshd_posture_with_sudo() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn schedules_a_reboot_over_sudo_then_cancels_it() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
@@ -360,34 +469,38 @@ async fn schedules_a_reboot_over_sudo_then_cancels_it() {
     println!("cancelled: succeeded={} {}", cancelled.succeeded, cancelled.message);
     assert!(cancelled.succeeded, "cancel failed: {}", cancelled.message);
 
-    // Prove it: a pending shutdown leaves a scheduled file behind on systemd.
-    let check = session
-        .exec("test -e /run/systemd/shutdown/scheduled && echo PENDING || echo CLEAR", None)
-        .await
-        .unwrap();
-    println!("after cancel: {}", check.stdout.trim());
-    assert!(
-        check.stdout.contains("CLEAR"),
-        "a reboot is still pending after cancelling"
-    );
+    // Prove it, per platform. systemd leaves a scheduled file behind; Windows
+    // has no such file, so ask it to cancel again — with nothing pending that
+    // must fail.
+    if report.os == OsFamily::Windows {
+        let again = session.exec("shutdown /a", None).await.unwrap();
+        println!("second cancel: {}", again.failure_text().trim());
+        assert!(
+            !again.succeeded(),
+            "a second cancel succeeded, so the first left a reboot pending"
+        );
+    } else {
+        let check = session
+            .exec("test -e /run/systemd/shutdown/scheduled && echo PENDING || echo CLEAR", None)
+            .await
+            .unwrap();
+        println!("after cancel: {}", check.stdout.trim());
+        assert!(
+            check.stdout.contains("CLEAR"),
+            "a reboot is still pending after cancelling"
+        );
+    }
 
     session.close().await;
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn a_bad_sudo_password_fails_without_rebooting_anything() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
-
-    if report.elevation != Elevation::SudoPassword {
-        eprintln!("skipping: this host does not need a sudo password");
-        return;
-    }
 
     let request = PowerRequest {
         action: PowerAction::Reboot,
@@ -395,6 +508,28 @@ async fn a_bad_sudo_password_fails_without_rebooting_anything() {
         force: false,
         message: None,
     };
+
+    // Windows has no sudo: the OpenSSH logon already holds the full token, so
+    // there is no password to get wrong. Assert that rather than skipping, and
+    // plan only — executing here would schedule a real reboot.
+    if report.os == OsFamily::Windows {
+        assert_eq!(report.elevation, Elevation::WindowsAdminToken);
+
+        let plan = power::plan(report.os, &report.elevation, &request).unwrap();
+        println!("windows plan: {}", plan.command);
+
+        assert!(!plan.needs_password, "Windows must not ask for a password");
+        assert!(!plan.command.contains("sudo"), "no sudo on Windows: {}", plan.command);
+
+        session.close().await;
+        return;
+    }
+
+    if report.elevation != Elevation::SudoPassword {
+        skip("this host's sudo needs no password, so there is no wrong password to send");
+        session.close().await;
+        return;
+    }
 
     let outcome = power::execute(
         &session,
@@ -418,17 +553,25 @@ async fn a_bad_sudo_password_fails_without_rebooting_anything() {
 }
 
 #[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
 async fn the_login_password_is_reused_for_sudo() {
-    let Some(config) = config() else {
-        eprintln!("skipping: PAROLASSH_LIVE_HOST not set");
-        return;
-    };
+    let config = config();
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
 
+    // The reuse question does not arise on Windows — nothing downstream ever
+    // asks for a password — but the session must still be usable afterwards.
+    if report.os == OsFamily::Windows {
+        assert_eq!(report.elevation, Elevation::WindowsAdminToken);
+        assert!(session.is_alive().await, "the session should still be alive");
+        session.close().await;
+        return;
+    }
+
     if report.elevation != Elevation::SudoPassword {
-        eprintln!("skipping: this host does not need a sudo password");
+        skip("this host's sudo needs no password, so there is nothing to reuse");
+        session.close().await;
         return;
     }
 

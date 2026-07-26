@@ -119,7 +119,7 @@ pub fn list_command(os: OsFamily) -> SshResult<&'static str> {
         }
         // `sc` is native; PowerShell's Get-Service costs a runtime startup.
         OsFamily::Windows => Ok("sc query type= service state= all"),
-        other => Err(unsupported_os(other)),
+        other @ (OsFamily::Macos | OsFamily::Bsd | OsFamily::Unknown) => Err(unsupported_os(other)),
     }
 }
 
@@ -217,10 +217,22 @@ fn parse_sc_query(stdout: &str) -> Vec<ServiceEntry> {
     entries
 }
 
+/// Sequences that start a PowerShell substitution. Only these — not a bare `$`,
+/// which is ordinary in a service name: SQL Server Express installs itself as
+/// `MSSQL$SQLEXPRESS`.
+const POWERSHELL_SUBSTITUTIONS: &[&str] = &["$(", "${", "`"];
+
 /// Refuse names that could not be a real service before they reach a shell.
-/// Defence in depth behind the quoting, with a better error. Spaces stay legal:
-/// Windows service names contain them.
-fn validate_unit(unit: &str) -> SshResult<&str> {
+/// Spaces stay legal: Windows service names contain them.
+///
+/// The Windows rule exists because we cannot know which shell `sshd` uses.
+/// `"…"` quotes identically in cmd.exe and PowerShell except for `$` and a
+/// backtick, which PowerShell expands — so `$(…)` in a name would run against a
+/// PowerShell `DefaultShell`. Refusing the substitution openers keeps one
+/// quoting scheme correct on both, with no probe. A bare `$` stays legal: it
+/// expands to nothing and `net` then rejects the truncated name, failing loudly
+/// rather than hitting the wrong service.
+fn validate_unit(os: OsFamily, unit: &str) -> SshResult<&str> {
     let unit = unit.trim();
     if unit.is_empty() {
         return Err(SshError::invalid("The service name is empty."));
@@ -229,6 +241,18 @@ fn validate_unit(unit: &str) -> SshResult<&str> {
         return Err(SshError::invalid(
             "The service name contains control characters, which no real service has.",
         ));
+    }
+    if os == OsFamily::Windows {
+        if let Some(found) = POWERSHELL_SUBSTITUTIONS
+            .iter()
+            .find(|opener| unit.contains(**opener))
+        {
+            return Err(SshError::invalid(format!(
+                "The service name contains “{found}”, which some shells read as a \
+                 command to run. No real service is named that, so this is refused \
+                 rather than quoted."
+            )));
+        }
     }
     Ok(unit)
 }
@@ -245,7 +269,7 @@ pub fn plan_action(
         )));
     }
 
-    let unit = validate_unit(&request.unit)?;
+    let unit = validate_unit(os, &request.unit)?;
 
     let command = match os {
         OsFamily::Linux => {
@@ -267,7 +291,7 @@ pub fn plan_action(
                 ServiceAction::Restart => format!("net stop {quoted} && net start {quoted}"),
             }
         }
-        other => return Err(unsupported_os(other)),
+        other @ (OsFamily::Macos | OsFamily::Bsd | OsFamily::Unknown) => return Err(unsupported_os(other)),
     };
 
     let needs_password = elevation.needs_password();
@@ -324,7 +348,7 @@ pub fn interpret_action(plan: &ServicePlan, output: CommandOutput) -> ServiceOut
 
 /// The one-shot history command for a service. Pure.
 pub fn log_command(os: OsFamily, unit: &str) -> SshResult<String> {
-    let unit = validate_unit(unit)?;
+    let unit = validate_unit(os, unit)?;
     match os {
         OsFamily::Linux => Ok(format!(
             "journalctl -u {} -n 200 --no-pager -o short-iso",
@@ -332,14 +356,14 @@ pub fn log_command(os: OsFamily, unit: &str) -> SshResult<String> {
         )),
         // The query is a constant; the per-service filter happens in Rust.
         OsFamily::Windows => Ok(WEVTUTIL_SCM_QUERY.to_string()),
-        other => Err(unsupported_os(other)),
+        other @ (OsFamily::Macos | OsFamily::Bsd | OsFamily::Unknown) => Err(unsupported_os(other)),
     }
 }
 
 /// The follow variant, for the streaming path. Linux only: the SCM event log
 /// has no follow mode worth pretending about.
 pub fn follow_command(os: OsFamily, unit: &str) -> SshResult<String> {
-    let unit = validate_unit(unit)?;
+    let unit = validate_unit(os, unit)?;
     match os {
         OsFamily::Linux => Ok(format!(
             "journalctl -u {} -n 200 -f -o short-iso",
@@ -348,7 +372,7 @@ pub fn follow_command(os: OsFamily, unit: &str) -> SshResult<String> {
         OsFamily::Windows => Err(SshError::unsupported(
             "The Windows event log has no follow mode; refresh to see new events.",
         )),
-        other => Err(unsupported_os(other)),
+        other @ (OsFamily::Macos | OsFamily::Bsd | OsFamily::Unknown) => Err(unsupported_os(other)),
     }
 }
 
@@ -521,6 +545,44 @@ mod tests {
         );
         // cmd.exe has no escape for an embedded quote; it is dropped instead.
         assert_eq!(windows, "net stop \"x' & del C:\\ & '\"");
+    }
+
+    /// `"..."` quotes identically in cmd.exe and PowerShell, so the only
+    /// divergence is interpolation. Refusing the substitution openers keeps one
+    /// quoting scheme correct on both without probing for the remote shell.
+    #[test]
+    fn windows_refuses_powershell_substitutions_in_a_unit_name() {
+        let token = Elevation::WindowsAdminToken;
+        for hostile in ["$(calc)", "Spooler$(whoami)", "${env:PATH}", "a`nb"] {
+            assert!(
+                plan_action(OsFamily::Windows, &token, &request(ServiceAction::Stop, hostile))
+                    .is_err(),
+                "“{hostile}” should be refused, not quoted"
+            );
+        }
+
+        // The same names are inert on Linux, which single-quotes properly, so
+        // the rule must not leak across and refuse a legal unit there.
+        assert!(plan_action(
+            OsFamily::Linux,
+            &Elevation::NotNeeded,
+            &request(ServiceAction::Stop, "weird$(name).service")
+        )
+        .is_ok());
+    }
+
+    /// A bare `$` is ordinary: SQL Server Express is literally `MSSQL$SQLEXPRESS`.
+    /// Refusing it to be safe would break managing a real, common service.
+    #[test]
+    fn a_dollar_in_a_windows_service_name_stays_legal() {
+        assert_eq!(
+            command_for(
+                OsFamily::Windows,
+                &Elevation::WindowsAdminToken,
+                &request(ServiceAction::Restart, "MSSQL$SQLEXPRESS")
+            ),
+            "net stop \"MSSQL$SQLEXPRESS\" && net start \"MSSQL$SQLEXPRESS\""
+        );
     }
 
     #[test]

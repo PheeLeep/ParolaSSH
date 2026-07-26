@@ -6,7 +6,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Alert, Button, Dropdown, Form, Spinner } from "react-bootstrap";
-import { Eraser, Minus, Plus, SquareTerminal, Type, X } from "lucide-react";
+import { Eraser, Minus, Pencil, Plus, SquareTerminal, Type, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { errorMessage } from "./api";
 import * as store from "./terminalStore";
@@ -36,6 +36,25 @@ export function TerminalTabs({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
+
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  // A ref as well as state: the attach effect must see this without taking it
+  // as a dependency, or renaming would tear the terminal down and rebuild it.
+  const renamingRef = useRef(false);
+
+  const startRename = useCallback((shellId: number) => {
+    renamingRef.current = true;
+    setActiveId(shellId);
+    setRenamingId(shellId);
+  }, []);
+
+  // Renaming ends by handing the keyboard back to the terminal — the reason
+  // you opened the tab in the first place.
+  const endRename = useCallback((shellId: number) => {
+    renamingRef.current = false;
+    setRenamingId(null);
+    store.focus(shellId);
+  }, []);
 
   
   const openingRef = useRef(false);
@@ -96,9 +115,19 @@ export function TerminalTabs({
     if (!mount || activeId === null) return;
 
     const detach = store.attach(activeId, mount);
-    store.focus(activeId);
+    // Not while a rename is open: the input owns the keyboard until it closes.
+    if (!renamingRef.current) store.focus(activeId);
     return detach;
   }, [activeId]);
+
+  // A tab closing under an open rename would otherwise leave the field editing
+  // a shell that no longer exists.
+  useEffect(() => {
+    if (renamingId !== null && !terminals.some((e) => e.shellId === renamingId)) {
+      renamingRef.current = false;
+      setRenamingId(null);
+    }
+  }, [terminals, renamingId]);
 
   useEffect(() => {
     store.applyTheme(resolved);
@@ -115,20 +144,42 @@ export function TerminalTabs({
               key={entry.shellId}
               className={`shell-tab${entry.shellId === activeId ? " is-active" : ""}`}
             >
-              <button
-                type="button"
-                className="shell-tab__label"
-                onClick={() => setActiveId(entry.shellId)}
-                title={entry.exited ? "Session ended" : entry.title}
-              >
-                <SquareTerminal className="icon-sm" aria-hidden="true" />
-                {entry.title}
-                {entry.exited && (
-                  <span className="shell-tab__exit">
-                    {entry.exitCode === null ? "ended" : entry.exitCode}
-                  </span>
-                )}
-              </button>
+              {entry.shellId === renamingId ? (
+                <RenameField
+                  shellId={entry.shellId}
+                  initial={entry.title}
+                  onDone={() => endRename(entry.shellId)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="shell-tab__label"
+                  onClick={() => setActiveId(entry.shellId)}
+                  onDoubleClick={() => startRename(entry.shellId)}
+                  onKeyDown={(event) => {
+                    if (event.key === "F2") {
+                      event.preventDefault();
+                      startRename(entry.shellId);
+                    }
+                  }}
+                  // F2 works too, but only while the tab itself holds focus —
+                  // clicking one hands the keyboard straight to the terminal,
+                  // so promising it in the tooltip would be a lie for most.
+                  title={
+                    entry.exited
+                      ? "Session ended — double-click to rename"
+                      : `${entry.title} — double-click to rename`
+                  }
+                >
+                  <SquareTerminal className="icon-sm" aria-hidden="true" />
+                  {entry.title}
+                  {entry.exited && (
+                    <span className="shell-tab__exit">
+                      {entry.exitCode === null ? "ended" : entry.exitCode}
+                    </span>
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 className="shell-tab__close"
@@ -164,6 +215,15 @@ export function TerminalTabs({
             <Button
               size="sm"
               variant="outline-secondary"
+              onClick={() => startRename(active.shellId)}
+              title="Rename this tab"
+              aria-label="Rename this tab"
+            >
+              <Pencil aria-hidden="true" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline-secondary"
               onClick={() => store.clear(active.shellId)}
               aria-label="Clear this terminal"
             >
@@ -193,6 +253,57 @@ export function TerminalTabs({
         <div ref={mountRef} className="terminal-pane__screen" />
       )}
     </div>
+  );
+}
+
+/**
+ * The tab label, while it is being renamed.
+ *
+ * Enter and blur commit, Escape restores what was there before — the shape
+ * every rename-in-place has, so it needs no explanation in the UI. An empty
+ * name is not rejected: the store reads it as "put the original back", which
+ * is the only other thing someone clearing the field could mean.
+ */
+function RenameField({
+  shellId,
+  initial,
+  onDone,
+}: {
+  shellId: number;
+  initial: string;
+  onDone: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  // Escape must not be undone by the blur that follows it.
+  const cancelled = useRef(false);
+
+  const commit = () => {
+    if (cancelled.current) return;
+    store.rename(shellId, value);
+    onDone();
+  };
+
+  return (
+    <input
+      className="shell-tab__rename"
+      value={value}
+      maxLength={store.MAX_TERMINAL_TITLE}
+      autoFocus
+      onFocus={(event) => event.target.select()}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        // The terminal is not listening yet, but the tab strip is.
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          commit();
+        } else if (event.key === "Escape") {
+          cancelled.current = true;
+          onDone();
+        }
+      }}
+      aria-label="Tab name"
+    />
   );
 }
 

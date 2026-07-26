@@ -45,6 +45,27 @@ export interface VpnOverview {
   twingateResources: VpnResource[];
 }
 
+/** One machine on the tailnet, as `tailscale status --json` reports it. */
+export interface TailscalePeer {
+  hostName: string;
+  /** What a saved host connects to: MagicDNS name, else the 100.x address. */
+  address: string;
+  dnsName: string | null;
+  tailscaleIp: string | null;
+  /** Tailscale's own word: `linux`, `windows`, `macOS`, `iOS`… */
+  os: string;
+  online: boolean;
+  /** ACL tags with the `tag:` prefix already stripped. */
+  tags: string[];
+}
+
+/** Why there is no peer list, or the list. An empty tailnet and a logged-out
+ *  client are different answers and must not render the same. */
+export type PeerListing =
+  | { kind: "notInstalled" }
+  | { kind: "unavailable"; detail: string }
+  | { kind: "peers"; peers: TailscalePeer[] };
+
 export const VPN_LABELS: Record<VpnKind, string> = {
   tailscale: "Tailscale",
   twingate: "Twingate",

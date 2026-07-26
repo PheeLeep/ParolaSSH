@@ -95,8 +95,24 @@ pub struct PrivilegeReport {
 /// understand `||` here.
 pub async fn detect_os(session: &Session) -> SshResult<(OsFamily, String)> {
     let output = session.exec("uname -s 2>/dev/null || ver", None).await?;
-    let text = format!("{} {}", output.stdout.trim(), output.stderr.trim());
-    Ok((classify_os(&text), text.trim().to_string()))
+    Ok(describe_os(&output.stdout, &output.stderr))
+}
+
+/// Split the probe's streams into a family and the string the UI shows. Pure.
+///
+/// Classification reads both, since a restricted shell may answer on either.
+/// The detail prefers stdout: cmd.exe cannot parse `2>/dev/null` and writes
+/// "The system cannot find the path specified." to stderr before `ver` answers
+/// properly, and concatenating put that in the Overview pane as the OS name.
+fn describe_os(stdout: &str, stderr: &str) -> (OsFamily, String) {
+    let stdout = stdout.trim();
+    let stderr = stderr.trim();
+
+    let family = classify_os(&format!("{stdout} {stderr}"));
+    // Fall back to stderr only when stdout said nothing at all.
+    let detail = if stdout.is_empty() { stderr } else { stdout };
+
+    (family, detail.to_string())
 }
 
 /// Map the probe output onto a family.
@@ -513,6 +529,42 @@ mod tests {
             OsFamily::Unknown
         );
         assert_eq!(classify_os(""), OsFamily::Unknown);
+    }
+
+    /// Captured from a real Windows 11 host: cmd.exe cannot parse `2>/dev/null`
+    /// and complains on stderr before `ver` answers on stdout. The complaint is
+    /// not part of the OS name and must not reach the Overview pane.
+    #[test]
+    fn windows_stderr_noise_stays_out_of_the_os_detail() {
+        let (os, detail) = describe_os(
+            "\r\nMicrosoft Windows [Version 10.0.26200.8737]\r\n",
+            "The system cannot find the path specified.\r\n",
+        );
+
+        assert_eq!(os, OsFamily::Windows);
+        assert_eq!(detail, "Microsoft Windows [Version 10.0.26200.8737]");
+        assert!(
+            !detail.contains("cannot find"),
+            "the shell's complaint is not the OS name: {detail}"
+        );
+    }
+
+    #[test]
+    fn os_detail_falls_back_to_stderr_only_when_stdout_is_silent() {
+        // The ordinary Unix answer comes back on stdout.
+        let (os, detail) = describe_os("Linux\n", "");
+        assert_eq!(os, OsFamily::Linux);
+        assert_eq!(detail, "Linux");
+
+        // A shell that reports everything on stderr still gets classified, and
+        // its text is all we have to show.
+        let (os, detail) = describe_os("", "Darwin\n");
+        assert_eq!(os, OsFamily::Macos);
+        assert_eq!(detail, "Darwin");
+
+        let (os, detail) = describe_os("", "");
+        assert_eq!(os, OsFamily::Unknown);
+        assert!(detail.is_empty());
     }
 
     #[test]

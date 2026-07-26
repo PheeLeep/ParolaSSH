@@ -16,6 +16,14 @@ pub enum AuthMethod {
     Password,
     Publickey,
     Agent,
+    /// SSH's `none` method: present no credential and let the server decide.
+    ///
+    /// For Tailscale SSH, which authenticates the node over WireGuard before
+    /// the SSH layer is reached and then offers `none` — a host that has it
+    /// enabled cannot be connected to any other way. Never tried as a
+    /// fallback: it is chosen per host, so "no credential was sent" is always
+    /// something the operator asked for.
+    None,
 }
 
 /// A saved connection.

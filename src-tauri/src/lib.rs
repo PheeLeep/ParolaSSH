@@ -114,6 +114,7 @@ pub fn run() {
             // Reaching them
             remote::commands::probe_host,
             vpn::commands::vpn_overview,
+            vpn::commands::tailscale_peers,
             remote::commands::connect_host,
             remote::commands::disconnect_host,
             remote::commands::connected_hosts,

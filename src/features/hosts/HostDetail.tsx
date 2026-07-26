@@ -13,6 +13,7 @@ import { ServicesPane } from "./panes/ServicesPane";
 import { UpdatesPane } from "./panes/UpdatesPane";
 import { useHostActions } from "./useHostActions";
 import { VpnGlyph } from "../vpn/VpnGlyph";
+import { PaneBoundary } from "../../components/PaneBoundary";
 import type { Navigate } from "../../navigation";
 
 export function HostDetail({
@@ -136,30 +137,32 @@ export function HostDetail({
       <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
 
       <div className={`feature-pane${fill ? " feature-pane--fill" : ""}`}>
-        {locked ? (
-          <Alert variant="secondary" className="mb-0">
-            Connect to this host to use {selected?.label}. It reads from the live
-            session — there is nothing to show without one.
-          </Alert>
-        ) : feature === "overview" ? (
-          <OverviewPane
-            host={host}
-            connection={connection}
-            health={getHealth(hostId)}
-          />
-        ) : feature === "terminal" ? (
-          <TerminalTabs hostId={hostId} focusShellId={shellId} />
-        ) : feature === "services" ? (
-          <ServicesPane hostId={hostId} />
-        ) : feature === "performance" ? (
-          <PerformancePane hostId={hostId} />
-        ) : feature === "updates" ? (
-          <UpdatesPane hostId={hostId} />
-        ) : feature === "audit" ? (
-          <AuditPane hostId={hostId} />
-        ) : (
-          <PlannedPane feature={feature} os={connection?.os} />
-        )}
+        <PaneBoundary resetKey={`${hostId}:${feature}`}>
+          {locked ? (
+            <Alert variant="secondary" className="mb-0">
+              Connect to this host to use {selected?.label}. It reads from the live
+              session — there is nothing to show without one.
+            </Alert>
+          ) : feature === "overview" ? (
+            <OverviewPane
+              host={host}
+              connection={connection}
+              health={getHealth(hostId)}
+            />
+          ) : feature === "terminal" ? (
+            <TerminalTabs hostId={hostId} focusShellId={shellId} />
+          ) : feature === "services" ? (
+            <ServicesPane hostId={hostId} />
+          ) : feature === "performance" ? (
+            <PerformancePane hostId={hostId} />
+          ) : feature === "updates" ? (
+            <UpdatesPane hostId={hostId} />
+          ) : feature === "audit" ? (
+            <AuditPane hostId={hostId} />
+          ) : (
+            <PlannedPane feature={feature} os={connection?.os} />
+          )}
+        </PaneBoundary>
       </div>
 
       {dialogs}

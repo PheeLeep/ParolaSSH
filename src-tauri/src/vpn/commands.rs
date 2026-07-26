@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use super::tailscale::{self, PeerListing};
 use super::{bind, detect_all, twingate, VpnBinding, VpnStatus};
 
 /// Everything the UI shows about VPNs, gathered in one detection pass.
@@ -61,4 +62,13 @@ pub async fn vpn_overview(hostnames: Vec<String>) -> VpnOverview {
         bindings,
         twingate_resources,
     }
+}
+
+/// The tailnet's other machines, for importing as hosts.
+///
+/// Read-only, like the rest of the VPN module: it lists what Tailscale already
+/// knows and never logs in, starts the daemon, or changes tailnet state.
+#[tauri::command]
+pub async fn tailscale_peers() -> PeerListing {
+    tailscale::peers().await
 }

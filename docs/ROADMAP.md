@@ -34,6 +34,7 @@ Where things stand. Updated as work lands.
 | Shell ids on every event | A stale shell's output can't render in a newer pane |
 | Followed logs inherit all three rules | Addressed events, batching, stream ids — a journal contains whatever the machine logs |
 | No generic stream-open verb | Each feature opens its own typed command; only `close_stream(id)` is generic |
+| Windows service names refuse `$(`, `${`, `` ` `` | `"…"` quotes identically in cmd.exe and PowerShell; only interpolation differs. Refusing the substitution openers keeps one quoting scheme correct against either shell, with no probe and no registry read. A bare `$` stays legal — `MSSQL$SQLEXPRESS` is a real service |
 | `hosts.json` written owner-only | It is a list of every machine you administer — the same "readable map" the audit scores an unhashed `known_hosts` for. Was `0644` under the default umask |
 
 ---
@@ -182,6 +183,59 @@ decides in a terminal.
 
 ---
 
+## Tailscale peer import ✅
+
+Import tailnet machines as saved hosts, from the Tailscale tab of the VPN page.
+
+**No local API socket was needed.** `tailscale status --json` already carries
+the `Peer` map, so this parses more of the payload the status check was
+fetching anyway — no new dependency, no new platform surface, and `run_cli`
+stays the whole cross-platform story. The earlier worry in `tailscale.rs` (HTTP
+over a Unix socket on two platforms, a named pipe on the third) does not apply.
+
+| Decision | Why |
+|---|---|
+| `PeerListing` is an enum, not a `Vec` | A logged-out client returns an empty peer map. Rendering that as "no machines" would be a lie; it has to say *"Tailscale needs login"* |
+| MagicDNS address preferred | It survives the node changing address; the 100.x one does not. Falls back to the IP, then the bare hostname |
+| IPv4 picked from `TailscaleIPs` | The list mixes v4 and v6; 100.64/10 is the one an operator recognises |
+| `tag:server` → `server` | Drops straight into the existing tag input |
+| Online first, then alphabetical | The reachable machines are the ones you are there to add |
+| One username + auth method for the batch | Tailscale knows the address, never the account. Tailnets are usually one login; anything unusual is a normal edit afterwards |
+| Default auth is `agent`, **not** `none` | Tailscale SSH's server is Linux-only *and* opt-in, so `none` is wrong more often than right for a batch. Choosing it names the selected peers that cannot serve it, using the `OS` field. `status --json` carries **no** per-peer SSH capability — checked against a real tailnet, the peer fields are `Active, Addrs, AllowedIPs, Created, CurAddr, DNSName, ExitNode, …` with nothing SSH-shaped — so per-node detection is not possible from this source |
+| Already-saved peers shown but not selectable | Matched on every address a peer answers to, so a second import cannot duplicate |
+| Saved sequentially | Each save rewrites `hosts.json`; concurrent writes would race for the file |
+
+Still read-only toward Tailscale: no login, no `tailscale up`, no daemon start.
+All nine parser tests are mock-driven — no Tailscale installed, no real CLI.
+
+### Auth method `none` ✅
+
+Added because peer import shipped without it and was therefore incomplete:
+**Tailscale SSH nodes could not be connected to at all.** Tailscale
+authenticates the node over WireGuard before the SSH layer is reached, then
+offers SSH's `none` method — its own docs note that *"Some SSH clients may fail
+to connect to an SSH server using no authentication."* ParolaSSH was one of
+them, since `AuthMethod` had only password/publickey/agent.
+
+`russh` already had `authenticate_none`, so the change is an enum variant
+threaded through `build_credentials` and `authenticate`. Two rules:
+
+- **Never a fallback.** It is chosen per host, so "no credential was sent" is
+  always something the operator asked for, never something the app decided.
+- **A remembered password is still not sent** — asserted by a test that puts one
+  in the vault and checks it stays there.
+
+The form and the import dialog both say plainly that an ordinary sshd will
+refuse this, and the failure message names Tailscale SSH as the case where it
+does work.
+
+Verified against the Windows VM over its **tailnet** address: it answers with
+Windows OpenSSH 9.5 offering `publickey,password,keyboard-interactive` — the
+same host key as its LAN address, and no `none`. Per Tailscale's docs the SSH
+server component is *"only available on: Linux, macOS open source"*, so a
+Windows peer can never accept `none` however the tailnet routes to it. Reaching
+a node over Tailscale and being served **by** Tailscale are different things.
+
 ## Open questions
 
 | Question | State |
@@ -189,7 +243,7 @@ decides in a terminal.
 | Status dot semantics | ✅ Decided: four states. Green + halo = live session, amber = reachable but no session, red = unreachable, grey = never probed. Fixing this also fixed a real bug: the hosts table treated "reachable" as "connected" and showed a Disconnect button for hosts we held no session on. `onlineCount` became `connectedCount` and counts sessions only. |
 | Per-host shell cap of 8 — right number? | ✅ Reviewed; stays at 8 |
 | Does Services ship Linux-first, or both platforms together? | ✅ Both shipped together (cross-platform parity is the rule) |
-| Should tab titles be renameable? `rename()` exists, no UI yet | 💭 |
+| Should tab titles be renameable? `rename()` exists, no UI yet | ✅ Shipped. Double-click the tab, or the pencil beside the font and clear buttons; F2 works while the tab itself holds focus. Enter and blur commit, Escape reverts, and an empty name restores the `shell N` it opened with rather than leaving the tab holding a name you just tried to delete. Titles live in the store with everything else about a shell, so they die with the app — the same lifetime as the scrollback beside them |
 | Two rows of tabs (feature nav + shell tabs) — acceptable? | ✅ Reviewed; kept |
 
 ---
@@ -198,9 +252,9 @@ decides in a terminal.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 149 |
+| Rust unit | `cargo test --lib` | 158 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs the VM) | see below | 7 |
+| Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |
 
 The new feature modules follow the `power.rs` testing shape: command
@@ -214,8 +268,24 @@ No test runs a real CLI, and no fixture contains real tenant data.
 PAROLASSH_LIVE_HOST=192.168.56.10 \
 PAROLASSH_LIVE_USER=pheeleep \
 PAROLASSH_LIVE_PASSWORD=… \
-cargo test --test live_remote -- --test-threads=1
+cargo test --test live_remote -- --ignored --nocapture --test-threads=1
 ```
+
+The live tests are `#[ignore]`d, so a default run reports them *ignored* rather
+than passed. They previously returned early when the environment was unset,
+which libtest counted as **11 passed** against a machine they had never
+contacted. Asking for them without naming a host is now a hard failure.
+
+All 11 assert on both Linux and Windows — verified green against a Windows 11
+VM (`OpenSSH_for_Windows_9.5`). What used to skip now asserts the *other*
+platform's behaviour: Windows CPU needs no delta (`LoadPercentage` is
+instantaneous), tier 1 is Unix-only so the report must assemble from tier 0
+alone with `tier1_ran = false`, Windows power needs no password and no `sudo`,
+and the reboot cancel is verified by a second `shutdown /a` failing with 1116.
+
+`skip()` remains only for macOS/BSD, which no VM covers yet. A skip still
+reports `ok` — libtest has no runtime "skipped" outcome — so prefer a per-OS
+assertion over calling it.
 
 The power test schedules a reboot 600 minutes out and cancels it, then asserts
 `/run/systemd/shutdown/scheduled` is gone. Nothing in the suite reboots

@@ -216,13 +216,16 @@ export function ConnectDialog({
         )}
 
         {(host.authMethod === "agent" ||
+          host.authMethod === "none" ||
           (host.authMethod === "publickey" && need?.kind === "notNeeded")) &&
           !error &&
           !unknownKey && (
             <p className="text-body-secondary mb-0">
               {host.authMethod === "agent"
                 ? "Offering the keys held by your SSH agent…"
-                : "The key is not encrypted, so there is nothing to unlock — connecting…"}
+                : host.authMethod === "none"
+                  ? "Sending no credential — this host identifies you before SSH begins…"
+                  : "The key is not encrypted, so there is nothing to unlock — connecting…"}
             </p>
           )}
 

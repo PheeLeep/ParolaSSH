@@ -790,6 +790,8 @@ fn build_credentials(
         }
 
         AuthMethod::Agent => Ok(Credentials::Agent),
+
+        AuthMethod::None => Ok(Credentials::None),
     }
 }
 
@@ -855,6 +857,18 @@ mod tests {
         assert!(password_of(&credentials).is_none());
 
         let credentials = build_credentials(&host(AuthMethod::Agent), None, &vault).unwrap();
+        assert!(password_of(&credentials).is_none());
+    }
+
+    /// Tailscale SSH authenticates the node over WireGuard and then offers only
+    /// SSH's `none`. Without this, such a host cannot be connected to at all.
+    #[test]
+    fn none_auth_sends_no_credential_even_with_one_available() {
+        let vault = SecretVault::new();
+        vault.remember("h-1", "should-not-be-sent");
+
+        let credentials = build_credentials(&host(AuthMethod::None), Some("typed"), &vault).unwrap();
+        assert!(matches!(credentials, Credentials::None));
         assert!(password_of(&credentials).is_none());
     }
 

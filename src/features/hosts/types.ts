@@ -1,4 +1,6 @@
-export type AuthMethod = "password" | "publickey" | "agent";
+/** `none` sends no credential: for servers that identify you before SSH
+ *  begins, as Tailscale SSH does over WireGuard. */
+export type AuthMethod = "password" | "publickey" | "agent" | "none";
 
 export type HostStatus = "connected" | "reachable" | "offline" | "unknown";
 
@@ -289,6 +291,7 @@ export const AUTH_METHOD_LABELS: Record<AuthMethod, string> = {
   password: "Password",
   publickey: "Public key",
   agent: "SSH agent",
+  none: "None (Tailscale SSH)",
 };
 
 export const STATUS_LABELS: Record<HostStatus, string> = {

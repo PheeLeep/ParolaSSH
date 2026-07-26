@@ -1,23 +1,12 @@
 //! Writing the app's own config files so only the owner can read them.
 //!
-//! `hosts.json` is a list of every machine you administer — hostnames, accounts,
-//! ports, key paths. The audit already scores an unhashed `known_hosts` as "a
-//! readable map of everything you connect to"; this app writes the same map, so
-//! it gets the same protection rather than whatever `umask` happened to be.
+//! `hosts.json` is a map of every machine you administer — the same thing the
+//! audit scores an unhashed `known_hosts` for. Unix gets an explicit `0600`
+//! (`0700` on the directory) because `umask` is typically `022`; Windows
+//! inherits `%APPDATA%`, which is already per-user. No hand-rolled DACL: a
+//! wrong one is worse than the correct inherited one.
 //!
-//! Permissions are set when the file is created, before any content reaches the
-//! disk, so there is no window where the map exists and is world-readable — the
-//! rule `generate.rs` already follows for private keys.
-//!
-//! Platforms differ in what "owner-only" costs:
-//!
-//! | | Mechanism |
-//! |---|---|
-//! | Unix (Linux, macOS, BSD) | Explicit `0600` on files, `0700` on the directory — `umask` is typically `022`, so the default would be world-readable |
-//! | Windows | Inherited from `%APPDATA%`, which is already per-user: another non-administrator account cannot read it |
-//!
-//! Windows is not given a hand-rolled ACL. Getting DACLs subtly wrong is worse
-//! than inheriting a correct one, and the inherited one is correct here.
+//! Modes are set at creation, so there is no world-readable window.
 
 use std::path::Path;
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Card, ListGroup, Table } from "react-bootstrap";
-import { ChevronRight, RefreshCw, Shield, TriangleAlert } from "lucide-react";
+import { ChevronRight, Import, RefreshCw, Shield, TriangleAlert } from "lucide-react";
 import { formatRelative } from "../../lib/format";
 import { useHosts, type HostRow } from "../hosts/HostsProvider";
 import { StatusDot } from "../hosts/StatusIndicator";
@@ -12,6 +12,7 @@ import {
   type VpnResource,
   type VpnStatus,
 } from "./types";
+import { TailscaleImportDialog } from "./TailscaleImportDialog";
 import { useVpn } from "./VpnProvider";
 import type { Navigate } from "../../navigation";
 
@@ -33,6 +34,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
   const { hosts } = useHosts();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<VpnTab>("overview");
+  const [importing, setImporting] = useState(false);
 
   const installed = statuses.filter((status) => status.installed);
   const up = installed.filter((status) => status.up);
@@ -152,6 +154,9 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
                 resources={selected.kind === "twingate" ? resources : []}
                 bound={boundVia(selected.kind)}
                 onNavigate={onNavigate}
+                onImport={
+                  selected.kind === "tailscale" ? () => setImporting(true) : undefined
+                }
               />
             )
           )}
@@ -162,6 +167,8 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
         ParolaSSH observes VPN clients; it never starts, stops, or
         reconfigures them.
       </p>
+
+      <TailscaleImportDialog show={importing} onClose={() => setImporting(false)} />
     </div>
   );
 }
@@ -234,11 +241,14 @@ function ClientPane({
   resources,
   bound,
   onNavigate,
+  onImport,
 }: {
   status: VpnStatus;
   resources: VpnResource[];
   bound: BoundHost[];
   onNavigate: Navigate;
+  /** Only Tailscale can enumerate its peers, so only it offers importing. */
+  onImport?: () => void;
 }) {
   const needingAuth = resources.filter((resource) => resource.needsAuth);
 
@@ -252,6 +262,17 @@ function ClientPane({
           />
           <span className="fw-semibold">{VPN_LABELS[status.kind]}</span>
           <span className="text-body-secondary small">{status.detail}</span>
+          {onImport && (
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              className="ms-auto"
+              onClick={onImport}
+            >
+              <Import aria-hidden="true" />
+              Import machines
+            </Button>
+          )}
         </div>
       </Card>
 

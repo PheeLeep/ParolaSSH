@@ -243,6 +243,19 @@ export function HostFormDialog({
           </Form.Group>
         )}
 
+        {draft.authMethod === "none" && (
+          <Alert variant="secondary" className="d-flex gap-2 py-2 small">
+            <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+            <div>
+              No password or key is sent. Only works where the server already
+              knows who you are — Tailscale SSH authenticates the node over
+              WireGuard before SSH begins, and then asks for nothing. Its server
+              is Linux-only and opt-in; an ordinary sshd, and any Windows host,
+              will refuse this.
+            </div>
+          </Alert>
+        )}
+
         {draft.authMethod === "password" && (
           <Alert variant="secondary" className="d-flex gap-2 py-2 small">
             <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />

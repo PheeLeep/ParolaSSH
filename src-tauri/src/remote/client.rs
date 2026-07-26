@@ -45,6 +45,8 @@ pub enum Credentials {
         passphrase: Option<Zeroizing<String>>,
     },
     Agent,
+    /// Send no credential at all — see `AuthMethod::None`.
+    None,
 }
 
 /// Why a host key was rejected, so the UI can offer the right next step.
@@ -442,6 +444,14 @@ async fn authenticate(
         }
 
         Credentials::Agent => authenticate_with_agent(handle, target).await,
+
+        // The server established who we are before SSH began — Tailscale does
+        // this over WireGuard — so it asks for nothing further.
+        Credentials::None => handle
+            .authenticate_none(target.username.clone())
+            .await
+            .map(|result| result.success())
+            .map_err(|error| SshError::Io(format!("Authentication failed: {error}"))),
     }
 }
 
@@ -540,6 +550,12 @@ fn auth_failure_message(credentials: &Credentials, target: &Target) -> String {
         ),
         Credentials::Agent => format!(
             "{} rejected every key held by your SSH agent for “{}”.",
+            target.hostname, target.username
+        ),
+        Credentials::None => format!(
+            "{} would not accept “{}” without a credential. This host expects a \
+             password or a key — “no credential” only works where the server \
+             already knows you, as with Tailscale SSH.",
             target.hostname, target.username
         ),
     }

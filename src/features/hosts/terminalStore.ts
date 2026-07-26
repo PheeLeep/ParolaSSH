@@ -28,10 +28,17 @@ const THEMES = {
 
 const SCROLLBACK = 5000;
 
+/** Longer than this and the tab strip is all one tab; the label ellipsises at
+ *  11rem anyway, so the cap only stops absurd input reaching the store. */
+export const MAX_TERMINAL_TITLE = 60;
+
 export type TerminalEntry = {
   shellId: number;
   hostId: string;
   title: string;
+  /** What `title` started as, so clearing a rename restores it rather than
+   *  leaving the tab stuck with a name the user just tried to delete. */
+  defaultTitle: string;
   exited: boolean;
   exitCode: number | null;
   terminal: Terminal;
@@ -156,10 +163,13 @@ export async function open(
     });
   });
 
+  const defaultTitle = title ?? `shell ${countForHost(hostId) + 1}`;
+
   entries.set(shellId, {
     shellId,
     hostId,
-    title: title ?? `shell ${countForHost(hostId) + 1}`,
+    title: defaultTitle,
+    defaultTitle,
     exited: false,
     exitCode: null,
     terminal,
@@ -284,11 +294,22 @@ export async function closeHost(hostId: string): Promise<void> {
 }
 
 
+/** Rename a tab. An empty name restores the one it was opened with. */
 export function rename(shellId: number, title: string) {
   const entry = entries.get(shellId);
   if (!entry) return;
-  entry.title = title.trim() || entry.title;
+
+  const trimmed = title.trim().slice(0, MAX_TERMINAL_TITLE);
+  const next = trimmed || entry.defaultTitle;
+  if (next === entry.title) return;
+
+  entry.title = next;
   emit();
+}
+
+export function isRenamed(shellId: number): boolean {
+  const entry = entries.get(shellId);
+  return Boolean(entry && entry.title !== entry.defaultTitle);
 }
 
 export function focus(shellId: number) {

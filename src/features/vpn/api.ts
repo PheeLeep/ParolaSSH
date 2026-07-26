@@ -4,7 +4,7 @@
  *  starts, stops, or reconfigures them. */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { VpnOverview } from "./types";
+import type { PeerListing, VpnOverview } from "./types";
 
 /**
  * Every VPN client's state, plus which of the given addresses each owns.
@@ -14,3 +14,6 @@ import type { VpnOverview } from "./types";
  */
 export const vpnOverview = (hostnames: string[]) =>
   invoke<VpnOverview>("vpn_overview", { hostnames });
+
+/** The tailnet's other machines, for importing as hosts. Reports only. */
+export const tailscalePeers = () => invoke<PeerListing>("tailscale_peers");

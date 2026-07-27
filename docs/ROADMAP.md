@@ -290,11 +290,67 @@ a node over Tailscale and being served **by** Tailscale are different things.
 
 ---
 
+## UI quirks reported 2026-07-27
+
+| Quirk | State | Notes |
+|---|---|---|
+| Pinned actions column was see-through | ✅ | `theme.css` sets `--bs-table-bg: transparent`, and Bootstrap's `.table > :not(caption) > * > *` applies it at higher specificity than the bare `.datatable__sticky` class — so the pinned column never painted a background and the scrolled-under cells read straight through it. Fixed by matching that selector's shape, with the fill behind a `--datatable-sticky-bg` variable because most tables sit on a card and the Files pane does not |
+| Journal did not scroll to the newest line | ✅ | The service history now opens at the bottom and a follow behaves like `tail -f`. Scrolling up wins until the reader comes back within 24 px of the bottom |
+| Settings read as one long scroll | ✅ | Tabbed with the same `feature-nav` the host view uses: Appearance · Startup · Transfers · Terminal · Files · Logs |
+| Long listing squeezed the feature tabs | ✅ | On a filling page (Files, Terminal) the chrome above the pane is a shrinkable flex item, and `.feature-nav` scrolls on the x axis — which makes it a scroll container with no minimum height, so `/dev` compressed the tabs to a sliver instead of scrolling inside the pane. The chrome is now `flex: 0 0 auto`, and `.app-main` stops scrolling when a filling page is present so the header cannot be scrolled off either |
+| Chain icon stayed whole after disconnect | ✅ | Not an icon problem — `statusFor` returns `connected` when *either* the connection map or the last heartbeat says so, and `disconnect` only cleared the first. The stale heartbeat held the status for up to 30 s. `disconnect` now marks health disconnected too, carrying the previous `reachable` over: the session ended, the machine did not |
+| VPN pill tooltip too verbose | ✅ | Was every client's full sentence joined with `·`. Now names the one carrying traffic plus an idle count, or lists the installed clients and "none connected". The multi-VPN conflict note stays long — it is a real warning |
+
+## Navigation layout ✅
+
+Settings › Appearance › Navigation layout: Auto (host machine OS) · macOS ·
+Windows · Linux. Auto is the default and follows the machine.
+
+Two things stay tied to the real host rather than the preference, because they
+are facts about the window and not about the drawing: only a genuine macOS
+window has native traffic lights, so only there do we draw none; and only a
+genuine macOS window needs the left inset to clear them. Forcing macOS style on
+Linux therefore draws our own traffic lights rather than pretending the window
+has real ones.
+
+## Host context menu ✅
+
+Right-click a host — in the sidebar or in the hosts table — for connect /
+disconnect, open terminal, power, open host, edit, delete. Same entries as the
+row's ⋯ menu, built from the same `useHostActions`, so the connect flow is
+still fixed in one place. Entries that need a live session stay visible and
+disabled with "Connect first" rather than disappearing.
+
+The sidebar owns its own dialog set: the table's live on a page that may not be
+mounted when the menu is used. `useContextMenuGuard` already suppressed the
+webview's own menu, so there was nothing to fight.
+
+## App log ✅
+
+There was no logging at all before this — no `tracing`, no `log`, not a
+`println!`. `src-tauri/src/logging.rs` writes a tab-separated file in the
+per-OS app log directory, rotated at 1 MiB keeping one previous generation,
+owner-only at creation for the same reason `hosts.json` is: it names every
+machine you administer.
+
+Two rules hold at every call site:
+
+| Rule | Why |
+|---|---|
+| No secrets | Passwords are `Zeroizing` at the IPC boundary precisely so they are not copied around. A log file is a copy that outlives the process |
+| No remote output | A journal, a listing, or a command's stdout contains whatever the remote machine puts there — the same reason terminal output is addressed rather than broadcast. Log what was attempted and how it ended, never what came back |
+
+Logged today: app start/exit, connect success and failure (target and reason,
+never the credential), disconnect, power actions, service actions. Settings ›
+Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
+
+---
+
 ## Testing
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 158 |
+| Rust unit | `cargo test --lib` | 202 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |

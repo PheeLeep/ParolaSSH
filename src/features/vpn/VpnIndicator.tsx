@@ -12,17 +12,20 @@ export function VpnIndicator({ onOpen }: { onOpen: () => void }) {
   if (installed.length === 0) return null;
 
   const up = installed.filter((status) => status.up);
+  const idle = installed.length - up.length;
 
   let variant = "";
   let Icon = Shield;
   let text = "VPN";
-  let title = installed
-    .map((status) => `${VPN_LABELS[status.kind]} — ${status.detail}`)
-    .join(" · ");
+  // Every client's own wording is what the VPN page is for; the pill only has
+  // to say which one is carrying traffic and how many are sitting out.
+  let title = `${installed.map((status) => VPN_LABELS[status.kind]).join(", ")} — none connected`;
 
   if (up.length === 1) {
     variant = " status-badge--connected";
     text = VPN_LABELS[up[0].kind];
+    title = `${VPN_LABELS[up[0].kind]} — ${up[0].detail}`;
+    if (idle > 0) title += ` · ${idle} idle`;
   } else if (up.length >= 2) {
     variant = " status-badge--warning";
     Icon = TriangleAlert;

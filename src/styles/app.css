@@ -57,6 +57,13 @@ code,
   flex-direction: column;
 }
 
+/* A filling page owns its own scrolling — the listing scrolls inside the pane.
+   Leaving the outer scroller live lets a long listing scroll the host header
+   and the tabs off the top, which is exactly what they are pinned for. */
+.app-main:has(.page--fill) {
+  overflow-y: hidden;
+}
+
 .app-pane:has(.page--fill) {
   flex: 1 1 auto;
   min-height: 0;
@@ -160,9 +167,79 @@ code,
 }
 
 /* Overlay titlebar on macOS: the native traffic lights sit on top of the
-   navbar's left edge, so push our own content clear of them. */
-.app-navbar--mac {
+   navbar's left edge, so push our own content clear of them. Keyed on the real
+   host, not the chosen layout — the lights are there either way. */
+.app-navbar--mac-inset {
   padding-left: 5rem;
+}
+
+/* GTK client-side decorations: pill-shaped buttons with a gutter, and no
+   red close — the platform tints it like the others. */
+.window-controls--linux {
+  margin: 0 0 0 0.5rem;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.window-controls--linux .window-control {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--parola-hover);
+}
+
+.window-controls--linux .window-control:hover {
+  background: var(--parola-line-strong);
+}
+
+.window-controls--linux .window-control--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+/* Traffic lights, drawn only when the layout asks for macOS on a machine that
+   is not a Mac — a real Mac already has the native ones. Glyphs surface on
+   hover of the group, the way the platform does it. */
+.window-controls--mac {
+  align-self: center;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0.25rem 0 0;
+}
+
+.traffic-light {
+  display: grid;
+  place-items: center;
+  width: 0.75rem;
+  height: 0.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.traffic-light--close {
+  background: #ff5f57;
+}
+
+.traffic-light--minimize {
+  background: #febc2e;
+}
+
+.traffic-light--zoom {
+  background: #28c840;
+}
+
+.traffic-light .lucide {
+  width: 0.5rem;
+  height: 0.5rem;
+  stroke-width: 3;
+  opacity: 0;
+  transition: opacity var(--parola-duration-fast) var(--parola-ease);
+}
+
+.window-controls--mac:hover .traffic-light .lucide {
+  opacity: 1;
 }
 
 /* ---------------------------------------------- Sidebar ----- */
@@ -431,6 +508,20 @@ code,
   padding-bottom: 1.5rem;
 }
 
+/* Everything above the filling pane is fixed chrome — the back link, the host
+   header, the feature tabs — and only the pane itself may take or give height.
+   Flex items shrink by default, and `.feature-nav` scrolls on the x axis,
+   which makes it a scroll container with no minimum: a long listing would
+   squeeze the tabs down to a sliver instead of scrolling inside the pane. */
+.page--fill > * {
+  flex: 0 0 auto;
+}
+
+.page--fill > .feature-pane--fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 /* A flex column stretches its children, which would centre this button's
    label and make its whole row clickable. */
 .page-back {
@@ -564,10 +655,18 @@ code,
 .datatable__sticky {
   position: sticky;
   z-index: 1;
-  background: var(--bs-body-bg);
 }
 
-.table > thead th.datatable__sticky {
+/* The background has to out-specify Bootstrap's `.table > :not(caption) > * > *`,
+   which paints `--bs-table-bg` — transparent in this theme (theme.css). A bare
+   class loses that match, and the scrolled-under cells read straight through
+   the pinned column. Tables live on cards, so the fill is the card surface;
+   a table on the page background overrides the variable. */
+.table > :not(caption) > * > .datatable__sticky {
+  background: var(--datatable-sticky-bg, var(--parola-surface));
+}
+
+.table > thead > tr > th.datatable__sticky {
   z-index: 3;
   background: var(--bs-tertiary-bg);
 }
@@ -603,6 +702,60 @@ code,
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+/* --------------------------------------- Context menu -------- */
+
+/* Portalled to <body> and positioned `fixed`, so it clears every scroll
+   container. Above the navbar's z-index 10, below Bootstrap's modals. */
+.context-menu {
+  position: fixed;
+  z-index: 1040;
+  min-width: 11rem;
+  padding: 0.25rem;
+  border: 1px solid var(--parola-line-strong);
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-surface);
+  box-shadow: var(--parola-shadow-lg, var(--parola-shadow));
+}
+
+.context-menu:focus {
+  outline: none;
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: calc(var(--parola-radius-sm) - 0.125rem);
+  background: transparent;
+  color: var(--bs-body-color);
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.context-menu__item:hover:not(:disabled),
+.context-menu__item:focus-visible {
+  background: var(--parola-hover);
+  color: var(--bs-emphasis-color);
+}
+
+.context-menu__item:disabled {
+  opacity: 0.45;
+}
+
+.context-menu__item.is-danger {
+  color: var(--bs-danger-text-emphasis, var(--bs-danger));
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: 0.25rem 0.375rem;
+  background: var(--parola-line);
 }
 
 /* Secondary line inside a dropdown row, e.g. the motion mode hints. */
@@ -1353,6 +1506,74 @@ code,
   }
 }
 
+/* ---------------------------------------------- Logs ------------ */
+
+.log-view {
+  max-height: 26rem;
+  overflow: auto;
+  padding: 0.375rem 0;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--parola-radius-sm);
+  background: var(--parola-hover);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.log-line {
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.125rem 0.75rem;
+  font-family: var(--bs-font-monospace);
+  /* The message wraps; the fields before it keep their column. */
+  align-items: baseline;
+}
+
+.log-line:hover {
+  background: var(--parola-surface);
+}
+
+.log-line__time {
+  flex: 0 0 auto;
+  color: var(--bs-secondary-color);
+}
+
+.log-line__level {
+  flex: 0 0 3.5rem;
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.log-line__level.is-debug {
+  color: var(--parola-unknown, var(--bs-secondary-color));
+}
+
+.log-line__level.is-info {
+  color: var(--bs-secondary-color);
+}
+
+.log-line__level.is-warn {
+  color: var(--bs-warning-text-emphasis, var(--bs-warning));
+}
+
+.log-line__level.is-error {
+  color: var(--bs-danger-text-emphasis, var(--bs-danger));
+}
+
+.log-line__target {
+  flex: 0 0 5.5rem;
+  color: var(--parola-accent);
+}
+
+.log-line__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--bs-body-color);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 /* ---------------------------------------------- About ----------- */
 
 .about-hero {
@@ -1943,6 +2164,8 @@ code,
 }
 
 .files-table {
+  /* This table sits on the page background, not on a card. */
+  --datatable-sticky-bg: var(--bs-body-bg);
   flex: 1;
   min-height: 0;
   overflow: auto;

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -61,6 +68,8 @@ type DataTableProps<TData> = {
   onSelectionChange?: (rows: TData[]) => void;
   /** Double-click / Enter on a row. */
   onRowActivate?: (row: TData) => void;
+  /** Right-click on a row. The handler owns `preventDefault`. */
+  onRowContextMenu?: (row: TData, event: ReactMouseEvent) => void;
   searchPlaceholder?: string;
   /** Buttons rendered on the left of the toolbar. */
   toolbarActions?: ReactNode;
@@ -76,6 +85,7 @@ export function DataTable<TData>({
   enableRowSelection = false,
   onSelectionChange,
   onRowActivate,
+  onRowContextMenu,
   searchPlaceholder = "Search…",
   toolbarActions,
   emptyMessage = "Nothing to show yet.",
@@ -263,7 +273,12 @@ export function DataTable<TData>({
               </tr>
             ) : (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} row={row} onActivate={onRowActivate} />
+                <TableRow
+                  key={row.id}
+                  row={row}
+                  onActivate={onRowActivate}
+                  onContextMenu={onRowContextMenu}
+                />
               ))
             )}
           </tbody>
@@ -339,14 +354,19 @@ export function DataTable<TData>({
 function TableRow<TData>({
   row,
   onActivate,
+  onContextMenu,
 }: {
   row: Row<TData>;
   onActivate?: (row: TData) => void;
+  onContextMenu?: (row: TData, event: ReactMouseEvent) => void;
 }) {
   return (
     <tr
       className={row.getIsSelected() ? "table-active" : undefined}
       onDoubleClick={onActivate ? () => onActivate(row.original) : undefined}
+      onContextMenu={
+        onContextMenu ? (event) => onContextMenu(row.original, event) : undefined
+      }
       onKeyDown={
         onActivate
           ? (event) => {

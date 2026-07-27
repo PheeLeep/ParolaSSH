@@ -25,6 +25,7 @@ use super::{shell, stream, OsFamily};
 use crate::app_paths::config_dir;
 use crate::hosts::model::{AuthMethod, HostRecord};
 use crate::hosts::store::{now_iso8601, HostStore};
+use crate::logging;
 use crate::ssh::keys::{self, PassphraseNeed};
 use crate::ssh::{SshError, SshResult};
 
@@ -101,6 +102,11 @@ pub async fn connect_host(
     let session = match Session::connect(&target, &credentials, trust_unknown).await {
         Ok(session) => session,
         Err(error) => {
+            // The target and the reason, never the credential.
+            logging::warn(
+                "ssh",
+                format!("Connect to {}@{}:{} failed: {error}", target.username, target.hostname, target.port),
+            );
             // Never replay a rejected password: repeated failures lock accounts.
             if host.auth_method == AuthMethod::Password {
                 vault.forget(&host_id);
@@ -121,6 +127,22 @@ pub async fn connect_host(
             vault.remember(&host_id, password.as_str());
         }
     }
+
+    logging::info(
+        "ssh",
+        format!(
+            "Connected to {}@{}:{} ({})",
+            target.username,
+            target.hostname,
+            target.port,
+            match host.auth_method {
+                AuthMethod::Password => "password",
+                AuthMethod::Publickey => "key",
+                AuthMethod::Agent => "agent",
+                AuthMethod::None => "none",
+            }
+        ),
+    );
 
     // Read once at connect time: neither can change under a live session.
     let report = power::check_privileges(&session).await?;
@@ -171,6 +193,9 @@ pub async fn disconnect_host(
     host_id: String,
 ) -> SshResult<bool> {
     let disconnected = registry.disconnect(&host_id).await;
+    if disconnected {
+        logging::info("ssh", format!("Disconnected from host {host_id}"));
+    }
     // After the session is gone, so a transfer cannot be promoted onto a
     // connection that is being torn down.
     release_host_transfers(&app, &registry, &transfers, &host_id).await;
@@ -265,6 +290,16 @@ pub async fn power_host(
         sudo_password.as_deref().map(|password| password.as_str()),
     )
     .await?;
+
+    logging::warn(
+        "power",
+        format!(
+            "Host {host_id}: {:?} (delay {} min) — {}",
+            request.action,
+            request.delay_minutes,
+            if outcome.succeeded { "accepted" } else { "refused" }
+        ),
+    );
 
     // An immediate shutdown or reboot takes the session with it.
     let terminal = request.delay_minutes == 0
@@ -539,7 +574,18 @@ pub async fn service_action(
     };
 
     let output = live.session.exec(&plan.command, stdin.as_deref()).await?;
-    Ok(services::interpret_action(&plan, output))
+    let outcome = services::interpret_action(&plan, output);
+    // The unit and the verdict. Never `outcome`'s text — that is remote output.
+    logging::info(
+        "services",
+        format!(
+            "Host {host_id}: {:?} {} — {}",
+            request.action,
+            request.unit,
+            if outcome.succeeded { "ok" } else { "failed" }
+        ),
+    );
+    Ok(outcome)
 }
 
 /// A service's recent history: the last journal lines, or SCM events.

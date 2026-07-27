@@ -1,20 +1,27 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, Form, Spinner } from "react-bootstrap";
 import {
+  ArrowUpDown,
   FolderOpen,
   Home,
   Info,
   Minus,
   Monitor,
   Moon,
+  Palette,
   Plus,
+  Power,
   Server,
+  ScrollText,
   Sparkles,
+  SquareTerminal,
   Sun,
   Waves,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { Segmented } from "../../components/Segmented";
+import { LogsPanel } from "./LogsPanel";
 import { revealInFileManager } from "../../lib/openExternal";
 import { useMotion, type MotionMode } from "../../theme/MotionProvider";
 import { useTheme, type ThemeMode } from "../../theme/ThemeProvider";
@@ -28,19 +35,53 @@ import {
   TERMINAL_FONT_FAMILIES,
   clampConcurrency,
   readMaxConcurrentTransfers,
+  readNavLayout,
   readStartupView,
   readTerminalFont,
   writeMaxConcurrentTransfers,
+  writeNavLayout,
   writeStartupView,
   writeTerminalFont,
+  type NavLayout,
   type StartupView,
   type TerminalFont,
 } from "./preferences";
+import { hostNavStyle } from "../../lib/appWindow";
 import type { Navigate } from "../../navigation";
+
+type SettingsTab =
+  | "appearance"
+  | "startup"
+  | "transfers"
+  | "terminal"
+  | "files"
+  | "logs";
+
+const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
+  { id: "appearance", label: "Appearance", Icon: Palette },
+  { id: "startup", label: "Startup", Icon: Power },
+  { id: "transfers", label: "Transfers", Icon: ArrowUpDown },
+  { id: "terminal", label: "Terminal", Icon: SquareTerminal },
+  { id: "files", label: "Files", Icon: FolderOpen },
+  { id: "logs", label: "Logs", Icon: ScrollText },
+];
+
+const NAV_LAYOUTS: { value: NavLayout; label: string }[] = [
+  { value: "auto", label: "Auto (host machine OS)" },
+  { value: "macos", label: "macOS" },
+  { value: "windows", label: "Windows" },
+  { value: "linux", label: "Linux" },
+];
+
+const HOST_NAV_LABEL = { macos: "macOS", windows: "Windows", linux: "Linux" }[
+  hostNavStyle
+];
 
 export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   const { mode: motionMode, setMode: setMotionMode } = useMotion();
+  const [tab, setTab] = useState<SettingsTab>("appearance");
+  const [navLayout, setNavLayout] = useState<NavLayout>(readNavLayout);
   const [startup, setStartup] = useState<StartupView>(readStartupView);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
@@ -60,6 +101,12 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
       cancelled = true;
     };
   }, []);
+
+  // The navbar subscribes, so the titlebar restyles as the select changes.
+  const changeNavLayout = (next: NavLayout) => {
+    setNavLayout(next);
+    writeNavLayout(next);
+  };
 
   const changeStartup = (next: StartupView) => {
     setStartup(next);
@@ -89,6 +136,22 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
         </p>
       </header>
 
+      <nav className="feature-nav" aria-label="Settings sections">
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className={`feature-nav__item${tab === entry.id ? " is-active" : ""}`}
+            onClick={() => setTab(entry.id)}
+            aria-current={tab === entry.id ? "page" : undefined}
+          >
+            <entry.Icon className="icon-sm" aria-hidden="true" />
+            {entry.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === "appearance" && (
       <Card className="mb-3">
         <Card.Body>
           <h2 className="section-title mb-1">Appearance</h2>
@@ -115,7 +178,6 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           <SettingRow
             title="Motion"
             hint="Reduced keeps fades but removes movement. Off disables animation entirely; progress spinners always keep turning."
-            last
           >
             <Segmented<MotionMode>
               label="Motion"
@@ -129,9 +191,30 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
               ]}
             />
           </SettingRow>
+
+          <SettingRow
+            title="Navigation layout"
+            hint={`Which platform's title bar the top navigation imitates. Auto follows this machine — ${HOST_NAV_LABEL}. The window's own decorations don't change.`}
+            last
+          >
+            <Form.Select
+              value={navLayout}
+              onChange={(event) => changeNavLayout(event.target.value as NavLayout)}
+              aria-label="Navigation layout"
+              style={{ maxWidth: "18rem" }}
+            >
+              {NAV_LAYOUTS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Form.Select>
+          </SettingRow>
         </Card.Body>
       </Card>
+      )}
 
+      {tab === "startup" && (
       <Card className="mb-3">
         <Card.Body>
           <h2 className="section-title mb-3">Startup</h2>
@@ -149,7 +232,9 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           </SettingRow>
         </Card.Body>
       </Card>
+      )}
 
+      {tab === "transfers" && (
       <Card className="mb-3">
         <Card.Body>
           <h2 className="section-title mb-3">Transfers</h2>
@@ -185,7 +270,9 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           </SettingRow>
         </Card.Body>
       </Card>
+      )}
 
+      {tab === "terminal" && (
       <Card className="mb-3">
         <Card.Body>
           <h2 className="section-title mb-1">Terminal</h2>
@@ -246,7 +333,9 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           </SettingRow>
         </Card.Body>
       </Card>
+      )}
 
+      {tab === "files" && (
       <Card className="mb-3">
         <Card.Body>
           <h2 className="section-title mb-3">Files</h2>
@@ -279,6 +368,9 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           </SettingRow>
         </Card.Body>
       </Card>
+      )}
+
+      {tab === "logs" && <LogsPanel />}
 
       <Button
         variant="outline-secondary"

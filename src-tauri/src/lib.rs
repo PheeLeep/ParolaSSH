@@ -1,6 +1,7 @@
 mod app_paths;
 mod commands;
 pub mod hosts;
+pub mod logging;
 mod private_file;
 pub mod remote;
 // Public so the integration tests in `tests/` can drive the audit against
@@ -89,6 +90,10 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            // Before anything else that might want to record a failure.
+            logging::init(app.handle());
+            logging::info("app", concat!("ParolaSSH ", env!("CARGO_PKG_VERSION"), " started"));
+
             #[cfg(desktop)]
             tray::init(app)?;
             #[cfg(not(desktop))]
@@ -112,6 +117,10 @@ pub fn run() {
             commands::delete_ssh_key,
             commands::verify_key_passphrase,
             commands::read_public_key,
+            // The app's own log
+            commands::app_log_location,
+            commands::read_app_log,
+            commands::clear_app_log,
             // Saved connections
             hosts::commands::list_hosts,
             hosts::commands::save_host,
@@ -181,6 +190,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 let registry = <tauri::AppHandle as tauri::Manager<_>>::state::<SessionRegistry>(app);
                 tauri::async_runtime::block_on(registry.disconnect_all());
+                logging::info("app", "ParolaSSH exited");
             }
         });
 }

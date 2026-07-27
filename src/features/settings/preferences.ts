@@ -114,6 +114,57 @@ export function subscribeTerminalFont(
   };
 }
 
+/* ── Window chrome ─────────────────────────────────────────────────────── */
+
+/** Which platform's titlebar the navbar imitates. */
+export type NavStyle = "macos" | "windows" | "linux";
+
+/** The preference: a concrete style, or `auto` to follow the host machine. */
+export type NavLayout = NavStyle | "auto";
+
+export const NAV_LAYOUT_STORAGE_KEY = "parolassh:nav-layout";
+
+const NAV_LAYOUTS: NavLayout[] = ["auto", "macos", "windows", "linux"];
+
+let navLayout: NavLayout | null = null;
+const navListeners = new Set<(layout: NavLayout) => void>();
+
+export function readNavLayout(): NavLayout {
+  if (navLayout) return navLayout;
+
+  navLayout = "auto";
+  try {
+    const stored = localStorage.getItem(NAV_LAYOUT_STORAGE_KEY);
+    if (stored && (NAV_LAYOUTS as string[]).includes(stored)) {
+      navLayout = stored as NavLayout;
+    }
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+  }
+  return navLayout;
+}
+
+export function writeNavLayout(layout: NavLayout): void {
+  navLayout = layout;
+  try {
+    localStorage.setItem(NAV_LAYOUT_STORAGE_KEY, layout);
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+  for (const listener of navListeners) listener(layout);
+}
+
+/** The navbar renders once and lives for the whole session, so it subscribes
+ *  rather than re-reading — a change in Settings has to reach it immediately. */
+export function subscribeNavLayout(
+  listener: (layout: NavLayout) => void,
+): () => void {
+  navListeners.add(listener);
+  return () => {
+    navListeners.delete(listener);
+  };
+}
+
 /* ── Transfers ─────────────────────────────────────────────────────────── */
 
 export const MAX_CONCURRENT_STORAGE_KEY = "parolassh:max-concurrent-transfers";

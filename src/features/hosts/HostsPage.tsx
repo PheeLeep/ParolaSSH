@@ -5,6 +5,7 @@ import { DataTable } from "../../components/DataTable";
 import { createHostColumns } from "./columns";
 import { useHosts, type HostRow } from "./HostsProvider";
 import { useHostActions } from "./useHostActions";
+import { useHostContextMenu } from "./useHostContextMenu";
 import type { Navigate } from "../../navigation";
 
 export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
@@ -14,6 +15,11 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { actions, add, dialogs } = useHostActions({
     // A terminal lives on the detail pane, so opening one navigates there.
     onOpenTerminal: (host) => onNavigate({ kind: "host", hostId: host.id }),
+  });
+
+  const { openContextMenu, contextMenu } = useHostContextMenu({
+    actions,
+    onOpen: (host) => onNavigate({ kind: "host", hostId: host.id }),
   });
 
   const columns = useMemo(() => createHostColumns(actions), [actions]);
@@ -47,6 +53,7 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
               enableRowSelection
               onSelectionChange={setSelected}
               onRowActivate={(host) => onNavigate({ kind: "host", hostId: host.id })}
+              onRowContextMenu={openContextMenu}
               searchPlaceholder="Search hosts, tags, users…"
               emptyMessage="No saved connections. Add one to get started."
               toolbarActions={
@@ -78,6 +85,7 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
         </Card.Body>
       </Card>
 
+      {contextMenu}
       {dialogs}
     </div>
   );

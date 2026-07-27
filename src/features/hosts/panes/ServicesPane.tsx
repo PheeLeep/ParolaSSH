@@ -293,6 +293,27 @@ function ServiceHistory({
     };
   }, [follow, hostId, service.name]);
 
+  // The newest line is the last one, so the view opens at the bottom and a
+  // follow behaves like `tail -f` — unless the reader scrolled up to read
+  // something, which wins until they come back down.
+  const logRef = useRef<HTMLPreElement>(null);
+  const pinned = useRef(true);
+
+  const onLogScroll = () => {
+    const node = logRef.current;
+    if (!node) return;
+    pinned.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
+  };
+
+  useEffect(() => {
+    pinned.current = true;
+  }, [service.name, hostId, follow]);
+
+  useEffect(() => {
+    const node = logRef.current;
+    if (node && pinned.current) node.scrollTop = node.scrollHeight;
+  }, [followText, log, follow, loading]);
+
   return (
     <div>
       <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -322,7 +343,11 @@ function ServiceHistory({
           Reading history…
         </div>
       ) : (
-        <pre className="command-output service-log user-select-auto mb-0">
+        <pre
+          ref={logRef}
+          onScroll={onLogScroll}
+          className="command-output service-log user-select-auto mb-0"
+        >
           {follow
             ? followText || "Waiting for output…"
             : log && log.lines.length > 0

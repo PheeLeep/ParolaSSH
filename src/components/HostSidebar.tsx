@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { useHosts } from "../features/hosts/HostsProvider";
 import { StatusDot } from "../features/hosts/StatusIndicator";
+import { useHostActions } from "../features/hosts/useHostActions";
+import { useHostContextMenu } from "../features/hosts/useHostContextMenu";
 import * as terminals from "../features/hosts/terminalStore";
 import * as transfers from "../features/transfers/transferStore";
 import { AnimatedValue } from "./AnimatedValue";
@@ -42,6 +44,18 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   const transferCount = transfers.pendingCount();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // The sidebar is the fastest route to a host, so connect/power/edit are
+  // reachable from it by right-click rather than only from the hosts table.
+  // It owns its own dialog set — the table's live on a page that may not be
+  // mounted when the menu is used.
+  const { actions, dialogs } = useHostActions({
+    onOpenTerminal: (host) => onNavigate({ kind: "host", hostId: host.id }),
+  });
+  const { openContextMenu, contextMenu } = useHostContextMenu({
+    actions,
+    onOpen: (host) => onNavigate({ kind: "host", hostId: host.id }),
+  });
 
   // Only critical and high findings earn a badge — anything more and the
   // count stops meaning "look at this now".
@@ -160,6 +174,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
                           : ""
                       }`}
                       onClick={() => onNavigate({ kind: "host", hostId: host.id })}
+                      onContextMenu={(event) => openContextMenu(host, event)}
                       title={`${host.username}@${host.hostname}:${host.port}`}
                     >
                       <StatusDot status={host.status} />
@@ -250,6 +265,9 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
           <span className="sidebar-item__label">About</span>
         </button>
       </div>
+
+      {contextMenu}
+      {dialogs}
     </aside>
   );
 }

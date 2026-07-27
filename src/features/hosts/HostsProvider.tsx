@@ -204,6 +204,27 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     await terminals.closeHost(id);
     await api.disconnectHost(id);
     setConnections(({ [id]: _removed, ...rest }) => rest);
+
+    // The mirror of the note in `statusFor`: dropping the connection is not
+    // enough, because the last heartbeat still says `connected` and that is
+    // the other half of the same test. Without this the chain stays whole for
+    // up to 30 s after the session is gone.
+    //
+    // Only the session ended — the machine itself is as reachable as it was a
+    // moment ago, so that half of the answer is carried over rather than
+    // reset, which would wrongly paint the host offline.
+    setHealth((previous) => {
+      const last = previous[id];
+      return {
+        ...previous,
+        [id]: {
+          hostId: id,
+          connected: false,
+          reachable: last?.reachable ?? true,
+          latencyMs: last?.latencyMs ?? null,
+        },
+      };
+    });
   }, []);
 
   const power = useCallback(

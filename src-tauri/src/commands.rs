@@ -153,3 +153,25 @@ pub fn read_public_key(path: String) -> SshResult<String> {
         .map(|text| text.trim().to_string())
         .map_err(|error| SshError::io("Could not read the public key", error))
 }
+
+/* ── The app's own log ──────────────────────────────────────────────────── */
+
+/// Where the log file is, so Settings can show the path and reveal it.
+#[tauri::command]
+pub fn app_log_location() -> Option<crate::logging::LogLocation> {
+    crate::logging::location()
+}
+
+/// The tail of the log, newest last. Capped so a long-running session cannot
+/// hand the webview a multi-megabyte array.
+#[tauri::command]
+pub fn read_app_log(max_lines: Option<usize>) -> Vec<crate::logging::LogEntry> {
+    crate::logging::read_entries(max_lines.unwrap_or(1_000).min(5_000))
+}
+
+/// Truncate the log. Logging continues into a fresh file afterwards.
+#[tauri::command]
+pub fn clear_app_log() {
+    crate::logging::clear();
+    crate::logging::info("app", "Log cleared");
+}

@@ -325,6 +325,74 @@ The sidebar owns its own dialog set: the table's live on a page that may not be
 mounted when the menu is used. `useContextMenuGuard` already suppressed the
 webview's own menu, so there was nothing to fight.
 
+## Tray status ✅
+
+Four states, drawn on the beam of the app icon:
+
+| State | Icon | Means |
+|---|---|---|
+| Offline | no `>` | this machine has no route off itself |
+| Online | white `>` | on a network, holding no session |
+| Connected | violet `>` | at least one live SSH session |
+| Connecting | violet `>`, blinking | a connect is in flight |
+
+`src-tauri/src/tray.rs`, promoted out of the inline module in `lib.rs`.
+
+**The state is derived in Rust, not pushed from the frontend.** A tray exists to
+be useful while the window is hidden; if the UI owned the state, closing to tray
+would freeze the icon at whatever it last said. `refresh()` reads
+`SessionRegistry` directly and is called from connect, disconnect, and the
+30-second heartbeat — which is also how a session that dropped on its own, or a
+network coming back, reaches the icon.
+
+**Offline means no route, not "nothing answered".** A firewalled server must not
+read as the laptop being off Wi-Fi. `has_route()` does a UDP `connect`, which
+only fixes the socket's peer address and sends no packet, so it asks the routing
+table rather than the network.
+
+**Connecting starts at the prompt, not at the submit.** Being asked for a
+password is part of connecting from the operator's side, so the dialog declares
+itself over `set_connect_pending` — Rust cannot see a dialog. This is the one
+piece of tray state the frontend owns, and it is deliberately *separate* from
+the in-flight count rather than sharing it, so the same host appearing in both
+during a submit cannot cancel itself out. It is a set of host ids, not a
+counter: a repeated "opened" cannot drift the state upward and strand the icon
+blinking. The declaration is cleared from the effect's cleanup, so cancel,
+close, and navigating away all leave by the same path a successful connect does,
+and `clear_connect_pending` runs at app mount because a reload destroys the
+dialogs but not the process.
+
+**Connecting is a guard, not paired calls.** `ConnectingGuard` marks the connect
+in flight for its lifetime, so an early `?` out of `connect_host` cannot leave
+the tray blinking forever. It is a count, not a flag: dialling two hosts at once
+and having the first land must not clear the second. The blink task carries a
+generation number and stops the moment the state moves on, so a stale task from
+a previous connect cannot keep toggling the icon.
+
+The blink shipped dead: `init` managed the state as `Arc<TrayState>` while every
+lookup asked for `TrayState`. `manage` keys by exact type, so all of them got
+`None` — and because each falls back to a default rather than failing, the count
+stayed 0 and `Connecting` was unreachable. The icon swaps still worked, since
+those never read the state, which is why only the blink was missing. Managed
+unwrapped now, with a `debug_assert` after `manage` so a repeat is loud.
+
+Three PNGs, not four — connecting blinks the connected icon against the offline
+one. Rendered from `design/tray/tray-template.svg` by
+`scripts/generate-tray-icons.sh` (needs `rsvg-convert`), so the tray states stay
+tied to the one icon master rather than drifting as separate drawings.
+
+### The tooltip that never showed
+
+`.tooltip("ParolaSSH")` was already set — **libappindicator drops it**, and
+every Linux status-notifier host uses libappindicator. So does `.set_title`.
+Nothing about the call was wrong and no amount of fixing it would have helped.
+
+What does render there is the menu, so the status text is now also a **disabled
+first menu item**, updated by the same `refresh()`. Windows and macOS get it on
+hover from the tooltip; Linux reads it in the menu. The text carries the state
+too — *"ParolaSSH — 2 hosts connected"* — since a 22-pixel icon can only say so
+much, and a unit test asserts every state's label still names the app.
+
 ## App log ✅
 
 There was no logging at all before this — no `tracing`, no `log`, not a

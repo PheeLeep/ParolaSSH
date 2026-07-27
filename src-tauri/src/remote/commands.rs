@@ -82,6 +82,10 @@ pub async fn connect_host(
     remember: bool,
     trust_unknown: bool,
 ) -> SshResult<ConnectionInfo> {
+    // Blinks the tray for as long as this call runs, however it ends.
+    #[cfg(desktop)]
+    let _connecting = crate::tray::ConnectingGuard::new(&app);
+
     // `Zeroizing` from here on, so the plaintext is wiped rather than left in
     // freed heap.
     let password = password.map(Zeroizing::new);
@@ -199,6 +203,8 @@ pub async fn disconnect_host(
     // After the session is gone, so a transfer cannot be promoted onto a
     // connection that is being torn down.
     release_host_transfers(&app, &registry, &transfers, &host_id).await;
+    #[cfg(desktop)]
+    crate::tray::refresh(&app);
     Ok(disconnected)
 }
 
@@ -382,6 +388,11 @@ pub async fn heartbeat(
             release_host_transfers(&app, &registry, &transfers, &entry.host_id).await;
         }
     }
+
+    // The 30-second tick is also how the tray notices a session that dropped
+    // on its own, or the network coming back.
+    #[cfg(desktop)]
+    crate::tray::refresh(&app);
 
     Ok(health)
 }

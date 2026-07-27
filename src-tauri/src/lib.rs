@@ -7,6 +7,8 @@ pub mod remote;
 // Public so the integration tests in `tests/` can drive the audit against
 // fixture directories.
 pub mod ssh;
+#[cfg(desktop)]
+pub mod tray;
 pub mod vpn;
 
 use std::sync::Arc;
@@ -14,60 +16,6 @@ use std::sync::Arc;
 use remote::registry::SessionRegistry;
 use remote::secrets::SecretVault;
 use remote::transfers::TransferManager;
-
-/// The tray keeps the app reachable while its window is hidden, so closing it
-/// with live SSH sessions can minimize instead of tearing connections down.
-#[cfg(desktop)]
-mod tray {
-    use tauri::menu::{Menu, MenuItem};
-    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    use tauri::{AppHandle, Manager};
-
-    fn show_main(app: &AppHandle) {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-        }
-    }
-
-    pub fn init(app: &tauri::App) -> tauri::Result<()> {
-        let show = MenuItem::with_id(app, "show", "Show ParolaSSH", true, None::<&str>)?;
-        let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-        let menu = Menu::with_items(app, &[&show, &quit])?;
-
-        TrayIconBuilder::with_id("main")
-            .icon(
-                app.default_window_icon()
-                    .expect("bundle config always ships window icons")
-                    .clone(),
-            )
-            .tooltip("ParolaSSH")
-            .menu(&menu)
-            // Left click restores the window, right click opens the menu. Some
-            // Linux status-notifier hosts only show the menu, hence "Show".
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                if let TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } = event
-                {
-                    show_main(tray.app_handle());
-                }
-            })
-            .on_menu_event(|app, event| match event.id.as_ref() {
-                "show" => show_main(app),
-                // Fires RunEvent::Exit below, which disconnects every session.
-                "quit" => app.exit(0),
-                _ => {}
-            })
-            .build(app)?;
-
-        Ok(())
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -121,6 +69,12 @@ pub fn run() {
             commands::app_log_location,
             commands::read_app_log,
             commands::clear_app_log,
+            // Tray state the frontend has to declare, because Rust cannot see
+            // an open dialog
+            #[cfg(desktop)]
+            tray::set_connect_pending,
+            #[cfg(desktop)]
+            tray::clear_connect_pending,
             // Saved connections
             hosts::commands::list_hosts,
             hosts::commands::save_host,

@@ -74,6 +74,14 @@ export const connectHost = (
     trustUnknown: options.trustUnknown ?? false,
   });
 
+/** Tell the tray a connect dialog is open, so its icon blinks while the user
+ *  is being asked for a credential. Rust cannot see a dialog by itself. */
+export const setConnectPending = (hostId: string, active: boolean) =>
+  invoke<void>("set_connect_pending", { hostId, active });
+
+/** Forget every open dialog — a reload leaves none of them on screen. */
+export const clearConnectPending = () => invoke<void>("clear_connect_pending");
+
 export const disconnectHost = (hostId: string) =>
   invoke<boolean>("disconnect_host", { hostId });
 

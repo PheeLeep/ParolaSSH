@@ -3,6 +3,7 @@ import { AppNavbar } from "./components/AppNavbar";
 import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
 import { Toaster } from "./components/Toaster";
+import { clearConnectPending } from "./features/hosts/api";
 import { ElevationProvider } from "./features/hosts/ElevationProvider";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
@@ -71,6 +72,9 @@ function AppShell() {
   useEffect(() => {
     transfers.start();
     void applyStoredConcurrency();
+    // A reload destroys every dialog but not the Rust process, so anything it
+    // still thinks is open would leave the tray blinking at nothing.
+    void clearConnectPending();
   }, []);
 
   return (

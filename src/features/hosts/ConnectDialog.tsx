@@ -40,6 +40,17 @@ export function ConnectDialog({
   /** What the key on disk needs, once the Rust side has looked at it. */
   const [need, setNeed] = useState<PassphraseNeed | null>(null);
 
+  // The tray blinks from the moment we start asking, not from the submit:
+  // the attempt began when this opened. Cleanup covers cancel, close, and
+  // navigating away, so there is one path back out.
+  useEffect(() => {
+    if (!host) return;
+    void api.setConnectPending(host.id, true);
+    return () => {
+      void api.setConnectPending(host.id, false);
+    };
+  }, [host]);
+
   useEffect(() => {
     if (!host) {
       setPassword("");

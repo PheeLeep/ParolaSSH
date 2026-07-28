@@ -5,7 +5,7 @@
 <h1 align="center">ParolaSSH</h1>
 
 <p align="center">
-  <b>ParolaSSH</b> (<i>parola</i> — "lighthouse" in Filipino) is a GUI SSH remote console
+  <b>ParolaSSH</b> (<i>parola</i> - "lighthouse" in Filipino) is a GUI SSH remote console
   and server manager: keep your machines in one place, watch them, and administer
   them without remembering every flag and log path.<br>
   Built with <b>Tauri 2</b>, <b>React 19</b> and <b>Rust</b> (<code>russh</code>).
@@ -22,7 +22,7 @@
 
 <!-- Screenshots go here -->
 
-Routine work — services, updates, load, power, files — lives in panes, while the
+Routine work - services, updates, load, power, files - lives in panes, while the
 real terminal stays one click away. It **reports and acts on your command**: it never
 installs packages, never changes a server's configuration on its own, and never
 sends a credential you did not choose.
@@ -32,7 +32,7 @@ sends a credential you did not choose.
 **Connections**
 - Saved hosts with groups, tags and free-text search
 - Auth via password, private key, SSH agent, or `none` (Tailscale SSH)
-- Host key verification during key exchange — before any password is sent
+- Host key verification during key exchange - before any password is sent
 - Port probe that distinguishes refused / timeout / not-SSH
 - 30-second heartbeat with four honest status states
 
@@ -41,18 +41,18 @@ sends a credential you did not choose.
 |---|---|
 | Overview | OS, elevation, host key, uptime, heartbeat |
 | Terminal | Real PTY, multi-shell tabs (max 8), renameable, persistent scrollback |
-| Services | `systemctl` / `sc query` — start, stop, restart, plus journal or SCM events with live follow |
+| Services | `systemctl` / `sc query` - start, stop, restart, plus journal or SCM events with live follow |
 | Performance | CPU, memory, load, disks; user-set 1–30 s sampling |
 | Updates | Pending apt/dnf packages; Windows hotfix history |
-| Audit | Handshake crypto, `sshd -T` posture, key permissions — with per-host dismissals |
-| Files | SFTP browser — upload, download (files *and* folders), rename, move, copy, delete; symlinks shown but never followed |
+| Audit | Handshake crypto, `sshd -T` posture, key permissions - with per-host dismissals |
+| Files | SFTP browser - upload, download (files *and* folders), rename, move, copy, delete; symlinks shown but never followed |
 
 **File operations**
 - Rename and move are one SFTP request; neither will ever land on an existing name
 - Copy runs `cp -a` on the server, so a 10 GB duplicate never crosses the network
 - Cut / copy / paste across folders, with the destination checked before anything runs
 - Folder download walks the tree and queues each file, mirroring the layout locally
-- A name already taken prompts to **overwrite, keep both, or skip** — with apply-to-all,
+- A name already taken prompts to **overwrite, keep both, or skip** - with apply-to-all,
   so a recursive transfer asks once rather than fifty times
 
 **File transfers**
@@ -60,12 +60,12 @@ sends a credential you did not choose.
 - 3 transfers at once by default, 1–8 in Settings; lowering it never interrupts a running one
 - High / Normal / Low priority, ties broken by arrival, each waiting row showing its place
 - Transfers page tracks everything live, whichever host started it and wherever you navigate
-- Downloads stage as `.part` and are renamed only after the last byte, `0600` from creation —
+- Downloads stage as `.part` and are renamed only after the last byte, `0600` from creation -
   a cancelled or dropped transfer never leaves a truncated file wearing the real name
 - Every transfer is length-checked; pipelined reads move ~85 MB/s over a LAN
 
 > **Two things SFTP will not do.** Symlinks and device files are listed with their
-> target and refused for every operation — following one is how a host makes a
+> target and refused for every operation - following one is how a host makes a
 > download read `/dev/zero` forever or land outside the folder you picked. And the
 > subsystem runs as the user you signed in as with no sudo available, so a denied
 > path says so and names the fix rather than offering an elevation that cannot work.
@@ -75,12 +75,12 @@ sends a credential you did not choose.
 - Scored audit of your local SSH directory (weak algorithms, exposed keys, loose modes)
 
 **VPN awareness**
-- Detects Tailscale, Twingate, NetBird, ZeroTier and WireGuard — read-only, no login, no `up`
+- Detects Tailscale, Twingate, NetBird, ZeroTier and WireGuard - read-only, no login, no `up`
 - Imports tailnet peers as saved hosts, MagicDNS address preferred
 - Explains a CGNAT address that can't be reached because the client is down
 
 **Elsewhere**
-- One session, many channels — extra shells and polling share a single handshake
+- One session, many channels - extra shells and polling share a single handshake
 - Sessions view across every host, sudo/UAC elevation handled per platform
 - Light / dark / system themes, motion controls, single-instance launch
 
@@ -88,7 +88,7 @@ sends a credential you did not choose.
 
 Prerequisites: **Node 18+**, **Rust (stable)**, and the
 [Tauri 2 system dependencies](https://tauri.app/start/prerequisites/) for your
-platform — WebKitGTK + `libssl-dev` on Linux, WebView2 on Windows.
+platform - WebKitGTK + `libssl-dev` on Linux, WebView2 on Windows.
 
 ```sh
 git clone https://github.com/PheeLeep/ParolaSSH.git
@@ -133,7 +133,7 @@ Hosts and settings live in the app config directory, written owner-only.
 ## Platform support
 
 Linux and Windows are developed and tested against real VMs. **macOS and BSD are
-written for but untested** — the power, metrics and audit paths have macOS/BSD
+written for but untested** - the power, metrics and audit paths have macOS/BSD
 branches, and no machine has ever run them. Treat it as unsupported until someone
 does; reports welcome.
 
@@ -143,4 +143,4 @@ does; reports welcome.
 
 ---
 
-Status: **early** — v0.1.0. See [ROADMAP.md](docs/ROADMAP.md) for the current state.
+Status: **early** - v0.1.0. See [ROADMAP.md](docs/ROADMAP.md) for the current state.

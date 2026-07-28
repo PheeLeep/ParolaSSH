@@ -56,7 +56,7 @@ pub enum Remediation {
     /// We can fix this ourselves, on request.
     #[serde(rename_all = "camelCase")]
     RestrictPermissions { path: String, is_dir: bool },
-    /// The user has to decide — we show the command, we do not run it.
+    /// The user has to decide - we show the command, we do not run it.
     #[serde(rename_all = "camelCase")]
     Manual { instruction: String },
 }
@@ -69,7 +69,7 @@ pub struct Finding {
     pub rule_id: String,
     pub severity: Severity,
     pub title: String,
-    /// One sentence on why it matters — this is what makes a report useful.
+    /// One sentence on why it matters - this is what makes a report useful.
     pub detail: String,
     /// Human-readable location, e.g. `id_rsa` or `config:12`.
     pub location: String,
@@ -93,7 +93,7 @@ pub struct SeverityCounts {
 pub struct AuditReport {
     pub ssh_dir: String,
     pub dir_exists: bool,
-    /// Set when `~/.ssh` is a symlink — fixes would touch the target.
+    /// Set when `~/.ssh` is a symlink - fixes would touch the target.
     pub symlink_target: Option<String>,
     pub directory_permissions: KeyPermissions,
     pub findings: Vec<Finding>,
@@ -108,7 +108,7 @@ pub struct AuditReport {
 /// the fields are all strings and options, easy to transpose positionally.
 struct NewFinding<'a> {
     rule_id: &'a str,
-    /// The stable thing this is about — a fingerprint, or a path. Combined
+    /// The stable thing this is about - a fingerprint, or a path. Combined
     /// with `rule_id` to form the id that suppressions key off.
     target: &'a str,
     severity: Severity,
@@ -269,7 +269,7 @@ fn check_directory(context: &mut RuleContext, ssh_dir: &Path, permissions: &KeyP
             title: "SSH directory is a symlink".into(),
             detail: format!(
                 "It points at {}. Permissions are audited on the target, and any fix applied \
-                 here changes that file — check whether it is tracked in a dotfiles repository.",
+                 here changes that file - check whether it is tracked in a dotfiles repository.",
                 target.display()
             ),
             location: dir_path.clone(),
@@ -371,7 +371,7 @@ fn check_key_permissions(context: &mut RuleContext, key: &SshKey) {
             }),
         ),
 
-        // Never report "unknown" as safe — say so, and let the user decide.
+        // Never report "unknown" as safe - say so, and let the user decide.
         None => context.add_key(
             key,
             "perm.key.unknown",
@@ -456,7 +456,7 @@ fn check_key_encryption(context: &mut RuleContext, key: &SshKey) {
             format!("{} uses the old PEM encryption scheme", key.file_name),
             format!(
                 "This key is encrypted with {cipher} using a single MD5 pass over your \
-                 passphrase — a GPU can try billions of guesses per second against it. \
+                 passphrase - a GPU can try billions of guesses per second against it. \
                  Re-encrypt it in the OpenSSH format, which uses bcrypt."
             ),
             Some(Remediation::Manual {
@@ -483,7 +483,7 @@ fn check_key_encryption(context: &mut RuleContext, key: &SshKey) {
             "key.unencrypted",
             Severity::Medium,
             format!("{} has no passphrase", key.file_name),
-            "Anyone who gets a copy of this file — a backup, a stolen laptop, a synced folder — \
+            "Anyone who gets a copy of this file - a backup, a stolen laptop, a synced folder - \
              can use it immediately. This is a deliberate trade-off for agent and CI workflows; \
              dismiss the finding if that is the case here.",
             Some(Remediation::Manual {
@@ -575,7 +575,7 @@ fn check_key_pairing(context: &mut RuleContext, key: &SshKey) {
             "key.no-public",
             Severity::Info,
             format!("{} has no .pub file", key.file_name),
-            "Not a security problem — the public key can always be derived — but some tools \
+            "Not a security problem - the public key can always be derived - but some tools \
              expect the file to exist.",
             Some(Remediation::Manual {
                 instruction: format!("ssh-keygen -y -f \"{}\" > \"{}.pub\"", key.path, key.path),
@@ -756,7 +756,7 @@ fn check_known_hosts(context: &mut RuleContext, ssh_dir: &Path, known_hosts: &Kn
             severity: Severity::Low,
             title: format!("{} host entries are stored in the clear", unhashed.len()),
             detail: "known_hosts is a readable list of every machine you connect to. Anyone who \
-                     gets this file — or malware running as you — learns your entire \
+                     gets this file - or malware running as you - learns your entire \
                      infrastructure."
                 .into(),
             location: "known_hosts".into(),
@@ -820,7 +820,7 @@ fn count(findings: &[Finding]) -> SeverityCounts {
 /// instance would saturate the score and stop distinguishing "needs tidying"
 /// from "actively compromised". `counts` still reports every finding.
 fn score(findings: &[Finding]) -> u32 {
-    // Collapse to one entry per rule, keeping the worst severity seen — a rule
+    // Collapse to one entry per rule, keeping the worst severity seen - a rule
     // like `cfg.forward-agent` varies by context.
     let mut per_rule: BTreeMap<&str, (Severity, u32)> = BTreeMap::new();
     for finding in findings.iter().filter(|finding| !finding.suppressed) {

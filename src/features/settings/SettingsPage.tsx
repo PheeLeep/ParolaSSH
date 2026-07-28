@@ -2,6 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, Form, Spinner } from "react-bootstrap";
 import {
   ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Equal,
   FolderOpen,
   Home,
   Info,
@@ -35,11 +38,13 @@ import {
   TERMINAL_FONT_FAMILIES,
   clampConcurrency,
   readAutoAudit,
+  readDefaultTransferPriority,
   readMaxConcurrentTransfers,
   readNavLayout,
   readStartupView,
   readTerminalFont,
   writeAutoAudit,
+  writeDefaultTransferPriority,
   writeMaxConcurrentTransfers,
   writeNavLayout,
   writeStartupView,
@@ -49,6 +54,7 @@ import {
   type TerminalFont,
 } from "./preferences";
 import { hostNavStyle } from "../../lib/appWindow";
+import type { TransferPriority } from "../hosts/types";
 import type { Navigate } from "../../navigation";
 
 type SettingsTab =
@@ -88,6 +94,9 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const [autoAudit, setAutoAudit] = useState<boolean>(readAutoAudit);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
+  const [defaultPriority, setDefaultPriority] = useState<TransferPriority>(
+    readDefaultTransferPriority,
+  );
   const [sshDir, setSshDir] = useState<SshLocation | null>(null);
 
   useEffect(() => {
@@ -126,6 +135,12 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeConcurrency = (next: number) => {
     setConcurrency(clampConcurrency(next));
     void writeMaxConcurrentTransfers(next).then(setConcurrency);
+  };
+
+  // Read at enqueue time, so this only affects transfers queued from now on.
+  const changeDefaultPriority = (next: TransferPriority) => {
+    setDefaultPriority(next);
+    writeDefaultTransferPriority(next);
   };
 
   // Open terminals follow this immediately, except where a tab set its own.
@@ -202,7 +217,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
 
           <SettingRow
             title="Navigation layout"
-            hint={`Which platform's title bar the top navigation imitates. Auto follows this machine — ${HOST_NAV_LABEL}. The window's own decorations don't change.`}
+            hint={`Which platform's title bar the top navigation imitates. Auto follows this machine - ${HOST_NAV_LABEL}. The window's own decorations don't change.`}
             last
           >
             <Form.Select
@@ -264,7 +279,6 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           <SettingRow
             title="Transfers at once"
             hint="How many uploads and downloads run in parallel across every host. The rest wait in the queue, highest priority first. Lowering this never interrupts a transfer already running."
-            last
           >
             <div className="d-flex align-items-center gap-2">
               <Button
@@ -289,6 +303,23 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
                 <Plus className="icon-sm" aria-hidden="true" />
               </Button>
             </div>
+          </SettingRow>
+
+          <SettingRow
+            title="Default priority"
+            hint="What new uploads and downloads are queued at. A transfer that is still waiting can be moved up or down from its row on the Transfers page."
+            last
+          >
+            <Segmented<TransferPriority>
+              label="Default priority"
+              value={defaultPriority}
+              onChange={changeDefaultPriority}
+              options={[
+                { value: "low", label: "Low", Icon: ChevronDown },
+                { value: "normal", label: "Normal", Icon: Equal },
+                { value: "high", label: "High", Icon: ChevronUp },
+              ]}
+            />
           </SettingRow>
         </Card.Body>
       </Card>

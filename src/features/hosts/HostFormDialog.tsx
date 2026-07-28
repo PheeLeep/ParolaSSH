@@ -67,7 +67,7 @@ export function HostFormDialog({
   const canSubmit =
     draft.hostname.trim().length > 0 && draft.username.trim().length > 0 && !busy;
 
-  /** Check the port before saving — the commonest mistake is a wrong one. */
+  /** Check the port before saving - the commonest mistake is a wrong one. */
   const runProbe = async () => {
     setProbing(true);
     setProbe(null);
@@ -230,7 +230,7 @@ export function HostFormDialog({
               <option value="">Choose a key…</option>
               {keys.map((key) => (
                 <option key={key.path} value={key.path}>
-                  {key.fileName} — {key.algorithm}
+                  {key.fileName} - {key.algorithm}
                 </option>
               ))}
             </Form.Select>
@@ -248,7 +248,7 @@ export function HostFormDialog({
             <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
             <div>
               No password or key is sent. Only works where the server already
-              knows who you are — Tailscale SSH authenticates the node over
+              knows who you are - Tailscale SSH authenticates the node over
               WireGuard before SSH begins, and then asks for nothing. Its server
               is Linux-only and opt-in; an ordinary sshd, and any Windows host,
               will refuse this.

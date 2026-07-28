@@ -31,13 +31,14 @@ import {
   type ConflictPrompt,
 } from "./FilesDialogs";
 import { formatBytes } from "./format";
+import { readDefaultTransferPriority } from "../settings/preferences";
 import * as toast from "../../lib/toast";
 
 /** Browse a host's filesystem over SFTP.
  *
  *  Two things are deliberately absent. There is no elevation button: SFTP runs
  *  as the user who signed in and the subsystem has no sudo, so a denied path
- *  stays denied until you reconnect as someone else — the error says exactly
+ *  stays denied until you reconnect as someone else - the error says exactly
  *  that rather than offering a prompt that cannot work.
  *
  *  And symlinks are shown but never opened. A link is the cheapest way for a
@@ -146,7 +147,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
         if (id !== requestId.current) return;
         setListing(next);
         setPath(next.path);
-        // Rows that are gone cannot stay selected — including after a delete.
+        // Rows that are gone cannot stay selected - including after a delete.
         setSelected((current) => {
           if (current.size === 0) return current;
           const paths = new Set(next.entries.map((entry) => entry.path));
@@ -212,7 +213,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
     const walking = toast.progress("Preparing download…");
 
     try {
-      // { remotePath, relative } — `relative` is where it lands under `dir`.
+      // { remotePath, relative } - `relative` is where it lands under `dir`.
       const planned: { remotePath: string; relative: string }[] = [];
       const skipped: string[] = [];
       let truncated = false;
@@ -257,10 +258,12 @@ export function FilesPane({ hostId }: { hostId: string }) {
         return;
       }
 
+      const priority = readDefaultTransferPriority();
       for (const { item, onConflict } of plan) {
         await api.enqueueDownload(hostId, item.remotePath, dir, {
           relative: item.relative,
           onConflict,
+          priority,
         });
       }
       await transfers.refresh();
@@ -291,7 +294,9 @@ export function FilesPane({ hostId }: { hostId: string }) {
 
     setBusy(true);
     try {
-      await api.enqueueUpload(hostId, chosen, path);
+      await api.enqueueUpload(hostId, chosen, path, {
+        priority: readDefaultTransferPriority(),
+      });
       await transfers.refresh();
       toast.success("Upload queued", chosen.split(/[/\\]/).pop());
       // The new file only appears once it has landed, so this is a courtesy
@@ -427,7 +432,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
 
   /** Paste whatever is on the clipboard into the folder on screen.
    *
-   *  A copy is done by the server (`cp`), a cut by SFTP rename — neither moves
+   *  A copy is done by the server (`cp`), a cut by SFTP rename - neither moves
    *  bytes across the network, so both are effectively instant even for large
    *  trees. Conflicts are resolved first, because rename refuses to overwrite
    *  and `cp` would happily clobber. */
@@ -712,8 +717,8 @@ export function FilesPane({ hostId }: { hostId: string }) {
  *  on the row rather than appearing as an error after a click, so the refusal
  *  is visible before anyone tries. */
 const INERT_REASON: Record<string, string> = {
-  symlink: "Symbolic link — ParolaSSH does not follow links.",
-  other: "Not a regular file — device files, sockets and pipes are skipped.",
+  symlink: "Symbolic link - ParolaSSH does not follow links.",
+  other: "Not a regular file - device files, sockets and pipes are skipped.",
 };
 
 function FileRow({
@@ -766,11 +771,11 @@ function FileRow({
         </span>
       </td>
       <td className="text-end font-monospace small">
-        {isDir ? "—" : formatBytes(entry.size)}
+        {isDir ? "-" : formatBytes(entry.size)}
       </td>
       <td className="text-body-secondary small">{formatModified(entry.modified)}</td>
       <td className="font-monospace small text-body-secondary">
-        {entry.mode === null ? "—" : entry.mode.toString(8).padStart(4, "0")}
+        {entry.mode === null ? "-" : entry.mode.toString(8).padStart(4, "0")}
       </td>
       <td className="text-center datatable__sticky datatable__sticky--right">
         <div className="d-inline-flex gap-1" onClick={(event) => event.stopPropagation()}>
@@ -904,7 +909,7 @@ function freeName(name: string, taken: Set<string>): string {
 }
 
 function formatModified(seconds: number | null): string {
-  if (seconds === null) return "—";
+  if (seconds === null) return "-";
   return new Date(seconds * 1000).toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short",

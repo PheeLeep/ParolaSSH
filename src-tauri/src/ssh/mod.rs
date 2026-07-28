@@ -21,7 +21,7 @@ use serde::{Serialize, Serializer};
 /// Errors surfaced to the frontend.
 ///
 /// Messages are written for a human reading a dialog. They deliberately avoid
-/// echoing file contents — only paths the user already knows about.
+/// echoing file contents - only paths the user already knows about.
 #[derive(Debug, thiserror::Error)]
 pub enum SshError {
     #[error("Could not locate your home directory.")]

@@ -11,7 +11,7 @@ import {
 /** What the user picked. `system` follows the OS reduced-motion setting. */
 export type MotionMode = "system" | "full" | "reduced" | "off";
 
-/** What actually gets applied — `system` is resolved away. */
+/** What actually gets applied - `system` is resolved away. */
 export type ResolvedMotion = "full" | "reduced" | "off";
 
 export const MOTION_STORAGE_KEY = "parolassh:motion";

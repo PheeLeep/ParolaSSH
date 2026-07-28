@@ -136,7 +136,7 @@ pub fn run() {
             remote::commands::list_remote_tree,
             remote::commands::local_conflicts,
             remote::commands::remote_conflicts,
-            // Transfers — one queue across every host
+            // Transfers - one queue across every host
             remote::commands::enqueue_download,
             remote::commands::enqueue_upload,
             remote::commands::list_transfers,

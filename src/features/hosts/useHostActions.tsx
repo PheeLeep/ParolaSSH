@@ -7,7 +7,7 @@ import { useHosts, type HostRow } from "./HostsProvider";
 import { draftFromHost, emptyDraft, type HostDraft } from "./types";
 
 /** The host dialogs, shared by the list and the detail pane, so a fix to the
- *  connect flow is made once. The caller renders `dialogs` anywhere — they are
+ *  connect flow is made once. The caller renders `dialogs` anywhere - they are
  *  modals, so tree position does not matter. */
 export function useHostActions(options: { onOpenTerminal?: (host: HostRow) => void } = {}) {
   const { connect, disconnect, getConnection } = useHosts();
@@ -24,7 +24,7 @@ export function useHostActions(options: { onOpenTerminal?: (host: HostRow) => vo
   const remove = useCallback((host: HostRow) => setDeleting(host), []);
   const power = useCallback((host: HostRow) => setPowering(host), []);
 
-  /** Agent auth still opens the dialog — it reports failures and host keys. */
+  /** Agent auth still opens the dialog - it reports failures and host keys. */
   const startConnect = useCallback((host: HostRow) => setConnecting(host), []);
 
   const endConnect = useCallback(

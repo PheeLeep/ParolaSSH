@@ -14,7 +14,7 @@ import type { HostRow } from "./HostsProvider";
 
 /**
  * Right-click on a host, wherever it is listed. The entries are the same ones
- * the row's ⋯ menu offers, so a fix to the connect flow is still made once —
+ * the row's ⋯ menu offers, so a fix to the connect flow is still made once -
  * this only changes how they are reached.
  */
 export function useHostContextMenu({
@@ -40,7 +40,7 @@ export function useHostContextMenu({
     const { host } = target;
     const connected = host.status === "connected";
     // Both need a live session, so they say why they are off rather than
-    // vanishing — a menu that changes shape is harder to learn.
+    // vanishing - a menu that changes shape is harder to learn.
     const needsSession = connected ? undefined : "Connect first";
 
     const items: ContextMenuItem[] = [

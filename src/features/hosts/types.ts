@@ -55,7 +55,7 @@ export type Elevation =
   | { kind: "windowsAdminToken" }
   | { kind: "unavailable"; reason: string };
 
-/** What the first key exchange negotiated — the audit tab's free tier. */
+/** What the first key exchange negotiated - the audit tab's free tier. */
 export interface NegotiatedCrypto {
   kex: string;
   hostKeyAlgorithm: string;
@@ -125,12 +125,6 @@ export interface PowerOutcome {
   exitCode: number | null;
 }
 
-export interface CommandOutput {
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-}
-
 export interface TerminalOutput {
   hostId: string;
   shellId: number;
@@ -161,7 +155,7 @@ export interface StreamClosed {
 
 /* ── Files (SFTP) ──────────────────────────────────────────────────────── */
 
-/** `symlink` and `other` exist to be refused, not opened — keeping them as
+/** `symlink` and `other` exist to be refused, not opened - keeping them as
  *  distinct kinds is what lets a row explain why it is inert. */
 export type EntryKind = "dir" | "file" | "symlink" | "other";
 
@@ -204,7 +198,7 @@ export interface TreeListing {
 /* ── Transfers ─────────────────────────────────────────────────────────── */
 
 /** What to do when a destination is already taken. Decided by the user before
- *  anything is queued — the backend has nobody to ask. */
+ *  anything is queued - the backend has nobody to ask. */
 export type OnConflict = "keepBoth" | "overwrite";
 
 
@@ -381,12 +375,12 @@ export interface RemoteAuditReport {
 
 /* ── Tasks ─────────────────────────────────────────────────────────────── */
 
-/** Where a task appears. `global` still runs on exactly one host — the one
- *  being looked at — it is only offered everywhere. */
+/** Where a task appears. `global` still runs on exactly one host - the one
+ *  being looked at - it is only offered everywhere. */
 export type TaskScope = { kind: "global" } | { kind: "host"; hostId: string };
 
 /** How much a command deserves to be stopped at. `none` is "nothing matched",
- *  never "this is safe" — see the module doc on the Rust side. */
+ *  never "this is safe" - see the module doc on the Rust side. */
 export type DangerLevel = "none" | "caution" | "destructive";
 
 export interface DangerReason {
@@ -472,7 +466,7 @@ export const OS_LABELS: Record<OsFamily, string> = {
 };
 
 export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
-  notNeeded: "Root — no elevation needed",
+  notNeeded: "Root - no elevation needed",
   sudoNoPassword: "sudo (no password)",
   sudoPassword: "sudo (password required)",
   windowsAdminToken: "Administrator token",

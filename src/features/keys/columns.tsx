@@ -66,7 +66,7 @@ export function createKeyColumns(actions: KeyRowActions): ColumnDef<SshKey, any>
             {value}
           </code>
         ) : (
-          <span className="text-body-secondary">—</span>
+          <span className="text-body-secondary">-</span>
         );
       },
     }),

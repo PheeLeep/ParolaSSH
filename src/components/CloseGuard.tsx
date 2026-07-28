@@ -77,12 +77,12 @@ export function CloseGuard() {
             {transferCount === 1
               ? "1 file transfer is still running"
               : `${transferCount} file transfers are still running`}{" "}
-            and will be lost — nothing resumes after a restart.
+            and will be lost - nothing resumes after a restart.
           </p>
         )}
         <p className="mb-0 text-body-secondary">
           Quitting disconnects every session. Minimizing to the tray keeps
-          them alive — ParolaSSH stays in the system tray, ready to reopen.
+          them alive - ParolaSSH stays in the system tray, ready to reopen.
         </p>
       </Modal.Body>
       <Modal.Footer>

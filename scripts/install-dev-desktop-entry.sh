@@ -9,7 +9,7 @@
 # The app_id is `parolassh` (GTK falls back to the binary name because
 # `enableGTKAppId` is off), so the entry must be named parolassh.desktop.
 #
-# Packaged builds do not need this — the deb/rpm/AppImage bundler installs its
+# Packaged builds do not need this - the deb/rpm/AppImage bundler installs its
 # own entry with StartupWMClass=parolassh, which matches the same app_id.
 #
 # Undo with: scripts/install-dev-desktop-entry.sh --uninstall
@@ -49,7 +49,7 @@ declare -A sources=(
 for size in "${!sources[@]}"; do
   src="$repo_root/${sources[$size]}"
   if [[ ! -f "$src" ]]; then
-    echo "missing $src — run 'npm run tauri icon' first" >&2
+    echo "missing $src - run 'npm run tauri icon' first" >&2
     exit 1
   fi
   install -Dm644 "$src" "$icons_dir/${size}x${size}/apps/parolassh.png"

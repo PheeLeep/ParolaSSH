@@ -1,6 +1,6 @@
 //! Which VPN clients live on this machine, and are they up?
 //!
-//! ParolaSSH does not tunnel anything itself — these clients sit at the OS
+//! ParolaSSH does not tunnel anything itself - these clients sit at the OS
 //! network layer, so traffic already flows through them. Knowing about them
 //! only buys a better diagnosis than "no response from 100.x.y.z".
 //!
@@ -37,7 +37,7 @@ static RESOURCE_CACHE: TtlCache<Vec<twingate::TwingateResource>> =
     TtlCache::new(cache::RESOURCE_TTL);
 
 /// Every VPN's condition, from the cache unless the caller insists otherwise.
-/// **Prefer this to `detect_all`** — that one always spawns processes.
+/// **Prefer this to `detect_all`** - that one always spawns processes.
 pub async fn statuses(freshness: Freshness) -> Vec<VpnStatus> {
     STATUS_CACHE.get(freshness, detect_all).await
 }
@@ -56,7 +56,7 @@ pub enum VpnKind {
     Netbird,
     Zerotier,
     /// Plain WireGuard tunnels, with the branded meshes' interfaces
-    /// excluded — see `wireguard`.
+    /// excluded - see `wireguard`.
     Wireguard,
 }
 
@@ -123,14 +123,14 @@ async fn detect_all() -> Vec<VpnStatus> {
 /// What a saved address suggests about the network it lives on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AddressHint {
-    /// A `*.ts.net` MagicDNS name — unambiguously Tailscale.
+    /// A `*.ts.net` MagicDNS name - unambiguously Tailscale.
     Tailscale,
     /// An IP in 100.64.0.0/10, which Tailscale, Twingate and NetBird all assign
-    /// from — and which is rarely a genuine ISP address. A hint, not a verdict.
+    /// from - and which is rarely a genuine ISP address. A hint, not a verdict.
     CarrierGradeNat,
 }
 
-/// Read what the address gives away. Purely lexical — resolving DNS would be
+/// Read what the address gives away. Purely lexical - resolving DNS would be
 /// useless here, since these names only resolve while the VPN is up.
 pub fn address_hint(hostname: &str) -> Option<AddressHint> {
     let host = hostname.trim().trim_end_matches('.');
@@ -162,7 +162,7 @@ pub struct VpnBinding {
 
 /// Tie one address to the VPN that carries it, if any.
 ///
-/// Twingate's resource list outranks the lexical hints — it is the client
+/// Twingate's resource list outranks the lexical hints - it is the client
 /// stating ownership. A bare CGNAT address is attributed only when exactly one
 /// CGNAT VPN is installed; otherwise the glyph would be a guess.
 pub fn bind(
@@ -219,7 +219,7 @@ pub fn bind(
 /// `None` when there is nothing useful to add.
 ///
 /// Reads the cache throughout: a page of unreachable hosts explains itself from
-/// one detection pass, and the answer is at most `STATUS_TTL` old — which is
+/// one detection pass, and the answer is at most `STATUS_TTL` old - which is
 /// fresher than the probe that just failed.
 pub async fn explain_unreachable(hostname: &str) -> Option<String> {
     // Resources are often plain LAN addresses no heuristic could attribute, so
@@ -259,7 +259,7 @@ fn twingate_advice(resource: &twingate::TwingateResource, twingate: &VpnStatus) 
     } else {
         format!(
             "This address is the Twingate resource '{}', and Twingate is connected \
-             with valid authentication — the host itself may be off, or not \
+             with valid authentication - the host itself may be off, or not \
              reachable from the network this computer is on.",
             resource.name
         )
@@ -330,7 +330,7 @@ fn advice(hint: AddressHint, statuses: &[VpnStatus]) -> Option<String> {
 
 /// What happened when we tried a client's CLI.
 pub(crate) enum CliOutcome {
-    /// Not there, or not runnable — either way, not installed.
+    /// Not there, or not runnable - either way, not installed.
     Missing,
     /// It ran but did not answer within `CLI_TIMEOUT`.
     TimedOut,

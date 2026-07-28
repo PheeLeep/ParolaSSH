@@ -19,7 +19,7 @@ pub enum AuthMethod {
     /// SSH's `none` method: present no credential and let the server decide.
     ///
     /// For Tailscale SSH, which authenticates the node over WireGuard before
-    /// the SSH layer is reached and then offers `none` — a host that has it
+    /// the SSH layer is reached and then offers `none` - a host that has it
     /// enabled cannot be connected to any other way. Never tried as a
     /// fallback: it is chosen per host, so "no credential was sent" is always
     /// something the operator asked for.
@@ -39,7 +39,7 @@ pub struct HostRecord {
     /// Private key to offer when `auth_method` is `Publickey`.
     #[serde(default)]
     pub key_path: Option<String>,
-    /// Folder the host is filed under. Never empty — see `HostDraft::validate`.
+    /// Folder the host is filed under. Never empty - see `HostDraft::validate`.
     pub group: String,
     #[serde(default)]
     pub tags: Vec<String>,
@@ -50,7 +50,7 @@ pub struct HostRecord {
     pub last_connected: Option<String>,
 }
 
-/// What the form sends. `id` is absent when adding, present when editing —
+/// What the form sends. `id` is absent when adding, present when editing -
 /// which is the only difference between the two operations.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,7 +78,7 @@ impl HostDraft {
     /// Trim, apply defaults, and reject anything unusable.
     ///
     /// Validation lives here rather than in the dialog because the store is
-    /// the thing that has to stay consistent — a record with an empty hostname
+    /// the thing that has to stay consistent - a record with an empty hostname
     /// would sit in the list forever failing to connect for no visible reason.
     pub fn validate(self) -> SshResult<ValidDraft> {
         let hostname = self.hostname.trim().to_string();

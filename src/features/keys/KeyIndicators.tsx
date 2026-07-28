@@ -24,7 +24,7 @@ import {
   type Severity,
 } from "./types";
 
-/** An escalating ladder of shapes, so severity reads before colour does —
+/** An escalating ladder of shapes, so severity reads before colour does -
  *  which also keeps it legible for red/green colour blindness. */
 export const SEVERITY_ICONS: Record<Severity, LucideIcon> = {
   critical: Radiation,
@@ -91,7 +91,7 @@ export function PairingBadge({ pairing }: { pairing: PublicKeyPairing }) {
 }
 
 /** Permissions rendered as a verdict rather than a raw mode.
- *  "Unknown" is shown as its own state — never as "fine". */
+ *  "Unknown" is shown as its own state - never as "fine". */
 export function PermissionsBadge({ permissions }: { permissions: KeyPermissions }) {
   const exposed = isExposed(permissions);
   const description = describePermissions(permissions);
@@ -133,7 +133,7 @@ export function EncryptionBadge({ encrypted }: { encrypted: boolean }) {
 /** Fingerprints are long and identical up to the last few characters, so the
  *  tail is what the eye actually compares. */
 export function Fingerprint({ value }: { value: string | null }) {
-  if (!value) return <span className="text-body-secondary">—</span>;
+  if (!value) return <span className="text-body-secondary">-</span>;
 
   return (
     <code className="fingerprint small" title={value}>

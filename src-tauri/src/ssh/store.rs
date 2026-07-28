@@ -1,6 +1,6 @@
 //! Persistence for dismissed audit findings.
 //!
-//! Some findings are deliberate choices — an unencrypted key used by a CI
+//! Some findings are deliberate choices - an unencrypted key used by a CI
 //! agent, say. A rule that cannot be dismissed trains people to ignore the
 //! whole report, so dismissals are stored and survive restarts.
 //!
@@ -33,7 +33,7 @@ impl Suppressions {
         self.write_named(config_dir, FILE_NAME)
     }
 
-    /// The same store under another file name — the remote audit keeps its
+    /// The same store under another file name - the remote audit keeps its
     /// dismissals separate from the local one so the two reports cannot
     /// silence each other.
     pub fn read_named(config_dir: &Path, file_name: &str) -> Self {

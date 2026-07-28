@@ -59,7 +59,7 @@ export function OverviewPane({
           />
           <Stat
             label="Heartbeat"
-            value={health?.latencyMs != null ? `${health.latencyMs} ms` : "—"}
+            value={health?.latencyMs != null ? `${health.latencyMs} ms` : "-"}
             sub={health ? "checked every 30s" : "not yet checked"}
             Icon={Activity}
           />

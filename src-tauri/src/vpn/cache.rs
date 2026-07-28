@@ -28,7 +28,7 @@ pub enum Freshness {
     /// A poll or a glyph: reuse whatever is still within the TTL.
     Cached,
     /// The user pressed refresh. Anything loaded before they asked is stale by
-    /// definition — but a load that *started* after they asked still counts, so
+    /// definition - but a load that *started* after they asked still counts, so
     /// three impatient clicks cost one CLI round, not three.
     Forced,
 }

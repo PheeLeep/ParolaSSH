@@ -96,7 +96,7 @@ pub fn set_finding_suppressed(
 }
 
 /// Tighten a file or directory to owner-only access. The only automatic fix,
-/// and only one explicitly requested path at a time — a bulk chmod that guesses
+/// and only one explicitly requested path at a time - a bulk chmod that guesses
 /// wrong on a symlinked dotfiles repo is worse than the finding.
 #[tauri::command]
 pub fn restrict_permissions(path: String, is_dir: bool) -> SshResult<KeyPermissions> {

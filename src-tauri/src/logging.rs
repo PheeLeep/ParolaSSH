@@ -151,9 +151,9 @@ fn write_line(level: Level, target: &str, message: &str) {
     };
 
     let mut line = String::with_capacity(message.len() + 48);
-    let _ = write!(
+    let _ = writeln!(
         line,
-        "{}\t{}\t{}\t{}\n",
+        "{}\t{}\t{}\t{}",
         now_iso8601(),
         level.as_str(),
         sanitize(target),
@@ -211,7 +211,7 @@ fn open_append(path: &Path) -> Option<File> {
 }
 
 /// The last `max_lines` entries, newest last. Unparseable lines are dropped
-/// rather than shown raw — a half-written final line is normal while the app
+/// rather than shown raw - a half-written final line is normal while the app
 /// is running.
 pub fn read_entries(max_lines: usize) -> Vec<LogEntry> {
     let Some(logger) = LOGGER.get() else {

@@ -9,7 +9,7 @@
 //!
 //! On Windows, querying pending updates needs the PSWindowsUpdate module, which
 //! most machines lack. Without it the pane says so and shows recent installed
-//! hotfixes instead — it never installs the module to improve its own answer.
+//! hotfixes instead - it never installs the module to improve its own answer.
 
 use std::time::Duration;
 
@@ -49,7 +49,7 @@ pub enum UpdateReport {
     List {
         manager: String,
         updates: Vec<UpdateItem>,
-        /// How many are security updates — `None` when the manager cannot say.
+        /// How many are security updates - `None` when the manager cannot say.
         security_count: Option<usize>,
     },
     /// The manager answered and the answer is "nothing pending".
@@ -237,7 +237,7 @@ fn parse_dnf(stdout: &str) -> UpdateReport {
 
     if updates.is_empty() {
         // Exit 100 promised rows, so finding none means the output surprised
-        // us — "up to date" would be wrong.
+        // us - "up to date" would be wrong.
         return UpdateReport::ManagerMissing {
             detail: "dnf reported pending updates but the list could not be read; \
                      check from a terminal."
@@ -351,7 +351,7 @@ pub fn parse_windows_pending(output: &CommandOutput) -> UpdateReport {
     }
 }
 
-/// The sentence shown when PSWindowsUpdate is absent — the normal case.
+/// The sentence shown when PSWindowsUpdate is absent - the normal case.
 pub fn module_missing_detail() -> String {
     "Pending updates on Windows can only be queried through the PSWindowsUpdate \
      PowerShell module, which this machine does not have. This app will not \

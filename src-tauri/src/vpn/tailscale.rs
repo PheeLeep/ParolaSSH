@@ -2,7 +2,7 @@
 //!
 //! `tailscale status --json` is the one interface that behaves identically on
 //! all three platforms, so it is the only one used. It also carries the peer
-//! list, so importing tailnet machines as hosts needs no second source — the
+//! list, so importing tailnet machines as hosts needs no second source - the
 //! daemon's local API socket would mean HTTP over a Unix socket on two
 //! platforms and a named pipe on the third, for data already in hand.
 
@@ -43,7 +43,7 @@ struct PeerJson {
 pub struct TailscalePeer {
     /// Short name, used as the suggested label.
     pub host_name: String,
-    /// What a saved host would connect to — see `preferred_address`.
+    /// What a saved host would connect to - see `preferred_address`.
     pub address: String,
     /// The MagicDNS name without its trailing dot, when there is one.
     pub dns_name: Option<String>,
@@ -113,7 +113,7 @@ pub async fn status() -> VpnStatus {
 /// The exit code is deliberately ignored: `tailscale status` exits non-zero
 /// for states like `Stopped` that are perfectly good answers, so the JSON is
 /// the only signal trusted. No JSON at all means the CLI could not reach its
-/// own daemon — the service side of Tailscale is not running.
+/// own daemon - the service side of Tailscale is not running.
 fn interpret(stdout: &str) -> VpnStatus {
     let Some(state) = serde_json::from_str::<StatusJson>(stdout)
         .ok()
@@ -134,7 +134,7 @@ fn interpret(stdout: &str) -> VpnStatus {
         "NeedsMachineAuth" => (false, "awaiting device approval".to_string()),
         "Starting" => (false, "still starting".to_string()),
         // A state this module has not heard of is shown as-is rather than
-        // hidden — "InUseOtherUser" says more than "unknown" would.
+        // hidden - "InUseOtherUser" says more than "unknown" would.
         other => (false, other.to_string()),
     };
 
@@ -234,7 +234,7 @@ fn peer_from(peer: PeerJson) -> TailscalePeer {
 ///
 /// MagicDNS wins: it survives the node changing address, which the 100.x one
 /// does not. The IP is the fallback for tailnets with MagicDNS off, and the
-/// bare hostname the last resort — better than saving a host with no address.
+/// bare hostname the last resort - better than saving a host with no address.
 fn preferred_address(dns_name: Option<&str>, ip: Option<&str>, host_name: &str) -> String {
     dns_name
         .or(ip)
@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn no_json_means_the_daemon_is_gone() {
         // What the CLI prints when tailscaled is not running is prose, not
-        // JSON — that shape is itself the answer.
+        // JSON - that shape is itself the answer.
         let status = interpret("failed to connect to local tailscaled; it doesn't appear to be running\n");
         assert!(status.installed);
         assert!(!status.up);

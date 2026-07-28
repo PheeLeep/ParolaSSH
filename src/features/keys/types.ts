@@ -173,7 +173,7 @@ export function describePermissions(permissions: KeyPermissions): string {
 }
 
 /** Whether anyone but the owner can reach the file.
- *  `null` means undetermined — deliberately distinct from "safe". */
+ *  `null` means undetermined - deliberately distinct from "safe". */
 export function isExposed(permissions: KeyPermissions): boolean | null {
   switch (permissions.kind) {
     case "posix":

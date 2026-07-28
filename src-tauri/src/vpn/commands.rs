@@ -13,7 +13,7 @@ pub struct VpnOverview {
     pub statuses: Vec<VpnStatus>,
     /// Only the hostnames that could be tied to a VPN appear here.
     pub bindings: Vec<VpnBinding>,
-    /// What `twingate resources` reported — empty off Linux or with the
+    /// What `twingate resources` reported - empty off Linux or with the
     /// service stopped.
     pub twingate_resources: Vec<ResourceInfo>,
 }

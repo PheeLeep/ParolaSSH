@@ -49,7 +49,3 @@ export function OsIcon({
     </svg>
   );
 }
-
-export function hasOsIcon(os: OsFamily | undefined): boolean {
-  return os === "windows" || Boolean(os && MARKS[os]);
-}

@@ -109,7 +109,7 @@ fn a_locked_down_directory_scores_well() {
     assert!(!found.contains(&"perm.dir"));
     assert!(!found.contains(&"algo.dsa"));
 
-    // The key genuinely has no passphrase, so that finding is expected —
+    // The key genuinely has no passphrase, so that finding is expected -
     // and it is the only thing costing points.
     assert!(found.contains(&"key.unencrypted"));
     assert_eq!(report.counts.critical, 0);
@@ -182,7 +182,7 @@ fn a_readable_but_not_writable_config_is_not_flagged() {
 
     write(&dir.join("config"), "Host a\n  User me\n");
     chmod(dir, 0o700);
-    // 0644 is readable by others but not writable — ssh accepts this.
+    // 0644 is readable by others but not writable - ssh accepts this.
     chmod(&dir.join("config"), 0o644);
 
     let report = run(dir);
@@ -231,7 +231,7 @@ fn stray_backup_copies_are_reported() {
     let found = rules(&report);
 
     assert!(found.contains(&"file.stray-secret"));
-    // Same key in two files — the duplicate rule should catch it too.
+    // Same key in two files - the duplicate rule should catch it too.
     assert!(found.contains(&"key.duplicate"));
 }
 
@@ -779,7 +779,7 @@ fn distinct_rules_cost_more_than_repeats_of_one() {
 
 /// Audit the real `~/.ssh`, if there is one.
 ///
-/// Ignored by default so the suite stays hermetic — run it with
+/// Ignored by default so the suite stays hermetic - run it with
 /// `cargo test -- --ignored` to check the scanner against a directory that
 /// was not built by these fixtures. Prints rule ids and counts only, never
 /// paths or fingerprints.
@@ -866,7 +866,7 @@ fn a_public_key_from_a_different_pair_is_flagged() {
         Some(Severity::High)
     );
 
-    // Both fingerprints belong in the message — that is what makes it
+    // Both fingerprints belong in the message - that is what makes it
     // actionable rather than just alarming.
     let finding = report
         .findings
@@ -909,7 +909,7 @@ fn an_unparseable_private_key_does_not_claim_a_mismatch() {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path();
 
-    // A legacy PEM cannot be decoded, so the sidecar cannot be checked —
+    // A legacy PEM cannot be decoded, so the sidecar cannot be checked -
     // reporting a mismatch here would be a guess, not a finding.
     write(&dir.join("id_rsa"), LEGACY_PEM_KEY);
     write(&dir.join("id_rsa.pub"), ED25519_PUB);

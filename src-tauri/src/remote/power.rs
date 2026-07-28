@@ -4,7 +4,7 @@
 //! counts the delay in minutes and Windows in seconds, and macOS has no
 //! `shutdown -c` (a pending job is killed instead).
 //!
-//! Elevation differs too. Unix is a credential check — `sudo -S` reads the
+//! Elevation differs too. Unix is a credential check - `sudo -S` reads the
 //! password from stdin, so it works over a non-interactive channel and keeps
 //! the password out of the remote process list. Windows decides at logon and
 //! has no `sudo -S` equivalent, but OpenSSH does not UAC-filter its logons, so
@@ -135,7 +135,7 @@ fn classify_os(text: &str) -> OsFamily {
     OsFamily::Unknown
 }
 
-/// Work out how — or whether — this account can power the machine down.
+/// Work out how - or whether - this account can power the machine down.
 pub async fn check_privileges(session: &Session) -> SshResult<PrivilegeReport> {
     let (os, os_detail) = detect_os(session).await?;
 
@@ -257,7 +257,7 @@ async fn check_windows_privileges(
                 reason: format!("`{user}` is a standard user, and UAC cannot be answered over SSH."),
             },
             "UAC's consent prompt is drawn on the interactive desktop, which an SSH \
-             session does not have — so unlike sudo, there is no password we could \
+             session does not have - so unlike sudo, there is no password we could \
              send to elevate. Connect as a member of Administrators, or grant this \
              account the “Force shutdown from a remote system” right."
                 .to_string(),
@@ -477,7 +477,7 @@ fn interpret(
     } else {
         let scheduled = output.stdout.trim();
         if scheduled.is_empty() {
-            format!("{} — scheduled.", plan.summary)
+            format!("{} - scheduled.", plan.summary)
         } else {
             scheduled.to_string()
         }
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(with_password.command, "sudo -S -p '' shutdown -r now");
         assert!(with_password.needs_password);
 
-        // NOPASSWD still needs the sudo prefix — just not a password.
+        // NOPASSWD still needs the sudo prefix - just not a password.
         let no_password = plan(OsFamily::Linux, &Elevation::SudoNoPassword, &reboot).unwrap();
         assert_eq!(no_password.command, "sudo -S -p '' shutdown -r now");
         assert!(!no_password.needs_password);
@@ -707,7 +707,7 @@ mod tests {
         let reboot_now = request(PowerAction::Reboot, 0);
         let plan_now = plan(OsFamily::Linux, &Elevation::NotNeeded, &reboot_now).unwrap();
 
-        // sshd dies before reporting an exit status — the expected outcome.
+        // sshd dies before reporting an exit status - the expected outcome.
         let dropped = CommandOutput {
             stdout: String::new(),
             stderr: String::new(),

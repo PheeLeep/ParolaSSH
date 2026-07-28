@@ -5,7 +5,7 @@
 //! privileges, macOS and Windows get presence detection only.
 //!
 //! Interfaces owned by the branded meshes (NetBird runs its kernel WireGuard as
-//! `wt0`) are ignored — they have their own entry, and counting them twice
+//! `wt0`) are ignored - they have their own entry, and counting them twice
 //! would fabricate a VPN conflict.
 
 use super::{VpnKind, VpnStatus};
@@ -15,7 +15,7 @@ pub async fn status() -> VpnStatus {
     use super::{run_cli, CliOutcome};
 
     // `ip -j link show type wireguard` lists every WireGuard interface with
-    // no privileges needed — unlike `wg show`, which wants CAP_NET_ADMIN.
+    // no privileges needed - unlike `wg show`, which wants CAP_NET_ADMIN.
     let interfaces = match run_cli("ip", &["-j", "link", "show", "type", "wireguard"]).await {
         CliOutcome::Ran { stdout, .. } => parse_interfaces(&stdout),
         _ => Vec::new(),
@@ -124,7 +124,7 @@ fn parse_interfaces(stdout: &str) -> Vec<String> {
 
 /// Drop interfaces owned by branded meshes. `wt*` is NetBird's kernel-mode
 /// naming; a hand-written "wt-something" would be missed, which is the cheaper
-/// mistake — a phantom second VPN alarms, a missed name only stays quiet.
+/// mistake - a phantom second VPN alarms, a missed name only stays quiet.
 #[cfg(any(target_os = "linux", test))]
 fn plain_tunnels(interfaces: Vec<String>) -> Vec<String> {
     interfaces

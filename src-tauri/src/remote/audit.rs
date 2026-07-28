@@ -1,17 +1,17 @@
 //! Remote security posture, tiered by what it costs the host.
 //!
-//! * **Tier 0 — free.** Facts from the key exchange russh already performed.
+//! * **Tier 0 - free.** Facts from the key exchange russh already performed.
 //!   No remote command runs. With russh's default preference lists a SHA-1 kex
 //!   or CBC cipher can never be negotiated, so those rules are dormant guards;
 //!   the ones that fire are `ssh-rsa` host key and missing strict kex.
-//! * **Tier 1 — read-only commands.** `sshd -T` posture, `authorized_keys`
+//! * **Tier 1 - read-only commands.** `sshd -T` posture, `authorized_keys`
 //!   permissions, world-writable PATH directories, and (only with elevation,
 //!   which `/etc/shadow` demands) empty-password accounts. What could not be
 //!   checked is named in a note, never guessed at.
 //!
 //! Report shape follows `ssh::audit`: same `Severity`, counts, and scoring.
 //! Findings are not the local `Finding` type, whose `Remediation` can be an
-//! action this app runs — remote remediation is instruction text only.
+//! action this app runs - remote remediation is instruction text only.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -47,7 +47,7 @@ pub struct RemoteAuditReport {
     pub host_id: String,
     pub findings: Vec<RemoteFinding>,
     pub counts: SeverityCounts,
-    /// 0–100, suppressed findings not counted — same scale as the key audit.
+    /// 0–100, suppressed findings not counted - same scale as the key audit.
     pub score: u32,
     /// Whether the tier-1 commands ran at all (they need a Unix host).
     pub tier1_ran: bool,
@@ -85,7 +85,7 @@ fn tier0_findings(crypto: &NegotiatedCrypto) -> Vec<NewFinding> {
             severity: Severity::High,
             title: "Key exchange uses SHA-1".to_string(),
             detail: format!(
-                "The connection negotiated {}, which relies on SHA-1 — broken for \
+                "The connection negotiated {}, which relies on SHA-1 - broken for \
                  collision resistance since 2017.",
                 crypto.kex
             ),
@@ -355,7 +355,7 @@ pub struct GatheredTier1 {
     pub note: Option<String>,
 }
 
-/// Build the report. Pure — everything remote has already happened.
+/// Build the report. Pure - everything remote has already happened.
 pub fn assemble(
     host_id: &str,
     crypto: Option<&NegotiatedCrypto>,

@@ -2,10 +2,10 @@
 
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
 
-/** Sizes in the units a file manager uses — 1 KB is 1024 B, and the precision
+/** Sizes in the units a file manager uses - 1 KB is 1024 B, and the precision
  *  drops as the number grows so a column of them stays the same width. */
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "—";
+  if (!Number.isFinite(bytes) || bytes < 0) return "-";
   if (bytes < 1024) return `${bytes} B`;
 
   let value = bytes;
@@ -18,13 +18,13 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 100 ? 0 : 1)} ${UNITS[unit]}`;
 }
 
-/** Bytes per second, or an em dash before there is enough to divide by. */
-export function formatRate(bytes: number, elapsedMs: number): string {
-  if (elapsedMs < 500 || bytes <= 0) return "—";
-  return `${formatBytes((bytes / elapsedMs) * 1000)}/s`;
+/** A transfer speed, or an em dash before there is a measurement to show. */
+export function formatSpeed(bytesPerSecond: number | null): string {
+  if (bytesPerSecond === null || !Number.isFinite(bytesPerSecond)) return "-";
+  return `${formatBytes(Math.round(bytesPerSecond))}/s`;
 }
 
-/** Whole percent, clamped — a server that reports a stale size can otherwise
+/** Whole percent, clamped - a server that reports a stale size can otherwise
  *  push a progress bar past its own end. */
 export function percentOf(done: number, total: number | null): number | null {
   if (!total || total <= 0) return null;

@@ -17,7 +17,7 @@ import { useVpn } from "./VpnProvider";
 import type { Navigate } from "../../navigation";
 
 /** Overview first, then one tab per installed client. Absent clients get no
- *  tab — a dead "not installed" pane is noise. */
+ *  tab - a dead "not installed" pane is noise. */
 type VpnTab = "overview" | VpnKind;
 
 type BoundHost = { host: HostRow; binding: VpnBinding };
@@ -25,7 +25,7 @@ type BoundHost = { host: HostRow; binding: VpnBinding };
 /**
  * Everything the app knows about the VPNs on this machine, one client per tab.
  *
- * Strictly an observer: there is no connect button, deliberately — starting a
+ * Strictly an observer: there is no connect button, deliberately - starting a
  * VPN elevates privileges and changes routes machine-wide, which belongs to
  * the VPN's own UI.
  */
@@ -105,7 +105,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
         <Card body className="text-body-secondary mb-4">
           ParolaSSH looks for Tailscale and Twingate on this machine and found
           neither. If a saved host lives behind one of them, install and
-          connect that client — connections here will then flow through it
+          connect that client - connections here will then flow through it
           automatically.
         </Card>
       ) : (
@@ -128,7 +128,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
                 className={`feature-nav__item${tab === status.kind ? " is-active" : ""}`}
                 onClick={() => setTab(status.kind)}
                 aria-current={tab === status.kind ? "page" : undefined}
-                title={`${VPN_LABELS[status.kind]} — ${status.detail}`}
+                title={`${VPN_LABELS[status.kind]} - ${status.detail}`}
               >
                 <span
                   className={`status-dot status-dot--${status.up ? "connected" : "offline"}`}
@@ -214,7 +214,7 @@ function OverviewPane({
             >
               <StatusDot
                 status={status.up ? "connected" : "offline"}
-                title={`${VPN_LABELS[status.kind]} — ${status.detail}`}
+                title={`${VPN_LABELS[status.kind]} - ${status.detail}`}
               />
               <span className="fw-semibold">{VPN_LABELS[status.kind]}</span>
               <span className="text-body-secondary small me-auto">
@@ -295,7 +295,7 @@ function ClientPane({
                   <td>
                     <code className="small">{resource.address}</code>
                   </td>
-                  <td className="text-body-secondary">{resource.alias ?? "—"}</td>
+                  <td className="text-body-secondary">{resource.alias ?? "-"}</td>
                   <td>
                     <AuthPill resource={resource} />
                   </td>

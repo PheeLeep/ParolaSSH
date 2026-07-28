@@ -1,6 +1,6 @@
 /** The Rust command surface.
  *
- *  These are the only filesystem verbs the frontend has — there is no fs
+ *  These are the only filesystem verbs the frontend has - there is no fs
  *  plugin scoped to ~/.ssh, deliberately, so nothing here can return private
  *  key material. */
 

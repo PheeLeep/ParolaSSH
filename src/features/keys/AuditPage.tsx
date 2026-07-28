@@ -119,7 +119,7 @@ export function AuditPage({ onNavigate }: { onNavigate: Navigate }) {
               <div>
                 Your SSH directory is a symlink to{" "}
                 <code>{report.symlinkTarget}</code>. Permissions are read from
-                the target, and applying a fix here changes that file — check
+                the target, and applying a fix here changes that file - check
                 whether it is tracked in a dotfiles repository first.
               </div>
             </Alert>
@@ -181,7 +181,7 @@ export function AuditPage({ onNavigate }: { onNavigate: Navigate }) {
   );
 }
 
-/** The score is a summary, not a grade — the findings below are the substance. */
+/** The score is a summary, not a grade - the findings below are the substance. */
 function ScoreTile({ score }: { score: number }) {
   const tone = score >= 90 ? "good" : score >= 70 ? "fair" : score >= 40 ? "poor" : "bad";
 

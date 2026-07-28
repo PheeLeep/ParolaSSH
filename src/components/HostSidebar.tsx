@@ -34,7 +34,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   const { report } = useKeys();
 
   // Shells open and close from the terminal pane, which lives elsewhere in
-  // the tree — subscribe to the store rather than lifting its state.
+  // the tree - subscribe to the store rather than lifting its state.
   useSyncExternalStore(terminals.subscribe, terminals.getVersion);
   const sessionCount = terminals.liveCount();
 
@@ -47,7 +47,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
 
   // The sidebar is the fastest route to a host, so connect/power/edit are
   // reachable from it by right-click rather than only from the hosts table.
-  // It owns its own dialog set — the table's live on a page that may not be
+  // It owns its own dialog set - the table's live on a page that may not be
   // mounted when the menu is used.
   const { actions, dialogs } = useHostActions({
     onOpenTerminal: (host) => onNavigate({ kind: "host", hostId: host.id }),
@@ -57,7 +57,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
     onOpen: (host) => onNavigate({ kind: "host", hostId: host.id }),
   });
 
-  // Only critical and high findings earn a badge — anything more and the
+  // Only critical and high findings earn a badge - anything more and the
   // count stops meaning "look at this now".
   const keyAlerts = report ? report.counts.critical + report.counts.high : 0;
 

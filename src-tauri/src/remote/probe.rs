@@ -60,7 +60,7 @@ pub async fn probe(hostname: &str, port: u16) -> SshResult<ProbeResult> {
             let message = if error.kind() == std::io::ErrorKind::ConnectionRefused {
                 format!(
                     "{hostname} refused the connection on port {port}. \
-                     Nothing is listening there — check the port, or that sshd is running."
+                     Nothing is listening there - check the port, or that sshd is running."
                 )
             } else {
                 format!("Could not reach {address}: {error}")
@@ -93,7 +93,7 @@ pub async fn probe(hostname: &str, port: u16) -> SshResult<ProbeResult> {
         .unwrap_or(false);
 
     let message = match (&banner, is_ssh) {
-        (Some(text), true) => format!("Port {port} is open — {text}"),
+        (Some(text), true) => format!("Port {port} is open - {text}"),
         (Some(_), false) => format!(
             "Port {port} is open, but what answered is not an SSH server. \
              Check that the port is the right one for this host."
@@ -118,7 +118,7 @@ pub async fn probe(hostname: &str, port: u16) -> SshResult<ProbeResult> {
 /// Just "is the port open?", with a caller-chosen timeout.
 ///
 /// The heartbeat runs this against every saved host on a timer, so it skips
-/// the banner read entirely — a completed TCP handshake is enough to say the
+/// the banner read entirely - a completed TCP handshake is enough to say the
 /// machine is up, and waiting for a greeting from each of twenty hosts would
 /// make a 30-second cycle take longer than the cycle.
 pub async fn reachable(hostname: &str, port: u16, timeout: Duration) -> (bool, Option<u64>) {
@@ -157,7 +157,7 @@ mod tests {
         let result = probe("127.0.0.1", port).await.unwrap();
         assert!(!result.reachable);
         assert!(!result.is_ssh);
-        // A closed port is a finding, not a failure — the UI needs the message.
+        // A closed port is a finding, not a failure - the UI needs the message.
         assert!(result.message.contains(&port.to_string()));
     }
 

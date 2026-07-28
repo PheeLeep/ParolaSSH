@@ -5,7 +5,7 @@ import * as api from "../api";
 import { errorMessage } from "../api";
 import type { UpdateReport } from "../types";
 
-/** Read-only by design: the pane reports, the operator installs — in a
+/** Read-only by design: the pane reports, the operator installs - in a
  *  terminal, on purpose. There is no install command to call. */
 export function UpdatesPane({ hostId }: { hostId: string }) {
   const [report, setReport] = useState<UpdateReport | null>(null);
@@ -33,7 +33,7 @@ export function UpdatesPane({ hostId }: { hostId: string }) {
     <div className="d-flex flex-column gap-3">
       <div className="d-flex align-items-center gap-2">
         <span className="text-body-secondary small me-auto">
-          Read-only — nothing is ever installed from here.
+          Read-only - nothing is ever installed from here.
         </span>
         <Button
           size="sm"
@@ -66,7 +66,7 @@ function ReportBody({ report }: { report: UpdateReport }) {
           <CircleCheck className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
           <div>
             <span className="fw-semibold">{report.manager}</span> reports nothing
-            pending — the host is up to date.
+            pending - the host is up to date.
           </div>
         </Alert>
       );
@@ -102,7 +102,7 @@ function ReportBody({ report }: { report: UpdateReport }) {
                     <tr key={hotfix.id}>
                       <td className="font-monospace small">{hotfix.id}</td>
                       <td className="text-body-secondary small">{hotfix.description}</td>
-                      <td className="small">{hotfix.installedOn ?? "—"}</td>
+                      <td className="small">{hotfix.installedOn ?? "-"}</td>
                     </tr>
                   ))}
                 </tbody>

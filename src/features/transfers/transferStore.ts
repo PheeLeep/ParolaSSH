@@ -5,7 +5,7 @@
  *  keep running while the user navigates anywhere else, including away from
  *  that host entirely. State that lives in the tree dies with the tree.
  *
- *  Rust owns the queue — ordering, the concurrency cap, what runs next. This
+ *  Rust owns the queue - ordering, the concurrency cap, what runs next. This
  *  is a cache of it, refreshed from `list_transfers` whenever the backend says
  *  the shape changed, with byte counts patched in between from the progress
  *  events. The split matters: two windows, or a reload, must never disagree
@@ -42,7 +42,7 @@ export function getVersion(): number {
   return version;
 }
 
-/** Every transfer, newest first — the order Rust returns them in. */
+/** Every transfer, newest first - the order Rust returns them in. */
 export function all(): TransferRecord[] {
   return records;
 }
@@ -59,7 +59,7 @@ export function counts(): TransferSummary {
   return summary;
 }
 
-/** Running plus queued — what the sidebar badge shows. */
+/** Running plus queued - what the sidebar badge shows. */
 export function pendingCount(): number {
   return summary.running + summary.queued;
 }
@@ -77,6 +77,7 @@ export async function refresh(): Promise<void> {
       api.transferSummary(),
     ]);
     announceSettled(records, next);
+    pruneSamples(next);
     records = next;
     summary = nextSummary;
     emit();
@@ -90,7 +91,7 @@ export async function refresh(): Promise<void> {
  *
  *  The whole point of a background queue is that you stop watching it, so an
  *  outcome nobody is looking at still has to reach the user. Only transitions
- *  are announced — re-reading the same finished row must not toast twice.
+ *  are announced - re-reading the same finished row must not toast twice.
  */
 function announceSettled(before: TransferRecord[], after: TransferRecord[]) {
   if (before.length === 0) return; // First load is history, not news.
@@ -121,6 +122,7 @@ function announceSettled(before: TransferRecord[], after: TransferRecord[]) {
  *  the list on every chunk would put a command round trip in the path of a
  *  progress bar. Anything structural still comes from `refresh`. */
 function applyProgress(id: number, bytesDone: number, bytesTotal: number | null) {
+  sampleRate(id, bytesDone);
   let changed = false;
   records = records.map((record) => {
     if (record.id !== id) return record;
@@ -134,9 +136,58 @@ function applyProgress(id: number, bytesDone: number, bytesTotal: number | null)
   if (changed) emit();
 }
 
+/* ── Speed ─────────────────────────────────────────────────────────────── */
+
+/** Last progress sample per transfer, plus the smoothed rate derived from it. */
+type Sample = { bytes: number; at: number; rate: number | null };
+
+const samples = new Map<number, Sample>();
+
+/** Bytes per second for a running transfer, or null before there are two
+ *  samples far enough apart to divide by. Rust reports bytes, not speed -
+ *  timing them here keeps the backend out of the business of guessing what
+ *  window a progress bar wants. */
+export function rateOf(id: number): number | null {
+  return samples.get(id)?.rate ?? null;
+}
+
+/** Fold a progress sample into the rate. Chunks land irregularly, so short
+ *  gaps are skipped rather than divided by, and an EMA keeps the number
+ *  readable instead of flickering with every chunk. */
+function sampleRate(id: number, bytesDone: number) {
+  const now = Date.now();
+  const previous = samples.get(id);
+
+  if (!previous) {
+    samples.set(id, { bytes: bytesDone, at: now, rate: null });
+    return;
+  }
+
+  const elapsed = now - previous.at;
+  if (elapsed < 500) return;
+
+  const instant = Math.max(0, ((bytesDone - previous.bytes) * 1000) / elapsed);
+  samples.set(id, {
+    bytes: bytesDone,
+    at: now,
+    rate: previous.rate === null ? instant : previous.rate * 0.6 + instant * 0.4,
+  });
+}
+
+/** Drop samples for anything no longer moving, so a finished row shows no
+ *  speed and the map does not grow with the history list. */
+function pruneSamples(current: TransferRecord[]) {
+  const running = new Set(
+    current.filter((record) => record.state === "running").map((record) => record.id),
+  );
+  for (const id of samples.keys()) {
+    if (!running.has(id)) samples.delete(id);
+  }
+}
+
 let wiring: Promise<UnlistenFn[]> | null = null;
 
-/** Attach to the backend's events. Idempotent — the first caller wires it and
+/** Attach to the backend's events. Idempotent - the first caller wires it and
  *  everyone after shares that subscription, so mounting two panes does not
  *  double-count events. */
 export function start(): void {

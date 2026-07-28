@@ -2,7 +2,7 @@
 //!
 //! Two kinds share this shape. A **built-in** is authored in `catalog.rs`:
 //! its command is constructed per OS in Rust and unit-tested. A **saved** task
-//! is the operator's own text, run verbatim — this module never rewrites it,
+//! is the operator's own text, run verbatim - this module never rewrites it,
 //! never "fixes" it, and never claims it is safe. Both are shown in full
 //! before anything runs, which is the only promise the app makes about either.
 //!
@@ -28,7 +28,7 @@ const MAX_NAME_LEN: usize = 80;
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum TaskScope {
     /// Offered on every host whose OS it supports. Pressing it still runs on
-    /// exactly one machine — the one being looked at.
+    /// exactly one machine - the one being looked at.
     Global,
     /// Offered on one host only.
     Host { host_id: String },
@@ -54,7 +54,7 @@ pub struct TaskRecord {
     pub description: Option<String>,
     pub command: String,
     /// Run through the session's elevation route. The operator's choice, per
-    /// task — never inferred from what the command looks like.
+    /// task - never inferred from what the command looks like.
     #[serde(default)]
     pub elevated: bool,
     pub scope: TaskScope,
@@ -130,7 +130,7 @@ impl TaskDraft {
             )));
         }
         // A NUL cannot survive the trip to a shell, so it is a paste accident
-        // rather than a command. Other control characters are left alone —
+        // rather than a command. Other control characters are left alone -
         // a tab in a script is fine.
         if command.contains('\0') {
             return Err(SshError::invalid(
@@ -174,7 +174,7 @@ impl ValidDraft {
 /// Exactly what a press would run, and what the app thinks of it.
 ///
 /// Shown before execution, always. `command` is the literal string sent to the
-/// host — including the `sudo` wrapper when the task asked for one — because a
+/// host - including the `sudo` wrapper when the task asked for one - because a
 /// display copy that drifts from what runs is worse than showing nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,7 +189,7 @@ pub struct TaskPlan {
     pub danger: DangerAssessment,
 }
 
-/// Build the plan. Pure — no session, no I/O, so every branch is unit-tested.
+/// Build the plan. Pure - no session, no I/O, so every branch is unit-tested.
 ///
 /// The danger assessment runs on the command as *written*, not on the wrapped
 /// form: wrapping adds a `sudo` that the operator did not type, and reporting
@@ -228,7 +228,7 @@ pub fn plan(
                  connect as a user who can elevate."
             )))
         }
-        // Already root, and Windows decided at logon — the command runs as-is.
+        // Already root, and Windows decided at logon - the command runs as-is.
         Elevation::NotNeeded | Elevation::WindowsAdminToken => inner.to_string(),
         Elevation::SudoNoPassword | Elevation::SudoPassword => {
             if !os.is_unix() {
@@ -343,7 +343,7 @@ mod tests {
         let message = refused.unwrap_err().to_string();
         assert!(message.contains("sudo is not installed"), "{message}");
 
-        // The same task without elevation still runs — the refusal is about
+        // The same task without elevation still runs - the refusal is about
         // the promise, not about the command.
         assert!(plan(
             OsFamily::Linux,

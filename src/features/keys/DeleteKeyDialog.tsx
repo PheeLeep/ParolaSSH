@@ -7,7 +7,7 @@ import type { SshKey } from "./types";
 
 /** Irreversible, so it asks twice: an explicit acknowledgement plus the
  *  button itself. The fingerprint is shown so you can confirm *which* key is
- *  about to go — file names in `~/.ssh` look alike. */
+ *  about to go - file names in `~/.ssh` look alike. */
 export function DeleteKeyDialog({
   keyToDelete,
   onClose,

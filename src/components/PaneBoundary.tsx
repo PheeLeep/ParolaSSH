@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Alert, Button } from "react-bootstrap";
 
 interface Props {
-  /** Remount key — switching panes clears a previous crash. */
+  /** Remount key - switching panes clears a previous crash. */
   resetKey: string;
   children: ReactNode;
 }

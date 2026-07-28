@@ -70,7 +70,7 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
                     disabled={selected.length !== 1}
                     title={
                       selected.length > 1
-                        ? "Connect one at a time — each may need its own password"
+                        ? "Connect one at a time - each may need its own password"
                         : undefined
                     }
                     onClick={() => selected[0] && actions.onConnect(selected[0])}

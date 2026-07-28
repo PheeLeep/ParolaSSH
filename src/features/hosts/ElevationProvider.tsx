@@ -14,15 +14,15 @@ import { ELEVATION_LABELS } from "./types";
 /**
  * One prompt for every privileged action, asked at the moment of elevating.
  *
- * The prompt always appears — what is worth confirming is that a command runs
+ * The prompt always appears - what is worth confirming is that a command runs
  * as root on someone else's machine, not whether a password happens to be
- * involved — and adapts to the host's elevation route:
+ * involved - and adapts to the host's elevation route:
  *
- *  - `sudoPassword` — asks for the account password, offering the one this
+ *  - `sudoPassword` - asks for the account password, offering the one this
  *    session logged in with rather than making it be typed twice.
- *  - `notNeeded` / `sudoNoPassword` / `windowsAdminToken` — a consent step
+ *  - `notNeeded` / `sudoNoPassword` / `windowsAdminToken` - a consent step
  *    showing the literal command.
- *  - `unavailable` — explains why there is no route to root.
+ *  - `unavailable` - explains why there is no route to root.
  *
  * The password is handed back to the caller and never held here.
  */
@@ -42,7 +42,7 @@ export interface ElevationRequest {
 
 export type ElevationGrant =
   /** Null when sudo needs no password, or when the session's own login
-   *  password should be used — that one never travels through the webview. */
+   *  password should be used - that one never travels through the webview. */
   | { outcome: "granted"; password: string | null }
   /** The user chose to continue without elevating. */
   | { outcome: "unprivileged" }
@@ -159,7 +159,7 @@ function ElevationPrompt({
           ) : (
             <ShieldCheck aria-hidden="true" />
           )}
-          Elevate — {request.summary}
+          Elevate - {request.summary}
         </Modal.Title>
       </Modal.Header>
 
@@ -176,7 +176,7 @@ function ElevationPrompt({
                 : elevation.kind === "windowsAdminToken"
                   ? "This runs with the full Administrator token."
                   : elevation.kind === "notNeeded"
-                    ? `This runs as root — ${user} already is root.`
+                    ? `This runs as root - ${user} already is root.`
                     : "This runs with root privileges."}
             </div>
             {elevation.kind === "unavailable" ? elevation.reason : elevationExplanation}
@@ -232,7 +232,7 @@ function ElevationPrompt({
 
             <Form.Text className="text-body-secondary">
               Sent to <code>sudo -S</code> over the existing encrypted channel,
-              never as part of the command line — so it stays out of the remote
+              never as part of the command line - so it stays out of the remote
               process list, and it is not kept after this run.
             </Form.Text>
           </div>

@@ -4,8 +4,8 @@ import { useEffect, useReducer } from "react";
  * Re-render this component whenever a module store notifies.
  *
  * This is `useSyncExternalStore`'s job, and that is what the terminal store's
- * consumers use. Where a store write lands mid-render — from a promise
- * continuation as a modal closes, say — the snapshot comparison can leave a
+ * consumers use. Where a store write lands mid-render - from a promise
+ * continuation as a modal closes, say - the snapshot comparison can leave a
  * component showing its previous state until something else re-renders it.
  *
  * A plain effect subscription with a forced re-render has no snapshot

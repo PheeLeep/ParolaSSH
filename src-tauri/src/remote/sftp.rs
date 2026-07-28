@@ -38,7 +38,7 @@ pub const MAX_ENTRIES: usize = 5_000;
 
 /// What one entry in a remote directory is.
 ///
-/// `Symlink` and `Other` (FIFO, socket, device) both exist to be refused —
+/// `Symlink` and `Other` (FIFO, socket, device) both exist to be refused -
 /// keeping them as distinct kinds lets the UI explain *why* a row is inert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -71,7 +71,7 @@ pub struct RemoteEntry {
     pub modified: Option<u64>,
     /// Permission bits, or `None` on a server that reports no mode (Windows).
     pub mode: Option<u32>,
-    /// Where a symlink points, for display only — we never follow it.
+    /// Where a symlink points, for display only - we never follow it.
     pub target: Option<String>,
 }
 
@@ -120,7 +120,7 @@ pub async fn home_dir(sftp: &SftpSession) -> SshResult<String> {
 /// List one directory.
 ///
 /// The entry kinds come from the server's `readdir` attributes, which follow
-/// `lstat` semantics — a symlink is reported as a symlink, not as whatever it
+/// `lstat` semantics - a symlink is reported as a symlink, not as whatever it
 /// points at. `read_link` is then asked only for the links, so a directory of
 /// ordinary files costs exactly one round trip.
 pub async fn list_dir(sftp: &SftpSession, path: &str) -> SshResult<DirListing> {
@@ -145,7 +145,7 @@ pub async fn list_dir(sftp: &SftpSession, path: &str) -> SshResult<DirListing> {
 
         let target = if kind == EntryKind::Symlink {
             // Display only. A failed readlink is not an error worth failing the
-            // whole listing over — the row still renders, just without a target.
+            // whole listing over - the row still renders, just without a target.
             sftp.read_link(child.clone()).await.ok()
         } else {
             None
@@ -178,7 +178,7 @@ pub async fn list_dir(sftp: &SftpSession, path: &str) -> SshResult<DirListing> {
 ///
 /// The listing already told us the kind, but that answer is as old as the last
 /// refresh and the pane may have been sitting open for an hour. Re-checking
-/// with `symlink_metadata` — which does not resolve the final component — costs
+/// with `symlink_metadata` - which does not resolve the final component - costs
 /// one round trip on an operation that is about to cost thousands, and closes
 /// the window where a file is swapped for a link to `/dev/zero` after being
 /// listed.
@@ -203,7 +203,7 @@ pub fn refuse_unless_regular(kind: EntryKind, path: &str) -> Option<SshError> {
     match kind {
         EntryKind::File | EntryKind::Dir => None,
         EntryKind::Symlink => Some(SshError::invalid(format!(
-            "{path} is a symbolic link. ParolaSSH does not follow links — \
+            "{path} is a symbolic link. ParolaSSH does not follow links - \
              open the file it points at directly."
         ))),
         EntryKind::Other => Some(SshError::invalid(format!(
@@ -221,7 +221,7 @@ pub fn refuse_unless_regular(kind: EntryKind, path: &str) -> Option<SshError> {
 /// dropped, matching how a kernel treats `/..`.
 pub fn normalize(path: &str) -> String {
     // Windows OpenSSH speaks `/C:/Users/...` on the wire. Keep the leading
-    // slash — that *is* the wire form — and let the frontend present it.
+    // slash - that *is* the wire form - and let the frontend present it.
     let mut parts: Vec<&str> = Vec::new();
     for part in path.split('/') {
         match part {
@@ -258,7 +258,7 @@ pub fn parent(path: &str) -> String {
 /// Reduce a remote file name to something safe to create locally.
 ///
 /// The server chose this string. Anything that could steer the write out of the
-/// directory the user picked — separators, `..`, a drive letter, a NUL — is
+/// directory the user picked - separators, `..`, a drive letter, a NUL - is
 /// refused rather than rewritten, because a silently renamed download is worse
 /// than a refused one.
 pub fn safe_local_name(name: &str) -> SshResult<String> {
@@ -288,7 +288,7 @@ pub fn safe_local_name(name: &str) -> SshResult<String> {
     Ok(name.to_string())
 }
 
-/// Directories first, then names, case-insensitively — the ordering every file
+/// Directories first, then names, case-insensitively - the ordering every file
 /// browser has, so nobody has to think about it.
 fn compare_entries(a: &RemoteEntry, b: &RemoteEntry) -> std::cmp::Ordering {
     let rank = |kind: EntryKind| match kind {
@@ -318,7 +318,7 @@ pub fn explain_error(context: &str, error: &str) -> SshError {
     if lowered.contains("permission denied") || lowered.contains("permissiondenied") {
         return SshError::invalid(format!(
             "{context}: permission denied. SFTP runs as the user you signed in as \
-             and cannot elevate — reconnect as a user with access to this path."
+             and cannot elevate - reconnect as a user with access to this path."
         ));
     }
     if lowered.contains("no such file") || lowered.contains("nosuchfile") {
@@ -368,7 +368,7 @@ impl TreeListing {
 
 /// Collect every regular file under `root`, depth-first.
 ///
-/// Symlinks are skipped rather than followed — the same rule as everywhere
+/// Symlinks are skipped rather than followed - the same rule as everywhere
 /// else, and it is also what makes a cycle impossible. Empty directories are
 /// not recorded: only files are transferred, and a directory is created on the
 /// way to writing one.
@@ -446,7 +446,7 @@ pub fn relative_to(root: &str, child: &str) -> String {
 ///
 /// SFTP is request/response, so a serial reader idles for a round trip per
 /// chunk. `russh_sftp`'s `File` pipelines writes eight deep but reads one at a
-/// time — why uploads ran 3x faster than downloads until this existed.
+/// time - why uploads ran 3x faster than downloads until this existed.
 /// Bounds memory at `DEPTH x read_len`, about 4 MiB.
 const READ_PIPELINE_DEPTH: usize = 16;
 
@@ -635,7 +635,7 @@ fn is_eof(error: &russh_sftp::client::error::Error) -> bool {
 ///
 /// Held behind a tokio mutex because it is used across awaits, and because the
 /// subsystem is request/response per channel: two concurrent listings on one
-/// channel would interleave. Transfers deliberately do not use this — they open
+/// channel would interleave. Transfers deliberately do not use this - they open
 /// their own channel so a slow copy never blocks the pane.
 #[derive(Default)]
 pub struct BrowseSession {

@@ -227,7 +227,7 @@ export function GenerateKeyDialog({
                 autoComplete="new-password"
               />
               <Form.Text className="text-body-secondary">
-                Leave blank for no passphrase — convenient for agents and CI, but
+                Leave blank for no passphrase - convenient for agents and CI, but
                 the key file alone is then enough to authenticate as you.
               </Form.Text>
             </Form.Group>

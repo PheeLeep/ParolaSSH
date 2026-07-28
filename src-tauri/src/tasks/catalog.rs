@@ -1,7 +1,7 @@
 //! The tasks ParolaSSH ships.
 //!
-//! Every entry here is authored, per OS, in this file — never assembled from
-//! user input — and the whole catalog obeys two rules:
+//! Every entry here is authored, per OS, in this file - never assembled from
+//! user input - and the whole catalog obeys two rules:
 //!
 //! * **Nothing is installed.** No entry carries a package-manager verb. A task
 //!   that only works once something is installed reports that it is missing
@@ -12,7 +12,7 @@
 //!   other command, because being shipped by the app does not make a
 //!   disruptive command less disruptive.
 //!
-//! A family with no entry for a task simply does not see it — `None` here is
+//! A family with no entry for a task simply does not see it - `None` here is
 //! how macOS and BSD opt out of systemd phrasing, the same refusal `services`
 //! makes rather than guessing at launchd.
 
@@ -28,7 +28,7 @@ pub struct BuiltinTask {
     pub name: &'static str,
     pub description: &'static str,
     /// Whether the task is worth running at all without root. `true` means the
-    /// answer is materially incomplete unprivileged — it is still the
+    /// answer is materially incomplete unprivileged - it is still the
     /// operator's choice at run time, this is only the default the UI offers.
     pub elevated: bool,
     pub linux: Option<&'static str>,
@@ -55,7 +55,7 @@ impl BuiltinTask {
     }
 }
 
-/// A built-in flattened for one host's OS — what the frontend actually lists.
+/// A built-in flattened for one host's OS - what the frontend actually lists.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuiltinTaskView {
@@ -165,7 +165,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
     BuiltinTask {
         id: "restart-ssh",
         name: "Restart the SSH service",
-        description: "Validates the config first, and stops if it does not parse — a bad config would otherwise end every route back in.",
+        description: "Validates the config first, and stops if it does not parse - a bad config would otherwise end every route back in.",
         elevated: true,
         // `sshd -t` before the restart is the whole point of shipping this
         // rather than leaving it to a hand-typed `systemctl restart`.
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn no_builtin_is_destructive() {
-        // A shipped task may be disruptive — restarting sshd is — but nothing
+        // A shipped task may be disruptive - restarting sshd is - but nothing
         // the app authors should reach the level that demands typed
         // confirmation. If a new entry does, it needs a deliberate decision,
         // not a passing test.

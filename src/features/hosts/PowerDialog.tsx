@@ -40,7 +40,7 @@ const PRESETS = [
  * account elevates, and the literal command that will run. Both are shown
  * before the button is armed.
  *
- * Elevating is not this dialog's job — the button raises the shared elevation
+ * Elevating is not this dialog's job - the button raises the shared elevation
  * prompt, which is the one place that asks for a password or consent.
  */
 export function PowerDialog({
@@ -116,7 +116,7 @@ export function PowerDialog({
     return (
       <Modal show onHide={onClose} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Power — {host.label}</Modal.Title>
+          <Modal.Title>Power - {host.label}</Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Alert variant="warning" className="mb-0">
@@ -165,7 +165,7 @@ export function PowerDialog({
       <Modal.Header closeButton>
         <Modal.Title className="d-flex align-items-center gap-2">
           <Power aria-hidden="true" />
-          Power — {host.label}
+          Power - {host.label}
         </Modal.Title>
       </Modal.Header>
 
@@ -272,7 +272,7 @@ export function PowerDialog({
                   onClick={() => setAction("shutdown")}
                   Icon={Power}
                   name="Shut down"
-                  hint="Power off — you will need physical or IPMI access to bring it back"
+                  hint="Power off - you will need physical or IPMI access to bring it back"
                 />
                 {connection.supportsCancel && (
                   <ActionChoice
@@ -325,7 +325,7 @@ export function PowerDialog({
                 <Form.Control
                   value={message}
                   onChange={(event) => setMessage(event.target.value)}
-                  placeholder="Patching — back in five minutes"
+                  placeholder="Patching - back in five minutes"
                 />
               </Form.Group>
             )}

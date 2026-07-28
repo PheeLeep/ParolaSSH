@@ -38,7 +38,7 @@ export function VpnProvider({ children }: { children: ReactNode }) {
   const [lastChecked, setLastChecked] = useState<string | null>(null);
 
   // Deduplicated and sorted so the poll effect re-runs only when the set of
-  // addresses actually changes — not when a host is renamed or re-grouped.
+  // addresses actually changes - not when a host is renamed or re-grouped.
   const hostnamesKey = useMemo(
     () => [...new Set(hosts.map((host) => host.hostname))].sort().join("\n"),
     [hosts],

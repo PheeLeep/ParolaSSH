@@ -1,6 +1,6 @@
 //! A tolerant reader for `~/.ssh/config`.
 //!
-//! This is not a full OpenSSH config implementation — it exists to answer the
+//! This is not a full OpenSSH config implementation - it exists to answer the
 //! audit's questions ("does anything turn off host key checking?", "which
 //! identity files are referenced?"), so it keeps line numbers and leaves
 //! semantics to the rules.
@@ -31,7 +31,7 @@ impl Directive {
         self.keyword.to_lowercase()
     }
 
-    /// True for `yes`, `true`, `1` — the spellings ssh accepts as affirmative.
+    /// True for `yes`, `true`, `1` - the spellings ssh accepts as affirmative.
     pub fn is_yes(&self) -> bool {
         matches!(self.value.trim().to_lowercase().as_str(), "yes" | "true" | "1")
     }
@@ -53,7 +53,7 @@ pub struct HostBlock {
 }
 
 impl HostBlock {
-    /// True when this block applies to every host — `Host *`.
+    /// True when this block applies to every host - `Host *`.
     ///
     /// A secret set here reaches every server you connect to, which is what
     /// makes `ForwardAgent yes` under a wildcard so much worse than under a

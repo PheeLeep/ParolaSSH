@@ -8,7 +8,7 @@ import type { Finding } from "./types";
 
 /** One finding, with whatever action it supports.
  *
- *  Automatic fixes are per-finding and explicit — there is deliberately no
+ *  Automatic fixes are per-finding and explicit - there is deliberately no
  *  "fix everything" button, because a mass permission change that guesses
  *  wrong (a symlinked dotfiles repo, say) is worse than the finding. */
 export function FindingCard({ finding }: { finding: Finding }) {

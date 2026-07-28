@@ -1,7 +1,7 @@
 /** Task runs, owned outside React's tree.
  *
  *  A run belongs to the host, not to the pane that started it. Switching
- *  hosts, switching tabs and navigating away close nothing — a four-minute
+ *  hosts, switching tabs and navigating away close nothing - a four-minute
  *  backup keeps going and keeps collecting output while you look at something
  *  else. Runs end on the four moments a terminal does: host disconnected,
  *  heartbeat reaped it, the user stopped it, app exit. `closeHost` is called
@@ -32,7 +32,7 @@ export type TaskRun = {
   hostId: string;
   taskId: string;
   taskName: string;
-  /** The plan as approved — what the pane shows while it runs. */
+  /** The plan as approved - what the pane shows while it runs. */
   plan: TaskPlan;
   state: RunState;
   startedAt: number;
@@ -74,10 +74,6 @@ export function get(hostId: string): TaskRun | undefined {
   return runs.get(hostId);
 }
 
-export function isRunning(hostId: string): boolean {
-  return runs.get(hostId)?.state === "running";
-}
-
 function makeTerminal(theme: "light" | "dark"): {
   terminal: Terminal;
   fit: FitAddon;
@@ -111,7 +107,7 @@ function makeTerminal(theme: "light" | "dark"): {
 }
 
 /** Start a task. Throws rather than returning quietly when one is already in
- *  flight on this host — a button that does nothing and says nothing is
+ *  flight on this host - a button that does nothing and says nothing is
  *  indistinguishable from a broken one. */
 export async function start(
   hostId: string,
@@ -161,11 +157,11 @@ export async function start(
   // Listeners go on *before* the command is asked for. The host starts writing
   // the moment the channel opens, and a task short enough to finish inside one
   // round trip would otherwise lose its output to a listener that was still
-  // being attached — which is most of the built-ins.
+  // being attached - which is most of the built-ins.
   //
   // That leaves a smaller window: events can arrive before this side learns
   // which stream id is its own. They are buffered by id and flushed once it is
-  // known, rather than matched loosely — a followed journal on the same host is
+  // known, rather than matched loosely - a followed journal on the same host is
   // also emitting, and taking its output would be worse than dropping ours.
   const pending = new Map<number, string[]>();
   // Two numbers rather than a nullable record: the assignment happens inside a
@@ -230,7 +226,7 @@ export async function start(
   notify();
 }
 
-/** Stop watching. This closes *our* channel — it does not reach in and kill a
+/** Stop watching. This closes *our* channel - it does not reach in and kill a
  *  process on the host, and the pane says so rather than implying otherwise. */
 export async function stop(hostId: string): Promise<void> {
   const run = runs.get(hostId);
@@ -266,7 +262,7 @@ function settle(
   if (state === "stopped") {
     run.terminal.writeln(
       "\r\n\x1b[33mStopped watching. If the command was still running on the host, " +
-        "it keeps running there — closing this channel does not kill it.\x1b[0m",
+        "it keeps running there - closing this channel does not kill it.\x1b[0m",
     );
   }
 
@@ -286,7 +282,7 @@ export function attach(hostId: string, mount: HTMLElement): () => void {
     try {
       run.fit.fit();
     } catch {
-      // A mount with no layout yet — the next resize does it.
+      // A mount with no layout yet - the next resize does it.
     }
   };
   run.refit = refit;

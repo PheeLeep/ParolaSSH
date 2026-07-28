@@ -9,7 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const appWindow = getCurrentWindow();
 
-/** On macOS the native traffic lights overlay the navbar — render no custom
+/** On macOS the native traffic lights overlay the navbar - render no custom
  *  controls, just leave room for them on the left. */
 export const isMacOS = navigator.userAgent.includes("Mac");
 

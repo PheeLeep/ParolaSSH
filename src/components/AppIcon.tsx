@@ -1,7 +1,7 @@
 import { useId, type SVGProps } from "react";
 
 /**
- * The shipped app icon — the same lighthouse the taskbar and tray show —
+ * The shipped app icon - the same lighthouse the taskbar and tray show -
  * redrawn as inline SVG so the in-app brand matches the OS one.
  *
  * `variant` mirrors the two design masters: "detailed" is `design/icon.svg`

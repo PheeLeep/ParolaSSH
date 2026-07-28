@@ -225,7 +225,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     // the other half of the same test. Without this the chain stays whole for
     // up to 30 s after the session is gone.
     //
-    // Only the session ended — the machine itself is as reachable as it was a
+    // Only the session ended - the machine itself is as reachable as it was a
     // moment ago, so that half of the answer is carried over rather than
     // reset, which would wrongly paint the host offline.
     setHealth((previous) => {
@@ -327,7 +327,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
 /**
  * Settings › Startup › "Check posture on connect", honoured at the moment of
- * connecting rather than when the Audit pane is opened — a check that waits for
+ * connecting rather than when the Audit pane is opened - a check that waits for
  * a pane to be opened is not "on connect", and the pane may never be opened.
  *
  * Unprivileged always (`elevate: false`). A sudo prompt raised by connecting is

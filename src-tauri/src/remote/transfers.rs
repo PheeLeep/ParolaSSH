@@ -88,7 +88,7 @@ pub struct TransferRecord {
     pub direction: Direction,
     pub remote_path: String,
     pub local_path: String,
-    /// What the row is called — the file name, not the whole path.
+    /// What the row is called - the file name, not the whole path.
     pub name: String,
     pub priority: Priority,
     pub state: TransferState,
@@ -169,7 +169,7 @@ impl TransferManager {
     }
 
     /// Change the cap. Raising it frees slots on the next pump; lowering it
-    /// never interrupts a transfer already running — those finish, and the
+    /// never interrupts a transfer already running - those finish, and the
     /// smaller cap takes hold as they do.
     pub fn set_max_concurrent(&self, value: usize) -> usize {
         let clamped = value.clamp(MIN_MAX_CONCURRENT, MAX_MAX_CONCURRENT);
@@ -210,7 +210,7 @@ impl TransferManager {
 
     /// Hand out as many start orders as there are free slots.
     ///
-    /// `connected` answers whether a host still has a session — a transfer for
+    /// `connected` answers whether a host still has a session - a transfer for
     /// a host that went away is never started, it is failed by `fail_host`.
     /// Callers must hold the pump guard, which `lock_pump` provides.
     pub fn take_ready(&self, connected: &dyn Fn(&str) -> bool) -> Vec<StartOrder> {
@@ -357,7 +357,7 @@ impl TransferManager {
         affected
     }
 
-    /// Re-rank a waiting transfer. Running ones are left alone — their slot is
+    /// Re-rank a waiting transfer. Running ones are left alone - their slot is
     /// already spent, so the level would only affect a re-queue that never
     /// happens.
     pub fn set_priority(&self, id: u64, priority: Priority) -> bool {
@@ -375,7 +375,7 @@ impl TransferManager {
         true
     }
 
-    /// Every transfer, newest first — what the Transfers page lists.
+    /// Every transfer, newest first - what the Transfers page lists.
     pub fn snapshot(&self) -> Vec<TransferRecord> {
         let Ok(records) = self.records.lock() else {
             return Vec::new();

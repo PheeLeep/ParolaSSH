@@ -1,8 +1,8 @@
-# ParolaSSH — roadmap
+# ParolaSSH - roadmap
 
 Where things stand. Updated as work lands.
 
-**Legend** — ✅ done · 🔨 building · 👀 needs your review · 📋 planned · 💭 undecided
+**Legend** - ✅ done · 🔨 building · 👀 needs your review · 📋 planned · 💭 undecided
 
 ---
 
@@ -13,9 +13,9 @@ Where things stand. Updated as work lands.
 | Add / edit / remove connections | ✅ | Atomic JSON store (temp + rename) in the app config dir |
 | Groups and tags | ✅ | Free-text group with autocomplete, chip-style tag input |
 | Port probe | ✅ | Reads the banner; distinguishes refused / timeout / not-SSH |
-| Connect — password, key, agent | ✅ | `russh` + `ring` backend |
+| Connect - password, key, agent | ✅ | `russh` + `ring` backend |
 | Host key verification | ✅ | Checked during key exchange, before any password is sent |
-| Power — shutdown / reboot / cancel | ✅ | Linux, macOS, BSD, Windows; scheduled or immediate |
+| Power - shutdown / reboot / cancel | ✅ | Linux, macOS, BSD, Windows; scheduled or immediate |
 | sudo vs UAC elevation | ✅ | `sudo -S` over stdin; UAC explained rather than silently failing |
 | sudo password reuse | ✅ | Session holds the login password; overridable per action. Taken from the *resolved* credential, so a reconnect that recalled its password from the vault can still elevate |
 | 30-second heartbeat | ✅ | Channel round trip when connected, TCP probe otherwise |
@@ -32,10 +32,10 @@ Where things stand. Updated as work lands.
 | Output batched (~16 ms / 64 KB) | `yes` would otherwise wedge the UI |
 | Passwords `Zeroizing` at the IPC boundary | Plaintext wiped on drop |
 | Shell ids on every event | A stale shell's output can't render in a newer pane |
-| Followed logs inherit all three rules | Addressed events, batching, stream ids — a journal contains whatever the machine logs |
+| Followed logs inherit all three rules | Addressed events, batching, stream ids - a journal contains whatever the machine logs |
 | No generic stream-open verb | Each feature opens its own typed command; only `close_stream(id)` is generic |
-| Windows service names refuse `$(`, `${`, `` ` `` | `"…"` quotes identically in cmd.exe and PowerShell; only interpolation differs. Refusing the substitution openers keeps one quoting scheme correct against either shell, with no probe and no registry read. A bare `$` stays legal — `MSSQL$SQLEXPRESS` is a real service |
-| `hosts.json` written owner-only | It is a list of every machine you administer — the same "readable map" the audit scores an unhashed `known_hosts` for. Was `0644` under the default umask |
+| Windows service names refuse `$(`, `${`, `` ` `` | `"…"` quotes identically in cmd.exe and PowerShell; only interpolation differs. Refusing the substitution openers keeps one quoting scheme correct against either shell, with no probe and no registry read. A bare `$` stays legal - `MSSQL$SQLEXPRESS` is a real service |
+| `hosts.json` written owner-only | It is a list of every machine you administer - the same "readable map" the audit scores an unhashed `known_hosts` for. Was `0644` under the default umask |
 
 ---
 
@@ -46,7 +46,7 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 
 | Tab | State | Notes |
 |---|---|---|
-| Overview | ✅ | OS, elevation, host key, heartbeat — all from `connect_host`; reviewed |
+| Overview | ✅ | OS, elevation, host key, heartbeat - all from `connect_host`; reviewed |
 | Terminal | ✅ | Multi-shell tabs, cap 8 per host; reviewed, cap stays at 8 |
 | Services | ✅ | List, start/stop/restart with the sudo/UAC route, journal + follow / SCM events |
 | Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
@@ -54,7 +54,7 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 | Audit | ✅ | Tiers 0–2 built, tier 2 opt-in behind its own consent; details below |
 | Files | ✅ | SFTP browse, transfer, rename/move/copy, delete; symlinks listed but never followed |
 
-### Files — the two rules ✅
+### Files - the two rules ✅
 
 Symlinks and device files are listed with their target and refused for every
 operation. Following one is how a host makes a download read `/dev/zero`
@@ -62,18 +62,18 @@ forever or land outside the folder you picked, and resolving safely means a
 containment check racing the server's own filesystem. `refuse_unless_regular`
 is the single gate, shared by descend, download and delete.
 
-SFTP has no sudo — the subsystem runs as the login user and there is no
+SFTP has no sudo - the subsystem runs as the login user and there is no
 elevation to offer. A denied path says so and names the fix (reconnect as a
 user with access) rather than showing a prompt that cannot work. Note that the
 denial only surfaces on *open*: `stat` needs no read permission, so
 `/etc/shadow` stats fine and fails when its bytes are asked for.
 
-### Files — operations ✅
+### Files - operations ✅
 
 Rename and move are the same SFTP request, and it is deliberately allowed to
 fail: the protocol's rename refuses an existing destination, so "move" can never
 silently destroy a file the user did not name. Copy has no SFTP equivalent, so it
-runs `cp -a` (or `Copy-Item -Recurse`) on the server — the one file operation
+runs `cp -a` (or `Copy-Item -Recurse`) on the server - the one file operation
 needing a shell, quoted with the same helper as the power and service commands,
 and the only one that keeps a 10 GB duplicate off the wire entirely.
 
@@ -86,7 +86,7 @@ A destination that is already taken prompts for overwrite / keep both / skip,
 with an apply-to-all for recursive transfers. This was not always so: uploads
 opened with `CREATE|TRUNCATE` and silently replaced whatever was there.
 
-### Transfers — one queue for every host ✅
+### Transfers - one queue for every host ✅
 
 Rationed globally rather than per host, because what fills up is the local
 uplink: five downloads from five hosts saturate a connection exactly as five
@@ -100,17 +100,17 @@ and they are created `0600` on Unix so a fetched private key is never
 world-readable. Nothing resumes across a restart; a host that disconnects fails
 its transfers visibly instead of letting them vanish.
 
-### Terminal — leak prevention ✅
+### Terminal - leak prevention ✅
 
 The rule: **the pane stopped owning the shell.** `terminalStore.ts` owns them
-and disposes on exactly four events — tab closed, host disconnected, heartbeat
+and disposes on exactly four events - tab closed, host disconnected, heartbeat
 reaped a dead session, app exit. Switching tabs, switching hosts and navigating
 away close nothing.
 
 | Leak source | Fix | State |
 |---|---|---|
 | Tauri `listen()` handles | Held per shell in the store, released in `close()` | ✅ |
-| `Terminal.dispose()` | Called in `close()` and on a failed open. Skipping it leaks the renderer's WebGL context — browsers cap those near 16, so this bites before RAM does | ✅ |
+| `Terminal.dispose()` | Called in `close()` and on a failed open. Skipping it leaks the renderer's WebGL context - browsers cap those near 16, so this bites before RAM does | ✅ |
 | `ResizeObserver` | Created in `attach()`, disconnected by the returned detach | ✅ |
 | Rust `HashMap<u64, ShellHandle>` | `remove_shell` on close, `drain_shells` on disconnect and on session replacement | ✅ |
 | Scrollback growth | 5000 lines ≈ 1.6 MB per shell; capped at 8 shells per host | ✅ |
@@ -118,7 +118,7 @@ away close nothing.
 Persistence: each terminal's DOM node is created with `document.createElement`,
 lives outside React's tree, and is re-parented into whichever pane is showing.
 The `Terminal` object is never destroyed on navigation, so scrollback survives
-leaving the page — and output keeps arriving while it is off screen.
+leaving the page - and output keeps arriving while it is off screen.
 
 Three bugs found and fixed during the leak review, all in `TerminalTabs`:
 
@@ -133,31 +133,31 @@ Three bugs found and fixed during the leak review, all in `TerminalTabs`:
 ## Decisions taken
 
 **Feature nav is horizontal, not a second sidebar.** Two 264 px rails leave
-372 px for the terminal at the 900 px window minimum — about 43 columns, under
+372 px for the terminal at the 900 px window minimum - about 43 columns, under
 the 80 that `htop` and `systemctl status` assume.
 
 **One connection, many channels.** Extra shells, metrics polling and service
 queries all share the single authenticated session. No second handshake, no
-second password — the same thing OpenSSH does with `ControlMaster`.
+second password - the same thing OpenSSH does with `ControlMaster`.
 
 **Windows gets what Windows has, not a journald imitation.** Verified: on
 Linux, `journalctl -u X` works unprivileged when the user is in `adm`. Windows
-has no per-service log — provider names rarely match service names, and most
+has no per-service log - provider names rarely match service names, and most
 services log to their own files. So the third column differs by platform:
 
 | | Linux | Windows |
 |---|---|---|
 | List | `systemctl list-units` | `sc query` (native, no PowerShell startup) |
 | Actions | start / stop / restart | start / stop / restart |
-| History | **Logs** — `journalctl -u X`, follow supported | **Recent events** — SCM 7036 / 7031 / 7034 via `wevtutil` |
+| History | **Logs** - `journalctl -u X`, follow supported | **Recent events** - SCM 7036 / 7031 / 7034 via `wevtutil` |
 
-**Icons — done.** ✅ Checked the installed `lucide-react` (5,987 icons): no
+**Icons - done.** ✅ Checked the installed `lucide-react` (5,987 icons): no
 `Linux`, `Windows`, `Ubuntu` or `Debian`. `Apple` exists but is *the fruit*.
 Brand icons were dropped deliberately and aren't returning.
 
 `OsIcon.tsx` inlines Linux, Apple and FreeBSD marks from Simple Icons (CC0),
 **generated from the package rather than transcribed**, so the geometry is
-exact. `simple-icons` was installed with `--no-save`, read, and removed — no
+exact. `simple-icons` was installed with `--no-save`, read, and removed - no
 runtime or build dependency, ~7 KB of paths.
 
 **Windows has no logo, on purpose.** Simple Icons carries no Windows mark;
@@ -165,7 +165,7 @@ Microsoft had theirs removed. Hand-recreating it would mean reproducing a
 trademark whose owner objected to exactly that, so Windows gets Lucide's
 neutral `AppWindow` glyph instead.
 
-Marks render in `currentColor`, not brand colours — at 16 px on a tinted badge,
+Marks render in `currentColor`, not brand colours - at 16 px on a tinted badge,
 Ubuntu orange and Apple black fight the surface and read as decoration.
 
 Overview tiles carry Lucide glyphs beside the *label*, not the value, so a row
@@ -177,29 +177,29 @@ of tiles scans as a column of numbers: `UserRound`, `Clock`, `Activity`,
 
 | Tier | What | State |
 |---|---|---|
-| 0 | Crypto from the handshake russh already did — weak kex, CBC ciphers, `ssh-rsa`+SHA-1, strict-kex | ✅ via `Handler::kex_done`; no remote command, no privileges |
+| 0 | Crypto from the handshake russh already did - weak kex, CBC ciphers, `ssh-rsa`+SHA-1, strict-kex | ✅ via `Handler::kex_done`; no remote command, no privileges |
 | 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH | ✅ read-only; degrades honestly without root |
 
 A third-party deep scanner (Lynis) was built and then removed: driving another
 tool's minutes-long run was its own subsystem, and the ground it covered belongs
-to the Tasks module instead — which keeps the rule that shaped the first
+to the Tasks module instead - which keeps the rule that shaped the first
 attempt, asserted by a test rather than written in a comment: nothing is ever
 installed on someone's server from a GUI.
 
 Tier-0 honesty: russh's default preference lists contain no SHA-1 kex and no
-CBC cipher, so those two rules can never fire against the current client — a
+CBC cipher, so those two rules can never fire against the current client - a
 server offering only weak algorithms fails to connect instead. They are kept
 as guards in case the lists are ever widened for legacy devices; the checks
 that bite today are the `ssh-rsa` host key and missing strict kex.
 
 Remote findings score with the same weights and diminishing returns as the
 local key audit, and dismissals persist per host
-(`remote-audit-suppressions.json`, keyed `host|rule|target`) — silencing a
+(`remote-audit-suppressions.json`, keyed `host|rule|target`) - silencing a
 finding on one box never hides it on another.
 
 **Streaming exec exists now, separately from the terminal.** `Session::exec`
 keeps its deliberate 30-second ceiling; `journalctl -f` runs on a new
-`stream` path — a PTY-less copy of the shell plumbing with the same 16 ms /
+`stream` path - a PTY-less copy of the shell plumbing with the same 16 ms /
 64 KB batching, the same UTF-8 reassembly, and the same addressed
 (`emit_to`) events, because a followed log contains whatever the machine
 writes to it. Streams live in the registry beside shells (cap 4 per host)
@@ -213,21 +213,21 @@ for watching a load spike, and sampling every saved host forever is the
 wrong default. The cadence is the user's to pick (1/2/5/10/30 s, default
 1 s), and the pane polls only while mounted and visible; one compound exec
 per sample. CPU% is the delta between successive `/proc/stat` readings,
-with the previous reading held on the Rust session — the first sample
-honestly shows "—" rather than sleeping a second inside the command. The
+with the previous reading held on the Rust session - the first sample
+honestly shows "-" rather than sleeping a second inside the command. The
 figure is the whole-machine aggregate across all cores (a process pegging
 one core of four reads as 25%), shown as a whole number.
 
 **Windows updates are reported honestly.** Querying *pending* updates from
 the CLI needs the PSWindowsUpdate module, which most machines lack. Absent
-module, the pane says so and lists recent installed hotfixes instead — and
+module, the pane says so and lists recent installed hotfixes instead - and
 never installs the module to improve its own answer. Nothing on any
 platform is ever installed from the Updates pane; it reports, the operator
 decides in a terminal.
 
 ---
 
-## Tasks — one-click commands ✅
+## Tasks - one-click commands ✅
 
 A task is a command with a name. Two kinds share one pane and are never
 interleaved, because the app is making a different claim about each.
@@ -240,7 +240,7 @@ interleaved, because the app is making a different claim about each.
 
 **Global means "offered everywhere", not "runs everywhere".** A global task
 appears on every host whose OS it supports; pressing it runs on the one machine
-being looked at. There is no fan-out — one press, one host, which is the only
+being looked at. There is no fan-out - one press, one host, which is the only
 version of this feature where the confirmation dialog can honestly name what it
 is about to touch. Per-host tasks are pinned to one id and are deleted with the
 host record (`forget_host_tasks`, called from the same place the record goes),
@@ -250,10 +250,10 @@ so the file cannot accumulate commands aimed at machines that no longer exist.
 |---|---|
 | Plan and run are two commands | `plan_task` builds the exact string and assesses it; `start_task` runs it. The UI must call the first and show what it returns before it may call the second |
 | The command is never sent back across the boundary | `start_task` takes a *task id* and rebuilds the plan server-side. A window that showed one command and submitted another would be the worst bug this module could have, and passing the command through the webview is what would make it possible |
-| Elevation is per task, and per press | `elevated` is a field the operator sets, not something inferred from what the command looks like. A press can override it. A task that says it runs as root and cannot **errors** — it never quietly runs as someone else |
+| Elevation is per task, and per press | `elevated` is a field the operator sets, not something inferred from what the command looks like. A press can override it. A task that says it runs as root and cannot **errors** - it never quietly runs as someone else |
 | The `sudo` wrapper is `sh -c '…'` | So a task with pipes, redirects or several statements elevates as a whole rather than only its first word. Both forms are shown: the wrapper is the app's doing and is labelled as such |
 | Runs on the `stream` path | `Session::exec` caps at thirty seconds. A backup that takes four minutes must not be cut off with its output discarded |
-| One run per host | Starting a second while one is live **throws** rather than returning quietly — a button that does nothing and says nothing is indistinguishable from a broken one. The same lesson the removed Lynis card paid for |
+| One run per host | Starting a second while one is live **throws** rather than returning quietly - a button that does nothing and says nothing is indistinguishable from a broken one. The same lesson the removed Lynis card paid for |
 | Stopping stops *watching* | Closing the channel does not reach in and kill a process running on the host. The feed says exactly that rather than implying the command was cancelled |
 | An unidentified OS is offered nothing | `OsFamily::Unknown` gets no built-ins. Picking a family and hoping is how the wrong command runs |
 
@@ -261,13 +261,13 @@ so the file cannot accumulate commands aimed at machines that no longer exist.
 tasks in a row on one host: the fifth was refused with "too many streams open"
 while nothing was running. Only `close_stream` ever called `remove_stream`, so
 every stream that finished on its own stayed in the registry counting against
-`MAX_STREAMS_PER_HOST` — a leak the Tasks pane merely exposed, since it is the
+`MAX_STREAMS_PER_HOST` - a leak the Tasks pane merely exposed, since it is the
 first feature that opens and finishes short streams repeatedly. `batch_and_emit`
 now reaps the handle at the moment it emits `stream://closed`, which fixes the
 followed-journal path with it.
 
 The run store is `taskStore.ts`, keyed by host and disposed on the same four
-moments a terminal is — disconnected, heartbeat reaped it, stopped, app exit.
+moments a terminal is - disconnected, heartbeat reaped it, stopped, app exit.
 Switching hosts or tabs closes nothing. The feed is an xterm for the reason the
 Lynis feed had to become one: a real command emits cursor and colour escapes,
 and a `<pre>` renders them as literal text.
@@ -278,8 +278,8 @@ and a `<pre>` renders them as literal text.
 it finds. It is worth being precise about what this is:
 
 **It is a typo catcher, not a security boundary.** It matches text. A command
-that hides its intent — behind a variable, a base64 blob, a script it downloads
-— walks straight past every rule, and adding rules does not change that. The
+that hides its intent - behind a variable, a base64 blob, a script it downloads
+- walks straight past every rule, and adding rules does not change that. The
 operator writes these commands and already holds the credentials to run them by
 hand. What is being defended against is the stray `/`, the line pasted from a
 forum, the task written for the wrong host.
@@ -289,23 +289,23 @@ That framing decides the tuning, and the tuning is the whole feature:
 | Decision | Why |
 |---|---|
 | Three levels, and `none` never says "safe" | `none` means *nothing matched*. The dialog shows no green tick, because the check has no basis to issue one |
-| It never blocks | `destructive` requires typing `RUN`; it does not refuse. Stopping an operator from doing their job is not this app's role — making it impossible to reach by reflex is |
+| It never blocks | `destructive` requires typing `RUN`; it does not refuse. Stopping an operator from doing their job is not this app's role - making it impossible to reach by reflex is |
 | Both flags before a delete is reported | `rm -r` prompts and `rm -f` cannot take a tree. Warning on either alone is noise, and noise is what teaches people to click through warnings |
 | `/var/log` is caution, `/var` is destruction | Losing logs is bad and survivable. Spending the strongest word on it leaves nothing for `rm -rf /` |
 | Rules follow the host's OS | A `del /f /s /q c:\` in a task aimed at Linux is a *broken* task, not a dangerous one, and flagging it would be the wrong warning. An unidentified host gets both rule sets, which is the cautious reading and the honest one |
-| Word-boundary matching | `cat /var/run/reboot-required` and `grep shutdown /var/log/syslog` must not fire. A check with false positives is a check nobody reads — there is a test for each of these |
+| Word-boundary matching | `cat /var/run/reboot-required` and `grep shutdown /var/log/syslog` must not fire. A check with false positives is a check nobody reads - there is a test for each of these |
 | The assessment runs on what was *typed* | Not on the wrapped form. Reporting the app's own `sudo` back as a finding of the operator's would be a lie |
 
 A separate rule flags a password on the command line. It is not destructive at
-all — it is here because arguments are readable through `ps` by every account on
+all - it is here because arguments are readable through `ps` by every account on
 the host, and this app sends secrets to stdin everywhere else. A task should not
 become the exception by accident.
 
 The built-in catalog is held to its own rules by test rather than by comment:
 no entry may contain a package-manager install verb, and no entry may assess as
-`destructive`. A shipped task may be disruptive — `restart-ssh` is, and validates
+`destructive`. A shipped task may be disruptive - `restart-ssh` is, and validates
 the config with `sshd -t` first precisely because a bad config takes the daemon
-down with no way back in — but a built-in reaching the level that demands typed
+down with no way back in - but a built-in reaching the level that demands typed
 confirmation should be a deliberate decision, not a passing test.
 
 ## Posture checks on connect ✅
@@ -316,15 +316,15 @@ run by themselves the moment a host connects.
 **At connect time, not at pane-open time.** The first cut ran the checks from an
 effect inside the Audit pane, which is not "on connect" at all: nothing happened
 until the tab was opened, and the tab may never be. `connect()` fires it now,
-and the report lives in `auditCache` — keyed by host, cleared on the same four
-events a terminal is — so the pane shows what already ran rather than owning it.
+and the report lives in `auditCache` - keyed by host, cleared on the same four
+events a terminal is - so the pane shows what already ran rather than owning it.
 `markAttempted` means the connect-time run and the pane's catch-up (for a host
 already connected when the preference was switched on) can never both fire.
 Failure is silent by design: this is a background courtesy, and a toast about it
 would interrupt whatever the operator connected to do.
 
 **Unprivileged always.** It takes exactly the path the *Run without root* button
-takes by hand, and the report names what it had to skip — the same note it shows
+takes by hand, and the report names what it had to skip - the same note it shows
 when elevation is declined. A sudo prompt that appears because a pane was opened
 is a prompt nobody asked for, and a password sent on a schedule is not consent.
 
@@ -334,8 +334,8 @@ the operator makes once, deliberately.
 
 ## VPN detection is cached ✅
 
-Three things wanted the same answer — the 30 s navbar poll, the host-row glyphs,
-and *every* failed probe's explanation — and each call spawned up to six local
+Three things wanted the same answer - the 30 s navbar poll, the host-row glyphs,
+and *every* failed probe's explanation - and each call spawned up to six local
 processes. A page of unreachable hosts fanned out into dozens of
 `tailscale status` invocations all saying the same thing.
 
@@ -346,14 +346,14 @@ its own, then finds the entry fresh. The wait is bounded by the existing 3 s
 
 | Decision | Why |
 |---|---|
-| Two TTLs — statuses 10 s, Twingate resources 300 s | The two answers age differently. A client going up or down is what the pill exists to show; the resource list is administrator-defined and near-static |
+| Two TTLs - statuses 10 s, Twingate resources 300 s | The two answers age differently. A client going up or down is what the pill exists to show; the resource list is administrator-defined and near-static |
 | Statuses stay under the 30 s poll | So a scheduled poll always does real work, and only the burst a single render produces is absorbed |
 | `Freshness::Forced` for the refresh button, `Cached` for the poll | A user pressing refresh must reach the clients themselves, or the cache has quietly disabled the button |
 | A forced load that *started after the click* satisfies the click | Three impatient clicks cost one CLI round, not three |
-| `explain_unreachable` now reads both from the cache | It also stopped calling `twingate::status()` separately — the detection pass it already needed contains it |
+| `explain_unreachable` now reads both from the cache | It also stopped calling `twingate::status()` separately - the detection pass it already needed contains it |
 | Tailscale peers stay uncached | The import dialog is user-triggered and infrequent, and a stale peer list would offer machines that have left the tailnet |
 
-Six cache tests, all against a call-counting loader — no VPN client anywhere
+Six cache tests, all against a call-counting loader - no VPN client anywhere
 near them, as the rest of the module's tests already require.
 
 ---
@@ -364,7 +364,7 @@ Import tailnet machines as saved hosts, from the Tailscale tab of the VPN page.
 
 **No local API socket was needed.** `tailscale status --json` already carries
 the `Peer` map, so this parses more of the payload the status check was
-fetching anyway — no new dependency, no new platform surface, and `run_cli`
+fetching anyway - no new dependency, no new platform surface, and `run_cli`
 stays the whole cross-platform story. The earlier worry in `tailscale.rs` (HTTP
 over a Unix socket on two platforms, a named pipe on the third) does not apply.
 
@@ -376,19 +376,19 @@ over a Unix socket on two platforms, a named pipe on the third) does not apply.
 | `tag:server` → `server` | Drops straight into the existing tag input |
 | Online first, then alphabetical | The reachable machines are the ones you are there to add |
 | One username + auth method for the batch | Tailscale knows the address, never the account. Tailnets are usually one login; anything unusual is a normal edit afterwards |
-| Default auth is `agent`, **not** `none` | Tailscale SSH's server is Linux-only *and* opt-in, so `none` is wrong more often than right for a batch. Choosing it names the selected peers that cannot serve it, using the `OS` field. `status --json` carries **no** per-peer SSH capability — checked against a real tailnet, the peer fields are `Active, Addrs, AllowedIPs, Created, CurAddr, DNSName, ExitNode, …` with nothing SSH-shaped — so per-node detection is not possible from this source |
+| Default auth is `agent`, **not** `none` | Tailscale SSH's server is Linux-only *and* opt-in, so `none` is wrong more often than right for a batch. Choosing it names the selected peers that cannot serve it, using the `OS` field. `status --json` carries **no** per-peer SSH capability - checked against a real tailnet, the peer fields are `Active, Addrs, AllowedIPs, Created, CurAddr, DNSName, ExitNode, …` with nothing SSH-shaped - so per-node detection is not possible from this source |
 | Already-saved peers shown but not selectable | Matched on every address a peer answers to, so a second import cannot duplicate |
 | Saved sequentially | Each save rewrites `hosts.json`; concurrent writes would race for the file |
 
 Still read-only toward Tailscale: no login, no `tailscale up`, no daemon start.
-All nine parser tests are mock-driven — no Tailscale installed, no real CLI.
+All nine parser tests are mock-driven - no Tailscale installed, no real CLI.
 
 ### Auth method `none` ✅
 
 Added because peer import shipped without it and was therefore incomplete:
 **Tailscale SSH nodes could not be connected to at all.** Tailscale
 authenticates the node over WireGuard before the SSH layer is reached, then
-offers SSH's `none` method — its own docs note that *"Some SSH clients may fail
+offers SSH's `none` method - its own docs note that *"Some SSH clients may fail
 to connect to an SSH server using no authentication."* ParolaSSH was one of
 them, since `AuthMethod` had only password/publickey/agent.
 
@@ -397,7 +397,7 @@ threaded through `build_credentials` and `authenticate`. Two rules:
 
 - **Never a fallback.** It is chosen per host, so "no credential was sent" is
   always something the operator asked for, never something the app decided.
-- **A remembered password is still not sent** — asserted by a test that puts one
+- **A remembered password is still not sent** - asserted by a test that puts one
   in the vault and checks it stays there.
 
 The form and the import dialog both say plainly that an ordinary sshd will
@@ -405,7 +405,7 @@ refuse this, and the failure message names Tailscale SSH as the case where it
 does work.
 
 Verified against the Windows VM over its **tailnet** address: it answers with
-Windows OpenSSH 9.5 offering `publickey,password,keyboard-interactive` — the
+Windows OpenSSH 9.5 offering `publickey,password,keyboard-interactive` - the
 same host key as its LAN address, and no `none`. Per Tailscale's docs the SSH
 server component is *"only available on: Linux, macOS open source"*, so a
 Windows peer can never accept `none` however the tailnet routes to it. Reaching
@@ -416,10 +416,10 @@ a node over Tailscale and being served **by** Tailscale are different things.
 | Question | State |
 |---|---|
 | Status dot semantics | ✅ Decided: four states. Green + halo = live session, amber = reachable but no session, red = unreachable, grey = never probed. Fixing this also fixed a real bug: the hosts table treated "reachable" as "connected" and showed a Disconnect button for hosts we held no session on. `onlineCount` became `connectedCount` and counts sessions only. |
-| Per-host shell cap of 8 — right number? | ✅ Reviewed; stays at 8 |
+| Per-host shell cap of 8 - right number? | ✅ Reviewed; stays at 8 |
 | Does Services ship Linux-first, or both platforms together? | ✅ Both shipped together (cross-platform parity is the rule) |
-| Should tab titles be renameable? `rename()` exists, no UI yet | ✅ Shipped. Double-click the tab, or the pencil beside the font and clear buttons; F2 works while the tab itself holds focus. Enter and blur commit, Escape reverts, and an empty name restores the `shell N` it opened with rather than leaving the tab holding a name you just tried to delete. Titles live in the store with everything else about a shell, so they die with the app — the same lifetime as the scrollback beside them |
-| Two rows of tabs (feature nav + shell tabs) — acceptable? | ✅ Reviewed; kept |
+| Should tab titles be renameable? `rename()` exists, no UI yet | ✅ Shipped. Double-click the tab, or the pencil beside the font and clear buttons; F2 works while the tab itself holds focus. Enter and blur commit, Escape reverts, and an empty name restores the `shell N` it opened with rather than leaving the tab holding a name you just tried to delete. Titles live in the store with everything else about a shell, so they die with the app - the same lifetime as the scrollback beside them |
+| Two rows of tabs (feature nav + shell tabs) - acceptable? | ✅ Reviewed; kept |
 
 ---
 
@@ -427,12 +427,12 @@ a node over Tailscale and being served **by** Tailscale are different things.
 
 | Quirk | State | Notes |
 |---|---|---|
-| Pinned actions column was see-through | ✅ | `theme.css` sets `--bs-table-bg: transparent`, and Bootstrap's `.table > :not(caption) > * > *` applies it at higher specificity than the bare `.datatable__sticky` class — so the pinned column never painted a background and the scrolled-under cells read straight through it. Fixed by matching that selector's shape, with the fill behind a `--datatable-sticky-bg` variable because most tables sit on a card and the Files pane does not |
+| Pinned actions column was see-through | ✅ | `theme.css` sets `--bs-table-bg: transparent`, and Bootstrap's `.table > :not(caption) > * > *` applies it at higher specificity than the bare `.datatable__sticky` class - so the pinned column never painted a background and the scrolled-under cells read straight through it. Fixed by matching that selector's shape, with the fill behind a `--datatable-sticky-bg` variable because most tables sit on a card and the Files pane does not |
 | Journal did not scroll to the newest line | ✅ | The service history now opens at the bottom and a follow behaves like `tail -f`. Scrolling up wins until the reader comes back within 24 px of the bottom |
 | Settings read as one long scroll | ✅ | Tabbed with the same `feature-nav` the host view uses: Appearance · Startup · Transfers · Terminal · Files · Logs |
-| Long listing squeezed the feature tabs | ✅ | On a filling page (Files, Terminal) the chrome above the pane is a shrinkable flex item, and `.feature-nav` scrolls on the x axis — which makes it a scroll container with no minimum height, so `/dev` compressed the tabs to a sliver instead of scrolling inside the pane. The chrome is now `flex: 0 0 auto`, and `.app-main` stops scrolling when a filling page is present so the header cannot be scrolled off either |
-| Chain icon stayed whole after disconnect | ✅ | Not an icon problem — `statusFor` returns `connected` when *either* the connection map or the last heartbeat says so, and `disconnect` only cleared the first. The stale heartbeat held the status for up to 30 s. `disconnect` now marks health disconnected too, carrying the previous `reachable` over: the session ended, the machine did not |
-| VPN pill tooltip too verbose | ✅ | Was every client's full sentence joined with `·`. Now names the one carrying traffic plus an idle count, or lists the installed clients and "none connected". The multi-VPN conflict note stays long — it is a real warning |
+| Long listing squeezed the feature tabs | ✅ | On a filling page (Files, Terminal) the chrome above the pane is a shrinkable flex item, and `.feature-nav` scrolls on the x axis - which makes it a scroll container with no minimum height, so `/dev` compressed the tabs to a sliver instead of scrolling inside the pane. The chrome is now `flex: 0 0 auto`, and `.app-main` stops scrolling when a filling page is present so the header cannot be scrolled off either |
+| Chain icon stayed whole after disconnect | ✅ | Not an icon problem - `statusFor` returns `connected` when *either* the connection map or the last heartbeat says so, and `disconnect` only cleared the first. The stale heartbeat held the status for up to 30 s. `disconnect` now marks health disconnected too, carrying the previous `reachable` over: the session ended, the machine did not |
+| VPN pill tooltip too verbose | ✅ | Was every client's full sentence joined with `·`. Now names the one carrying traffic plus an idle count, or lists the installed clients and "none connected". The multi-VPN conflict note stays long - it is a real warning |
 
 ## Navigation layout ✅
 
@@ -448,7 +448,7 @@ has real ones.
 
 ## Host context menu ✅
 
-Right-click a host — in the sidebar or in the hosts table — for connect /
+Right-click a host - in the sidebar or in the hosts table - for connect /
 disconnect, open terminal, power, open host, edit, delete. Same entries as the
 row's ⋯ menu, built from the same `useHostActions`, so the connect flow is
 still fixed in one place. Entries that need a live session stay visible and
@@ -475,7 +475,7 @@ Four states, drawn on the beam of the app icon:
 be useful while the window is hidden; if the UI owned the state, closing to tray
 would freeze the icon at whatever it last said. `refresh()` reads
 `SessionRegistry` directly and is called from connect, disconnect, and the
-30-second heartbeat — which is also how a session that dropped on its own, or a
+30-second heartbeat - which is also how a session that dropped on its own, or a
 network coming back, reaches the icon.
 
 **Offline means no route, not "nothing answered".** A firewalled server must not
@@ -485,7 +485,7 @@ table rather than the network.
 
 **Connecting starts at the prompt, not at the submit.** Being asked for a
 password is part of connecting from the operator's side, so the dialog declares
-itself over `set_connect_pending` — Rust cannot see a dialog. This is the one
+itself over `set_connect_pending` - Rust cannot see a dialog. This is the one
 piece of tray state the frontend owns, and it is deliberately *separate* from
 the in-flight count rather than sharing it, so the same host appearing in both
 during a submit cannot cancel itself out. It is a set of host ids, not a
@@ -504,31 +504,31 @@ a previous connect cannot keep toggling the icon.
 
 The blink shipped dead: `init` managed the state as `Arc<TrayState>` while every
 lookup asked for `TrayState`. `manage` keys by exact type, so all of them got
-`None` — and because each falls back to a default rather than failing, the count
+`None` - and because each falls back to a default rather than failing, the count
 stayed 0 and `Connecting` was unreachable. The icon swaps still worked, since
 those never read the state, which is why only the blink was missing. Managed
 unwrapped now, with a `debug_assert` after `manage` so a repeat is loud.
 
-Three PNGs, not four — connecting blinks the connected icon against the offline
+Three PNGs, not four - connecting blinks the connected icon against the offline
 one. Rendered from `design/tray/tray-template.svg` by
 `scripts/generate-tray-icons.sh` (needs `rsvg-convert`), so the tray states stay
 tied to the one icon master rather than drifting as separate drawings.
 
 ### The tooltip that never showed
 
-`.tooltip("ParolaSSH")` was already set — **libappindicator drops it**, and
+`.tooltip("ParolaSSH")` was already set - **libappindicator drops it**, and
 every Linux status-notifier host uses libappindicator. So does `.set_title`.
 Nothing about the call was wrong and no amount of fixing it would have helped.
 
 What does render there is the menu, so the status text is now also a **disabled
 first menu item**, updated by the same `refresh()`. Windows and macOS get it on
 hover from the tooltip; Linux reads it in the menu. The text carries the state
-too — *"ParolaSSH — 2 hosts connected"* — since a 22-pixel icon can only say so
+too - *"ParolaSSH - 2 hosts connected"* - since a 22-pixel icon can only say so
 much, and a unit test asserts every state's label still names the app.
 
 ## App log ✅
 
-There was no logging at all before this — no `tracing`, no `log`, not a
+There was no logging at all before this - no `tracing`, no `log`, not a
 `println!`. `src-tauri/src/logging.rs` writes a tab-separated file in the
 per-OS app log directory, rotated at 1 MiB keeping one previous generation,
 owner-only at creation for the same reason `hosts.json` is: it names every
@@ -539,7 +539,7 @@ Two rules hold at every call site:
 | Rule | Why |
 |---|---|
 | No secrets | Passwords are `Zeroizing` at the IPC boundary precisely so they are not copied around. A log file is a copy that outlives the process |
-| No remote output | A journal, a listing, or a command's stdout contains whatever the remote machine puts there — the same reason terminal output is addressed rather than broadcast. Log what was attempted and how it ended, never what came back |
+| No remote output | A journal, a listing, or a command's stdout contains whatever the remote machine puts there - the same reason terminal output is addressed rather than broadcast. Log what was attempted and how it ended, never what came back |
 
 Logged today: app start/exit, connect success and failure (target and reason,
 never the credential), disconnect, power actions, service actions. Settings ›
@@ -559,7 +559,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 The new feature modules follow the `power.rs` testing shape: command
 construction is pure and asserted as exact strings per OS (including the
 quoting/injection cases), and parsers are fed captured-or-invented fixture
-literals — `systemctl --plain`, `sc query` CRLF blocks, `wevtutil /f:text`,
+literals - `systemctl --plain`, `sc query` CRLF blocks, `wevtutil /f:text`,
 `/proc` files, apt/dnf output (dnf's exit 100 included), CIM JSON, `sshd -T`.
 No test runs a real CLI, and no fixture contains real tenant data.
 
@@ -575,7 +575,7 @@ than passed. They previously returned early when the environment was unset,
 which libtest counted as **11 passed** against a machine they had never
 contacted. Asking for them without naming a host is now a hard failure.
 
-All 11 assert on both Linux and Windows — verified green against a Windows 11
+All 11 assert on both Linux and Windows - verified green against a Windows 11
 VM (`OpenSSH_for_Windows_9.5`). What used to skip now asserts the *other*
 platform's behaviour: Windows CPU needs no delta (`LoadPercentage` is
 instantaneous), tier 1 is Unix-only so the report must assemble from tier 0
@@ -583,7 +583,7 @@ alone with `tier1_ran = false`, Windows power needs no password and no `sudo`,
 and the reboot cancel is verified by a second `shutdown /a` failing with 1116.
 
 `skip()` remains only for macOS/BSD, which no VM covers yet. A skip still
-reports `ok` — libtest has no runtime "skipped" outcome — so prefer a per-OS
+reports `ok` - libtest has no runtime "skipped" outcome - so prefer a per-OS
 assertion over calling it.
 
 The power test schedules a reboot 600 minutes out and cancels it, then asserts

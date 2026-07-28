@@ -294,7 +294,7 @@ function ServiceHistory({
   }, [follow, hostId, service.name]);
 
   // The newest line is the last one, so the view opens at the bottom and a
-  // follow behaves like `tail -f` — unless the reader scrolled up to read
+  // follow behaves like `tail -f` - unless the reader scrolled up to read
   // something, which wins until they come back down.
   const logRef = useRef<HTMLPreElement>(null);
   const pinned = useRef(true);
@@ -359,7 +359,7 @@ function ServiceHistory({
   );
 }
 
-/** Confirmation for start/stop/restart, showing the literal command — the
+/** Confirmation for start/stop/restart, showing the literal command - the
  *  same contract as the Power dialog: no mystery buttons. */
 function ServiceActionDialog({
   hostId,
@@ -409,7 +409,7 @@ function ServiceActionDialog({
   const run = async () => {
     // Starting or stopping a unit is a privileged act even where sudo is
     // configured to want no password, so the prompt is not conditional on the
-    // plan needing one — the shared prompt decides what to ask for.
+    // plan needing one - the shared prompt decides what to ask for.
     const grant = await requestElevation({
       hostId,
       summary: `${verb[request.action]} ${request.unit}`,

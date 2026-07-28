@@ -22,7 +22,7 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
   useSyncExternalStore(terminals.subscribe, terminals.getVersion);
   const open = terminals.all();
 
-  // Connected hosts are listed even with no shell — that is where you go to
+  // Connected hosts are listed even with no shell - that is where you go to
   // start one. Hosts that dropped keep their tabs until those are closed.
   const rows: HostSessions[] = hosts
     .map((host) => ({
@@ -60,7 +60,7 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
         <Card>
           <Card.Body className="text-center py-5">
             <p className="text-body-secondary mb-3">
-              Nothing is running. Connect to a host and open a terminal — every
+              Nothing is running. Connect to a host and open a terminal - every
               shell you start shows up here.
             </p>
             <Button variant="primary" onClick={() => onNavigate({ kind: "hosts" })}>

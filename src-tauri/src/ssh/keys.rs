@@ -45,7 +45,7 @@ pub enum KeyFormat {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum KdfInfo {
-    /// No passphrase — the key is usable by anyone who can read the file.
+    /// No passphrase - the key is usable by anyone who can read the file.
     None,
     /// The OpenSSH format's bcrypt-pbkdf.
     #[serde(rename_all = "camelCase")]
@@ -87,7 +87,7 @@ pub enum PublicKeyPairing {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshKey {
-    /// Fingerprint where parseable, otherwise the path — stable across scans.
+    /// Fingerprint where parseable, otherwise the path - stable across scans.
     pub id: String,
     pub path: String,
     pub file_name: String,
@@ -130,14 +130,14 @@ pub struct OrphanPublicKey {
 }
 
 /// What has to be asked of the user before a private key can be loaded. Asked
-/// only when the file really is locked — every variant is a specific reason to
+/// only when the file really is locked - every variant is a specific reason to
 /// prompt, never a cautious default.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum PassphraseNeed {
     /// Unencrypted on disk: it loads as-is, so there is nothing to prompt for.
     NotNeeded,
-    /// Encrypted with a KDF — the passphrase is what decrypts it.
+    /// Encrypted with a KDF - the passphrase is what decrypts it.
     Required,
     /// A FIDO/PIV key. The secret lives on the token, which may want a PIN and
     /// a touch, so the prompt stays but is worded for hardware.
@@ -147,7 +147,7 @@ pub enum PassphraseNeed {
 }
 
 /// Decide whether loading `path` needs anything from the user. Returns no key
-/// material — only the shape of the dialog to show.
+/// material - only the shape of the dialog to show.
 pub fn passphrase_need(path: &Path) -> PassphraseNeed {
     let key = match inspect(path) {
         Ok(Some(key)) => key,
@@ -339,7 +339,7 @@ pub fn inspect(path: &Path) -> SshResult<Option<SshKey>> {
 
     // Fall back to the `.pub` file for anything still missing. In the OpenSSH
     // format the comment lives inside the encrypted blob, so a locked key
-    // reports none until the sidecar is read — same as ssh-keygen.
+    // reports none until the sidecar is read - same as ssh-keygen.
     if let Some(public) = described_public {
         key.fingerprint = key.fingerprint.or(public.fingerprint);
         key.comment = key.comment.or(public.comment);

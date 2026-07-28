@@ -1,7 +1,7 @@
-//! Asking — with a fallback to noticing — the ZeroTier client.
+//! Asking - with a fallback to noticing - the ZeroTier client.
 //!
 //! `zerotier-cli -j info` answers precisely, but it may only be run by
-//! whoever can read the service's auth token — root, usually. When the CLI
+//! whoever can read the service's auth token - root, usually. When the CLI
 //! is present but refuses us, the service process is the next best witness:
 //! running is treated as up, with wording that keeps the uncertainty visible.
 //! The same bargain the Twingate detector strikes on macOS and Windows.
@@ -11,7 +11,7 @@ use serde::Deserialize;
 use super::{run_cli, CliOutcome, VpnKind, VpnStatus};
 
 /// The one field of `zerotier-cli -j info` this module reads. `online`
-/// means the node reaches ZeroTier's root servers — the closest thing the
+/// means the node reaches ZeroTier's root servers - the closest thing the
 /// client has to "connected".
 #[derive(Deserialize)]
 struct InfoJson {
@@ -19,8 +19,8 @@ struct InfoJson {
 }
 
 /// CLI candidates as (program, args). Windows has no standalone
-/// `zerotier-cli` binary — the service executable doubles as the CLI
-/// behind `-q` — and the .bat shim it ships cannot be spawned directly.
+/// `zerotier-cli` binary - the service executable doubles as the CLI
+/// behind `-q` - and the .bat shim it ships cannot be spawned directly.
 fn candidates() -> &'static [(&'static str, &'static [&'static str])] {
     #[cfg(target_os = "windows")]
     return &[
@@ -54,7 +54,7 @@ pub async fn status() -> VpnStatus {
                 if let Some(status) = interpret(&stdout) {
                     return status;
                 }
-                // The CLI exists but would not answer — almost always the
+                // The CLI exists but would not answer - almost always the
                 // root-readable auth token. The process still tells us
                 // whether ZeroTier is at least running.
                 return presence().await;
@@ -65,7 +65,7 @@ pub async fn status() -> VpnStatus {
     VpnStatus::not_installed(VpnKind::Zerotier)
 }
 
-/// `None` when the output is not the info JSON — the caller falls back to
+/// `None` when the output is not the info JSON - the caller falls back to
 /// presence detection rather than guessing from an error message.
 fn interpret(stdout: &str) -> Option<VpnStatus> {
     let parsed = serde_json::from_str::<InfoJson>(stdout).ok()?;
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn a_refusal_is_not_interpreted_as_a_state() {
-        // What the CLI prints without the auth token — the caller must fall
+        // What the CLI prints without the auth token - the caller must fall
         // back to presence detection, not read this as "offline".
         assert!(interpret("missing authentication token and authtoken.secret not found").is_none());
         assert!(interpret("").is_none());

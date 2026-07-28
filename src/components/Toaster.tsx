@@ -6,7 +6,7 @@ import * as toasts from "../lib/toast";
 
 /** Renders whatever the toast store is holding.
  *
- *  Mounted once at the shell so a message survives the pane that raised it —
+ *  Mounted once at the shell so a message survives the pane that raised it -
  *  a transfer that fails after you have navigated to another host still says so.
  */
 export function Toaster() {

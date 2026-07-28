@@ -7,7 +7,7 @@ import { errorMessage } from "../api";
 import type { HostMetrics } from "../types";
 
 /** Offered cadences. The pane polls only while mounted and visible either
- *  way — deliberately not the 30-second heartbeat, which answers "is it
+ *  way - deliberately not the 30-second heartbeat, which answers "is it
  *  up?" and is uselessly coarse for watching a load spike. */
 const INTERVALS = [
   { value: "1", label: "1 s" },
@@ -118,7 +118,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
             CPU
           </div>
           <div className="stat-tile__value">
-            {metrics.cpuPercent !== null ? `${Math.round(metrics.cpuPercent)} %` : "—"}
+            {metrics.cpuPercent !== null ? `${Math.round(metrics.cpuPercent)} %` : "-"}
           </div>
           <div className="stat-tile__sub">
             {cpuHistory.length > 1 ? (
@@ -139,7 +139,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
             Memory
           </div>
           <div className="stat-tile__value">
-            {metrics.memory ? `${Math.round(metrics.memory.usedPercent)} %` : "—"}
+            {metrics.memory ? `${Math.round(metrics.memory.usedPercent)} %` : "-"}
           </div>
           {metrics.memory && (
             <div className="stat-tile__sub">
@@ -155,7 +155,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
             Load
           </div>
           <div className="stat-tile__value font-monospace">
-            {metrics.load ? metrics.load.map((v) => v.toFixed(2)).join(" ") : "—"}
+            {metrics.load ? metrics.load.map((v) => v.toFixed(2)).join(" ") : "-"}
           </div>
           <div className="stat-tile__sub">1 / 5 / 15 minutes</div>
         </div>
@@ -166,7 +166,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
             Uptime
           </div>
           <div className="stat-tile__value">
-            {metrics.uptimeSeconds !== null ? formatUptime(metrics.uptimeSeconds) : "—"}
+            {metrics.uptimeSeconds !== null ? formatUptime(metrics.uptimeSeconds) : "-"}
           </div>
         </div>
       </div>
@@ -215,7 +215,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
   );
 }
 
-/** A tiny inline history line — no chart library for four data series. The
+/** A tiny inline history line - no chart library for four data series. The
  *  box is stretched to the tile width, so the drawing runs in fixed viewBox
  *  units and the stroke opts out of the scaling. */
 const SPARK_WIDTH = 120;

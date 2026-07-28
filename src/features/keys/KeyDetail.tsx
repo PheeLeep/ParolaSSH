@@ -146,7 +146,7 @@ export function KeyDetail({
             <div>
               <dt>Fingerprint</dt>
               <dd className="font-monospace text-break user-select-auto">
-                {key.fingerprint ?? "—"}
+                {key.fingerprint ?? "-"}
               </dd>
             </div>
             <div>

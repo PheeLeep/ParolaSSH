@@ -9,7 +9,7 @@ import type { PeerListing, VpnOverview } from "./types";
 /**
  * Every VPN client's state, plus which of the given addresses each owns.
  *
- * Infallible on the Rust side — a machine with no VPNs answers with two
+ * Infallible on the Rust side - a machine with no VPNs answers with two
  * "not installed" entries and no bindings rather than an error.
  *
  * `force` bypasses the backend's TTL cache. The scheduled poll must not use

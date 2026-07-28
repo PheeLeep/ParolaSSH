@@ -1,6 +1,6 @@
 /** The Rust command surface for saved connections and live sessions.
  *
- *  Passwords are passed as arguments and never returned — no command here
+ *  Passwords are passed as arguments and never returned - no command here
  *  reads one back, and nothing writes a secret to disk. */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -62,7 +62,7 @@ export const listHostTags = () => invoke<string[]>("list_host_tags");
 export const probeHost = (hostname: string, port: number) =>
   invoke<ProbeResult>("probe_host", { hostname, port });
 
-/** Connect and authenticate. `trustUnknown` records an unrecognised host key —
+/** Connect and authenticate. `trustUnknown` records an unrecognised host key -
  *  pass it only once the user has seen and accepted the fingerprint. */
 export const connectHost = (
   hostId: string,
@@ -84,7 +84,7 @@ export const connectHost = (
 export const setConnectPending = (hostId: string, active: boolean) =>
   invoke<void>("set_connect_pending", { hostId, active });
 
-/** Forget every open dialog — a reload leaves none of them on screen. */
+/** Forget every open dialog - a reload leaves none of them on screen. */
 export const clearConnectPending = () => invoke<void>("clear_connect_pending");
 
 export const disconnectHost = (hostId: string) =>
@@ -240,7 +240,7 @@ export const sampleMetrics = (hostId: string) =>
 
 /* ── Updates ───────────────────────────────────────────────────────────── */
 
-/** Read-only, always — there is no install command to call. */
+/** Read-only, always - there is no install command to call. */
 export const checkUpdates = (hostId: string) =>
   invoke<UpdateReport>("check_updates", { hostId });
 
@@ -268,7 +268,7 @@ export const setRemoteFindingSuppressed = (
 /* ── Tasks ─────────────────────────────────────────────────────────────── */
 
 /** What this host can run: the built-ins its OS supports, plus the saved
- *  tasks scoped to it. Safe to call while disconnected — the OS reads back as
+ *  tasks scoped to it. Safe to call while disconnected - the OS reads back as
  *  `unknown` and no built-in is offered rather than a guess. */
 export const listHostTasks = (hostId: string) =>
   invoke<HostTasks>("list_host_tasks", { hostId });
@@ -292,7 +292,7 @@ export const forgetHostTasks = (hostId: string) =>
 export const planTask = (hostId: string, taskId: string, elevated?: boolean) =>
   invoke<TaskPlan>("plan_task", { hostId, taskId, elevated: elevated ?? null });
 
-/** Assess a command that has not been saved yet — what the editor calls as
+/** Assess a command that has not been saved yet - what the editor calls as
  *  the operator types. */
 export const assessTaskCommand = (command: string, hostId?: string | null) =>
   invoke<DangerAssessment>("assess_task_command", {
@@ -303,7 +303,7 @@ export const assessTaskCommand = (command: string, hostId?: string | null) =>
 /** Run a task. Resolves to the stream id; output arrives as `stream://output`
  *  events and `closeStream` stops watching.
  *
- *  The command is *not* sent — the backend rebuilds the plan from the task id,
+ *  The command is *not* sent - the backend rebuilds the plan from the task id,
  *  so a window showing one command can never submit another. */
 export const startTask = (
   hostId: string,
@@ -323,7 +323,7 @@ export const startTask = (
 export const listRemoteDir = (hostId: string, path: string) =>
   invoke<DirListing>("list_remote_dir", { hostId, path });
 
-/** Where a fresh browser opens — the subsystem's own answer, not a guess. */
+/** Where a fresh browser opens - the subsystem's own answer, not a guess. */
 export const remoteHomeDir = (hostId: string) =>
   invoke<string>("remote_home_dir", { hostId });
 
@@ -333,7 +333,7 @@ export const createRemoteDir = (hostId: string, path: string, name: string) =>
 export const deleteRemoteEntry = (hostId: string, path: string, isDir: boolean) =>
   invoke<void>("delete_remote_entry", { hostId, path, isDir });
 
-/** Rename or move — the same SFTP request, differing only in whether the
+/** Rename or move - the same SFTP request, differing only in whether the
  *  destination's parent is the one it is already in. Never overwrites. */
 export const renameRemoteEntry = (hostId: string, from: string, to: string) =>
   invoke<string>("rename_remote_entry", { hostId, from, to });
@@ -419,7 +419,7 @@ export function onTransferProgress(
   );
 }
 
-/** The queue's shape changed — something was added, promoted, re-ranked or
+/** The queue's shape changed - something was added, promoted, re-ranked or
  *  settled. Carries no payload; the listener re-reads the list. */
 export function onTransfersChanged(handler: () => void): Promise<UnlistenFn> {
   return listen("sftp://changed", () => handler());
@@ -435,7 +435,7 @@ export function errorMessage(error: unknown): string {
 }
 
 /** Whether a failure was an unrecognised host key, so the UI can offer "trust
- *  and connect". A *changed* key is deliberately not matched — that one must
+ *  and connect". A *changed* key is deliberately not matched - that one must
  *  never be click-through. */
 export function isUnknownHostKey(error: unknown): boolean {
   return errorMessage(error).includes("HOSTKEY:unknown");

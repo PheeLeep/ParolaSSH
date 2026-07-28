@@ -1,8 +1,8 @@
 //! Reading a command for the shapes that end badly.
 //!
 //! **This is a typo catcher, not a security boundary.** It matches text. A
-//! command that hides its intent — behind a variable, a base64 blob, a script
-//! it downloads — walks straight past every rule here, and no amount of added
+//! command that hides its intent - behind a variable, a base64 blob, a script
+//! it downloads - walks straight past every rule here, and no amount of added
 //! patterns changes that. The operator writes these commands and holds the
 //! credentials to run them by hand; the threat being defended against is the
 //! stray `/`, the pasted line from a forum, the task written for the wrong
@@ -13,7 +13,7 @@
 //! plausible *mistake*; rules that only fire on deliberate misuse are noise,
 //! and noise is what teaches people to click through warnings.
 //!
-//! Matching is on a normalised copy — lowercased, whitespace collapsed — while
+//! Matching is on a normalised copy - lowercased, whitespace collapsed - while
 //! every message quotes the operator's original wording.
 
 use serde::Serialize;
@@ -42,7 +42,7 @@ impl DangerLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DangerReason {
-    /// Short label for the badge — "Recursive delete", "Formats a disk".
+    /// Short label for the badge - "Recursive delete", "Formats a disk".
     pub label: String,
     /// What the app thinks this does, and why that is worth a pause.
     pub detail: String,
@@ -165,7 +165,7 @@ fn assess_unix(text: &str, reasons: &mut Vec<DangerReason>) {
                 DangerLevel::Caution,
                 "Recursive delete",
                 "`rm -r` with `-f` removes a whole tree without asking. Check the \
-                 path is the one you mean — a trailing slash or an unset variable \
+                 path is the one you mean - a trailing slash or an unset variable \
                  can widen it.",
             );
         }
@@ -246,7 +246,7 @@ fn assess_unix(text: &str, reasons: &mut Vec<DangerReason>) {
             DangerLevel::Caution,
             "Restarts the SSH service",
             "This is the service carrying this session. A bad `sshd_config` takes \
-             the daemon down with no way back in over SSH — have console access \
+             the daemon down with no way back in over SSH - have console access \
              ready, or run `sshd -t` first.",
         );
     }
@@ -297,7 +297,7 @@ fn assess_unix(text: &str, reasons: &mut Vec<DangerReason>) {
             reasons,
             DangerLevel::Destructive,
             "Runs code downloaded from the network",
-            "Whatever the URL returns today executes on this host — nothing is \
+            "Whatever the URL returns today executes on this host - nothing is \
              pinned, reviewed, or logged. If the task is worth keeping, fetch the \
              script, read it, then run it.",
         );
@@ -370,7 +370,7 @@ fn assess_unix(text: &str, reasons: &mut Vec<DangerReason>) {
             DangerLevel::Caution,
             "Removes installed packages",
             "Dependency resolution can take far more with it than the package \
-             named — run it once by hand and read the list before saving it as a \
+             named - run it once by hand and read the list before saving it as a \
              one-click task.",
         );
     }
@@ -452,7 +452,7 @@ fn assess_windows(text: &str, reasons: &mut Vec<DangerReason>) {
             reasons,
             DangerLevel::Destructive,
             "Runs code downloaded from the network",
-            "Whatever the URL returns today executes on this host — nothing is \
+            "Whatever the URL returns today executes on this host - nothing is \
              pinned, reviewed, or logged.",
         );
     }
@@ -570,7 +570,7 @@ fn pipes_download_to_shell(text: &str) -> bool {
         .any(|shell| text.contains(shell))
 }
 
-/// Whether `verb` appears as a command rather than inside another word — at the
+/// Whether `verb` appears as a command rather than inside another word - at the
 /// start, or after a separator. Keeps `reboot` from firing on `reboot-required`
 /// and `halt` from firing on `--halt-on-error`.
 fn starts_or_follows(text: &str, verb: &str) -> bool {
@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn the_rule_set_follows_the_host_os() {
         // A Windows delete aimed at a Linux host is a broken task, not a
-        // dangerous one — warning about it would be the wrong warning.
+        // dangerous one - warning about it would be the wrong warning.
         assert!(assess(OsFamily::Linux, "del /f /s /q c:\\temp").level.is_none());
         assert_eq!(
             assess(OsFamily::Windows, "del /f /s /q c:\\windows").level,

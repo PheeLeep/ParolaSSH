@@ -75,7 +75,7 @@ export function LogsPanel() {
     });
   }, [entries, minLevel, query]);
 
-  // Newest is last, so the view opens at the bottom — the same rule the
+  // Newest is last, so the view opens at the bottom - the same rule the
   // service journal follows.
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -107,7 +107,7 @@ export function LogsPanel() {
         <h2 className="section-title mb-1">Logs</h2>
         <p className="text-body-secondary small mb-3">
           What ParolaSSH did, kept on this machine so a failure can be read back
-          later. Connections, power and service actions, and transfers — never
+          later. Connections, power and service actions, and transfers - never
           passwords, key material, or output from a remote machine.
         </p>
 

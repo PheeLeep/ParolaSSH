@@ -16,7 +16,7 @@ import type { PeerListing, TailscalePeer } from "./types";
  * Import tailnet machines as saved hosts.
  *
  * Tailscale knows the address, not the account, so one username and auth
- * method are applied to every selection — tailnets are usually administered
+ * method are applied to every selection - tailnets are usually administered
  * with one login, and anything unusual is a normal edit afterwards. Peers
  * already saved are shown but not selectable, so a second import cannot
  * silently duplicate them.
@@ -38,7 +38,7 @@ export function TailscaleImportDialog({
   const [username, setUsername] = useState("");
   // Not `none`: Tailscale SSH's server is Linux-only *and* opt-in, so it is
   // wrong more often than right as a batch default. It stays selectable, with
-  // the peers it cannot serve named — see `noneCannotServe`.
+  // the peers it cannot serve named - see `noneCannotServe`.
   const [authMethod, setAuthMethod] = useState<AuthMethod>("agent");
   const [group, setGroup] = useState("Tailnet");
   const [importing, setImporting] = useState(false);
@@ -81,7 +81,7 @@ export function TailscaleImportDialog({
   const importable = peers.filter((peer) => !isSaved(peer));
   const canImport = selected.size > 0 && username.trim().length > 0 && !importing;
 
-  /** Selected peers that cannot run a Tailscale SSH server at all — its server
+  /** Selected peers that cannot run a Tailscale SSH server at all - its server
    *  component is Linux-only, so `none` would never authenticate there. */
   const noneCannotServe =
     authMethod === "none"
@@ -172,7 +172,7 @@ export function TailscaleImportDialog({
 
         {!loading && listing?.kind === "unavailable" && (
           <p className="text-body-secondary mb-0">
-            No peer list — {listing.detail}. ParolaSSH does not log in or start
+            No peer list - {listing.detail}. ParolaSSH does not log in or start
             the client for you.
           </p>
         )}
@@ -236,13 +236,13 @@ export function TailscaleImportDialog({
               <Alert variant="warning" className="py-2 small">
                 Tailscale SSH's server runs only on Linux, so{" "}
                 {noneCannotServe.map((peer) => peer.hostName).join(", ")} cannot
-                accept it — those will need a password or key.
+                accept it - those will need a password or key.
               </Alert>
             )}
 
             {authMethod === "publickey" && (
               <p className="text-body-secondary small">
-                Imported hosts get no key file — choose one per host afterwards.
+                Imported hosts get no key file - choose one per host afterwards.
               </p>
             )}
 

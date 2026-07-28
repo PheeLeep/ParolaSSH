@@ -1,4 +1,5 @@
 import * as api from "../hosts/api";
+import type { TransferPriority } from "../hosts/types";
 
 /** Which pane opens on launch. */
 export type StartupView = "welcome" | "hosts";
@@ -155,7 +156,7 @@ export function writeNavLayout(layout: NavLayout): void {
 }
 
 /** The navbar renders once and lives for the whole session, so it subscribes
- *  rather than re-reading — a change in Settings has to reach it immediately. */
+ *  rather than re-reading - a change in Settings has to reach it immediately. */
 export function subscribeNavLayout(
   listener: (layout: NavLayout) => void,
 ): () => void {
@@ -200,7 +201,7 @@ export async function writeMaxConcurrentTransfers(value: number): Promise<number
   } catch {
     // non-fatal: the preference just won't survive a restart
   }
-  // Rust clamps too, and its answer wins — the two ranges are meant to agree,
+  // Rust clamps too, and its answer wins - the two ranges are meant to agree,
   // and if they ever drift the enforcing side is the truthful one.
   return api.setMaxConcurrentTransfers(clamped);
 }
@@ -213,6 +214,31 @@ export async function applyStoredConcurrency(): Promise<void> {
     await api.setMaxConcurrentTransfers(readMaxConcurrentTransfers());
   } catch {
     // The default is already in force; nothing to recover.
+  }
+}
+
+export const DEFAULT_PRIORITY_STORAGE_KEY = "parolassh:default-transfer-priority";
+
+const PRIORITIES: TransferPriority[] = ["low", "normal", "high"];
+
+/** Priority given to anything newly queued, until it is changed on the row. */
+export function readDefaultTransferPriority(): TransferPriority {
+  try {
+    const stored = localStorage.getItem(DEFAULT_PRIORITY_STORAGE_KEY);
+    if (stored && (PRIORITIES as string[]).includes(stored)) {
+      return stored as TransferPriority;
+    }
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+  }
+  return "normal";
+}
+
+export function writeDefaultTransferPriority(priority: TransferPriority): void {
+  try {
+    localStorage.setItem(DEFAULT_PRIORITY_STORAGE_KEY, priority);
+  } catch {
+    // non-fatal: the preference just won't survive a restart
   }
 }
 

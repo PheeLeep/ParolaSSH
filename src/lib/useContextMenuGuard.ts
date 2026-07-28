@@ -12,7 +12,7 @@ function keepsNativeMenu(target: EventTarget | null): boolean {
 const DEVTOOLS_KEYS = new Set(["i", "j", "c"]);
 
 /** Suppresses the webview's own chrome so the app reads as a desktop program.
- *  Presentation, not protection — any Tauri frontend is inspectable, and this
+ *  Presentation, not protection - any Tauri frontend is inspectable, and this
  *  only keeps "Inspect Element" from showing up mid-demo. */
 export function useContextMenuGuard(): void {
   useEffect(() => {

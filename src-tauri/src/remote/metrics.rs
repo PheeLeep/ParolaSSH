@@ -72,7 +72,7 @@ const LINUX_COMMAND: &str = "cat /proc/stat; echo ---PAROLA---; cat /proc/meminf
 const UNIX_FALLBACK_COMMAND: &str = "uptime; echo ---PAROLA---; df -P -k";
 
 /// One PowerShell invocation, JSON out, so parsing does not depend on the
-/// display locale. `LoadPercentage` is instantaneous — no delta needed.
+/// display locale. `LoadPercentage` is instantaneous - no delta needed.
 const WINDOWS_COMMAND: &str = "powershell -NoProfile -NonInteractive -Command \
     \"@{ os = Get-CimInstance Win32_OperatingSystem | Select-Object \
     TotalVisibleMemorySize,FreePhysicalMemory,LastBootUpTime; \
@@ -188,7 +188,7 @@ fn parse_proc_stat(text: &str) -> Option<CpuTimes> {
 }
 
 /// Percentage of non-idle time between two readings. Counters only grow, so a
-/// shrink means a reboot — answered with "no reading", not a negative.
+/// shrink means a reboot - answered with "no reading", not a negative.
 pub fn cpu_percent(previous: CpuTimes, current: CpuTimes) -> Option<f64> {
     if current.total <= previous.total || current.busy < previous.busy {
         return None;
@@ -344,7 +344,7 @@ pub fn parse_windows(stdout: &str, sampled_at_ms: i64) -> HostMetrics {
         })
     });
 
-    // CIM datetimes serialize as `/Date(1697049600000)/` — epoch milliseconds.
+    // CIM datetimes serialize as `/Date(1697049600000)/` - epoch milliseconds.
     let uptime_seconds = value
         .get("os")
         .and_then(|os| os.get("LastBootUpTime"))
@@ -482,7 +482,7 @@ Filesystem 1024-blocks Used Available Capacity Mounted on\n\
 ---PAROLA---\n\
 0.52 0.44 0.30 1/234 5678\n";
 
-        // First sample: no previous reading, so no CPU yet — and a note says so.
+        // First sample: no previous reading, so no CPU yet - and a note says so.
         let (first, current) = parse_linux(stdout, None, 1_000);
         assert_eq!(first.cpu_percent, None);
         assert!(first.notes[0].contains("second sample"));
@@ -519,7 +519,7 @@ Filesystem 1024-blocks Used Available Capacity Mounted on\n\
         let memory = metrics.memory.unwrap();
         assert_eq!(memory.total_kb, 16_712_204);
         assert!((memory.used_percent - 50.0).abs() < 0.01);
-        // (87_400_000 - 1_000_000) ms = 86_400 s — one day of uptime.
+        // (87_400_000 - 1_000_000) ms = 86_400 s - one day of uptime.
         assert_eq!(metrics.uptime_seconds, Some(86_400));
         assert_eq!(metrics.disks.len(), 1);
         assert_eq!(metrics.disks[0].mount, "C:");

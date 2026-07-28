@@ -62,7 +62,7 @@ const SELECT_COLUMN_ID = "__select";
 type DataTableProps<TData> = {
   data: TData[];
   columns: ColumnDef<TData, any>[];
-  /** Stable row id — important so selection survives sorting and filtering. */
+  /** Stable row id - important so selection survives sorting and filtering. */
   getRowId?: (row: TData, index: number) => string;
   enableRowSelection?: boolean;
   onSelectionChange?: (rows: TData[]) => void;
@@ -215,7 +215,7 @@ export function DataTable<TData>({
 
       <div className="table-responsive border rounded datatable__scroll">
         <Table hover className="mb-0 align-middle">
-          {/* No `.table-light` here — it paints an inset box-shadow that would
+          {/* No `.table-light` here - it paints an inset box-shadow that would
               cover the themed header background from app.css. */}
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (

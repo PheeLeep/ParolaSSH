@@ -15,7 +15,7 @@ import type { ConnectionInfo, PassphraseNeed } from "./types";
  *  1. An unknown host key stops the connection before a password is sent, and
  *     this is where the fingerprint is shown and accepted. A changed key is
  *     never offered as click-through.
- *  2. "Remember" means until the app quits, and says so — no keychain.
+ *  2. "Remember" means until the app quits, and says so - no keychain.
  *  3. A key connection asks the Rust side whether the key is really locked
  *     before showing a passphrase box, so an unencrypted key connects as
  *     directly as agent auth.
@@ -95,7 +95,7 @@ export function ConnectDialog({
   if (!host) return null;
 
   const needsPassword = host.authMethod === "password";
-  // Only once we know the key is locked — and never for one that is not.
+  // Only once we know the key is locked - and never for one that is not.
   const needsPassphrase =
     host.authMethod === "publickey" && need !== null && need.kind !== "notNeeded";
   const checkingKey = host.authMethod === "publickey" && need === null;
@@ -151,7 +151,7 @@ export function ConnectDialog({
               It identifies itself with:
               <div className="public-key-box user-select-auto my-2">{unknownKey}</div>
               Nothing has been sent yet. If that fingerprint matches what the
-              server should have, trust it — it will be written to your
+              server should have, trust it - it will be written to your
               <code> known_hosts </code> and checked automatically from now on.
             </div>
           </Alert>
@@ -209,7 +209,7 @@ export function ConnectDialog({
             <Form.Text className="text-body-secondary">
               {need.kind === "required" && (
                 <>
-                  <code>{host.keyPath ?? "The key"}</code> is encrypted — this
+                  <code>{host.keyPath ?? "The key"}</code> is encrypted - this
                   unlocks it, and is never stored.
                 </>
               )}
@@ -235,8 +235,8 @@ export function ConnectDialog({
               {host.authMethod === "agent"
                 ? "Offering the keys held by your SSH agent…"
                 : host.authMethod === "none"
-                  ? "Sending no credential — this host identifies you before SSH begins…"
-                  : "The key is not encrypted, so there is nothing to unlock — connecting…"}
+                  ? "Sending no credential - this host identifies you before SSH begins…"
+                  : "The key is not encrypted, so there is nothing to unlock - connecting…"}
             </p>
           )}
 
@@ -253,7 +253,7 @@ export function ConnectDialog({
               <Alert variant="secondary" className="mt-2 mb-0 d-flex gap-2 py-2 small">
                 <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
                 <div>
-                  Held in memory only — not in your keychain, and not on disk.
+                  Held in memory only - not in your keychain, and not on disk.
                   Quitting ParolaSSH forgets it.
                 </div>
               </Alert>

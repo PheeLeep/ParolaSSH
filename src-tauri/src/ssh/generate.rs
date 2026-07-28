@@ -35,7 +35,7 @@ pub struct GenerateRequest {
     /// File name inside the SSH directory, e.g. `id_ed25519`.
     pub file_name: String,
     pub comment: Option<String>,
-    /// Empty means no passphrase — allowed, but the audit will flag it.
+    /// Empty means no passphrase - allowed, but the audit will flag it.
     pub passphrase: Option<String>,
     /// Overwrite an existing file. Defaults to refusing.
     #[serde(default)]
@@ -70,7 +70,7 @@ pub fn validate_file_name(name: &str) -> SshResult<&str> {
     }
     if trimmed.ends_with(".pub") {
         return Err(SshError::invalid(
-            "Leave off the .pub — it is added to the public key automatically.",
+            "Leave off the .pub - it is added to the public key automatically.",
         ));
     }
     // Reserved device names on Windows resolve to hardware, not files.
@@ -80,7 +80,7 @@ pub fn validate_file_name(name: &str) -> SshResult<&str> {
     ];
     if RESERVED.contains(&stem.as_str()) {
         return Err(SshError::invalid(
-            "That name is reserved by Windows — pick another.",
+            "That name is reserved by Windows - pick another.",
         ));
     }
 

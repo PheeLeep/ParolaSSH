@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Unlink } from "lucide-react";
 import { STATUS_LABELS, type HostStatus } from "./types";
 
-/** How long the pulse class stays on — must outlast the CSS animation. */
+/** How long the pulse class stays on - must outlast the CSS animation. */
 const PULSE_MS = 950;
 
 /** Whole chain only while a session is open; broken for every other state,
@@ -77,7 +77,7 @@ export function StatusDot({
   );
 }
 
-/** Dot plus label, tinted rather than filled — quieter than a solid badge. */
+/** Dot plus label, tinted rather than filled - quieter than a solid badge. */
 export function StatusBadge({ status }: { status: HostStatus }) {
   const pulsing = useStatusPulse(status);
 

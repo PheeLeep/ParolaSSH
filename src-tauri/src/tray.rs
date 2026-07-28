@@ -3,7 +3,7 @@
 //! The tray keeps the app reachable while its window is hidden, so closing it
 //! with live SSH sessions can minimize instead of tearing connections down.
 //! Because the window may be hidden, the state is derived here in Rust from
-//! `SessionRegistry` rather than pushed from the frontend — a tray that froze
+//! `SessionRegistry` rather than pushed from the frontend - a tray that froze
 //! whenever the UI was closed would be worse than no tray.
 
 use std::collections::HashSet;
@@ -50,11 +50,11 @@ impl Status {
 
     fn label(self, connected: usize) -> String {
         match self {
-            Status::Offline => "ParolaSSH — offline".into(),
-            Status::Online => "ParolaSSH — online, no sessions".into(),
-            Status::Connecting => "ParolaSSH — connecting…".into(),
-            Status::Connected if connected == 1 => "ParolaSSH — 1 host connected".into(),
-            Status::Connected => format!("ParolaSSH — {connected} hosts connected"),
+            Status::Offline => "ParolaSSH - offline".into(),
+            Status::Online => "ParolaSSH - online, no sessions".into(),
+            Status::Connecting => "ParolaSSH - connecting…".into(),
+            Status::Connected if connected == 1 => "ParolaSSH - 1 host connected".into(),
+            Status::Connected => format!("ParolaSSH - {connected} hosts connected"),
         }
     }
 }
@@ -65,7 +65,7 @@ pub struct TrayState {
     /// Connects currently in flight. A count, not a flag: two hosts can be
     /// dialled at once and the first to finish must not clear the second.
     connecting: AtomicU64,
-    /// Hosts whose connect dialog is open — the user is being asked for a
+    /// Hosts whose connect dialog is open - the user is being asked for a
     /// password or passphrase. Rust cannot see a dialog, so the frontend
     /// declares this; kept separate from `connecting` so the two cannot
     /// interfere when the same host appears in both during a submit.
@@ -77,7 +77,7 @@ pub struct TrayState {
     /// previous connect cannot keep toggling the icon.
     blink_generation: AtomicU64,
     /// The disabled first menu entry. On Linux this is the only place the
-    /// status text is actually visible — see `set_text` below.
+    /// status text is actually visible - see `set_text` below.
     header: Mutex<Option<MenuItem<Wry>>>,
 }
 
@@ -137,7 +137,7 @@ pub fn clear_connect_pending(app: AppHandle) {
 
 /// Whether this machine has any route off itself.
 ///
-/// A UDP `connect` only fixes the socket's peer address — it sends nothing —
+/// A UDP `connect` only fixes the socket's peer address - it sends nothing -
 /// so this asks the routing table without touching the network. It answers
 /// "could we reach anything", which is what the offline state means; a host
 /// that is up but firewalled must not read as the laptop being off Wi-Fi.
@@ -211,7 +211,7 @@ pub fn refresh(app: &AppHandle) {
     if let Some(tray) = app.tray_by_id("main") {
         // Windows and macOS show this on hover. libappindicator, which every
         // Linux status-notifier host uses, silently drops both tooltip and
-        // title — hence the menu header below, which does render there.
+        // title - hence the menu header below, which does render there.
         let _ = tray.set_tooltip(Some(&label));
         let _ = tray.set_title(Some(&label));
     }
@@ -268,7 +268,7 @@ fn show_main(app: &AppHandle) {
 pub fn init(app: &tauri::App) -> tauri::Result<()> {
     // Managed unwrapped: `manage` keys state by its exact type, so an
     // `Arc<TrayState>` here would leave every `try_state::<TrayState>()` below
-    // returning `None` — silently, since they all fall back to a default.
+    // returning `None` - silently, since they all fall back to a default.
     let state = TrayState::default();
 
     // Disabled on purpose: it is a readout, not an action. First so it reads
@@ -334,14 +334,14 @@ mod tests {
             (Status::Connected, 1),
             (Status::Connected, 4),
         ] {
-            assert!(status.label(connected).starts_with("ParolaSSH — "));
+            assert!(status.label(connected).starts_with("ParolaSSH - "));
         }
     }
 
     #[test]
     fn connected_label_agrees_with_its_count() {
-        assert_eq!(Status::Connected.label(1), "ParolaSSH — 1 host connected");
-        assert_eq!(Status::Connected.label(3), "ParolaSSH — 3 hosts connected");
+        assert_eq!(Status::Connected.label(1), "ParolaSSH - 1 host connected");
+        assert_eq!(Status::Connected.label(3), "ParolaSSH - 3 hosts connected");
     }
 
     #[test]

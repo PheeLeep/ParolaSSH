@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=ParolaSSH
-Comment=A desktop SSH console — saved hosts, key management, and terminals in one window.
+Comment=A desktop SSH console - saved hosts, key management, and terminals in one window.
 Exec=parolassh
 Icon=parolassh
 Terminal=false

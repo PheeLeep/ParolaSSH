@@ -31,7 +31,7 @@ pub const OUTPUT_EVENT: &str = "terminal://output";
 pub const CLOSED_EVENT: &str = "terminal://closed";
 
 /// Identifies one shell for the lifetime of the process. Without it a pane
-/// cannot tell its own output from that of a shell it replaced — React's
+/// cannot tell its own output from that of a shell it replaced - React's
 /// StrictMode remount makes that the normal case in development.
 static NEXT_SHELL_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -84,7 +84,7 @@ impl ShellHandle {
     }
 }
 
-/// How long output accumulates before it is sent — about one frame.
+/// How long output accumulates before it is sent - about one frame.
 const FLUSH_WINDOW: Duration = Duration::from_millis(16);
 
 /// Force a flush once a batch reaches this size, so a fast producer does not
@@ -145,7 +145,7 @@ pub async fn open(
         while let Some(message) = reader.wait().await {
             let decoded = match message {
                 ChannelMsg::Data { ref data } => stdout.push(data).map(ShellMsg::Out),
-                ChannelMsg::ExtendedData { ref data, ext } if ext == 1 => {
+                ChannelMsg::ExtendedData { ref data, ext: 1 } => {
                     stderr.push(data).map(ShellMsg::Err)
                 }
                 // Keep reading: output may still be in flight behind the
@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn reassembles_a_character_split_across_packets() {
         let mut decoder = Decoder::default();
-        // "é" is 0xC3 0xA9 — arriving one byte per packet.
+        // "é" is 0xC3 0xA9 - arriving one byte per packet.
         assert_eq!(decoder.push(&[0xC3]), None, "half a character must not emit");
         assert_eq!(decoder.push(&[0xA9]).as_deref(), Some("é"));
     }

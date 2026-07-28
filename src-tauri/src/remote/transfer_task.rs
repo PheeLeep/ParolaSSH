@@ -2,7 +2,7 @@
 //!
 //! The queue in `transfers` decides *what* runs; this decides *how*. Each
 //! transfer opens its own SFTP channel so a slow copy never blocks the file
-//! browser, and copies in fixed chunks — a four-gigabyte download must never
+//! browser, and copies in fixed chunks - a four-gigabyte download must never
 //! become a four-gigabyte allocation.
 //!
 //! Two properties matter more than throughput:
@@ -18,8 +18,8 @@
 //! Transfers are length-checked, never hashed. SSH already MACs every packet,
 //! so corruption in flight breaks the session rather than reaching us; the
 //! residual risk is truncation, which a byte count catches exactly. A content
-//! hash would need the *server* to compute one — an exec and a second full read
-//! of the file — to cover only corruption at rest.
+//! hash would need the *server* to compute one - an exec and a second full read
+//! of the file - to cover only corruption at rest.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,7 +39,7 @@ use crate::ssh::{SshError, SshResult};
 
 /// Emitted as bytes move.
 pub const PROGRESS_EVENT: &str = "sftp://progress";
-/// Emitted when the queue's shape changes — enqueue, promote, settle, re-rank.
+/// Emitted when the queue's shape changes - enqueue, promote, settle, re-rank.
 pub const CHANGED_EVENT: &str = "sftp://changed";
 
 /// Chunk size. Large enough that per-request overhead disappears, small enough
@@ -66,7 +66,7 @@ struct ProgressEvent {
 ///
 /// Broadcast rather than addressed to one webview, which is the opposite of
 /// `shell.rs`: terminal output belongs to the pane that asked for it, but the
-/// transfer list is global — the Transfers page must keep updating while the
+/// transfer list is global - the Transfers page must keep updating while the
 /// user is somewhere else entirely.
 pub fn emit_changed(app: &AppHandle) {
     let _ = app.emit(CHANGED_EVENT, ());
@@ -148,7 +148,7 @@ pub async fn run(
 
 /// Copy a remote file down.
 ///
-/// Reads are pipelined — see `sftp::RemoteReader`. A serial reader spends most
+/// Reads are pipelined - see `sftp::RemoteReader`. A serial reader spends most
 /// of a LAN transfer waiting on round trips rather than moving bytes.
 pub async fn download(
     session: &Session,
@@ -196,7 +196,7 @@ async fn download_into(
             .map_err(|error| SshError::io("Could not create the download folder", error))?;
     }
 
-    // Owner-only from the moment it exists — a downloaded private key is never
+    // Owner-only from the moment it exists - a downloaded private key is never
     // world-readable, not even for the seconds it is arriving.
     let file = private_file::create_owner_only(part_path)?;
     let mut sink = tokio::io::BufWriter::with_capacity(CHUNK, tokio::fs::File::from_std(file));
@@ -227,7 +227,7 @@ fn verify_length(done: u64, expected: u64, stray: Option<&Path>) -> SshResult<()
 
     Err(SshError::Io(format!(
         "The transfer ended early: {done} of {expected} bytes arrived. \
-         Nothing was kept — try again."
+         Nothing was kept - try again."
     )))
 }
 
@@ -298,7 +298,7 @@ pub async fn upload(
         sftp::explain_error(&format!("Could not close {remote_path}"), &error.to_string())
     })?;
 
-    // Should be unreachable — we read the local file ourselves — so a short
+    // Should be unreachable - we read the local file ourselves - so a short
     // count means our own loop lost bytes.
     verify_length(done, total, None)?;
     Ok(())
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn a_long_transfer_is_refused_too() {
         // A file that grew under us is as untrustworthy as one that was cut
-        // short — the bytes on disk no longer match anything we checked.
+        // short - the bytes on disk no longer match anything we checked.
         assert!(verify_length(2048, 1024, None).is_err());
     }
 
@@ -417,7 +417,7 @@ mod tests {
     fn a_dotfile_keeps_its_whole_name_when_disambiguated() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(".bashrc"), "x").unwrap();
-        // `.bashrc` is all stem, no extension — the suffix must not eat it.
+        // `.bashrc` is all stem, no extension - the suffix must not eat it.
         assert_eq!(
             available_path(dir.path(), ".bashrc"),
             dir.path().join(".bashrc (1)")

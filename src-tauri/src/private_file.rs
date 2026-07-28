@@ -1,6 +1,6 @@
 //! Writing the app's own config files so only the owner can read them.
 //!
-//! `hosts.json` is a map of every machine you administer — the same thing the
+//! `hosts.json` is a map of every machine you administer - the same thing the
 //! audit scores an unhashed `known_hosts` for. Unix gets an explicit `0600`
 //! (`0700` on the directory) because `umask` is typically `022`; Windows
 //! inherits `%APPDATA%`, which is already per-user. No hand-rolled DACL: a
@@ -53,7 +53,7 @@ pub fn write(dir: &Path, file_name: &str, text: &str) -> SshResult<()> {
 
 /// Create (or truncate) a file for streaming, owner-only on Unix.
 ///
-/// The same guarantee as `write`, for content too large to hold in a `String` —
+/// The same guarantee as `write`, for content too large to hold in a `String` -
 /// a downloaded file arrives in chunks, and a fetched private key must not be
 /// world-readable for the minutes it takes to land. The caller owns the atomic
 /// rename; downloads write to a `.part` and rename on success.

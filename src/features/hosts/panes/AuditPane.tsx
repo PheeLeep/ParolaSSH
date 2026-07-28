@@ -63,7 +63,7 @@ export function AuditPane({ hostId }: { hostId: string }) {
   const negotiated = connection?.negotiated ?? null;
 
   // Two of the checks need root. Where there is a route to it, the user is
-  // asked before it is taken — and declining still runs the rest, because a
+  // asked before it is taken - and declining still runs the rest, because a
   // partial report is worth more than none.
   const canElevate =
     connection !== undefined &&
@@ -72,7 +72,7 @@ export function AuditPane({ hostId }: { hostId: string }) {
 
   // The connect-time run is the main path (see `autoAudit` in HostsProvider).
   // This is the catch-up for the host that was already connected when the
-  // preference was switched on — same unprivileged call, and `markAttempted`
+  // preference was switched on - same unprivileged call, and `markAttempted`
   // means the two can never both fire.
   useEffect(() => {
     if (!readAutoAudit() || connection === undefined) return;
@@ -147,14 +147,14 @@ export function AuditPane({ hostId }: { hostId: string }) {
 
   return (
     <div className="d-flex flex-column gap-3">
-      {/* Tier 0 — free: the handshake already happened. */}
+      {/* Tier 0 - free: the handshake already happened. */}
       <Card>
         <Card.Body>
           <div className="d-flex align-items-center gap-2 mb-2">
             <Lock className="icon-sm" aria-hidden="true" />
             <h2 className="h6 mb-0">Negotiated crypto</h2>
             <span className="text-body-secondary small">
-              from the handshake — costs no remote command
+              from the handshake - costs no remote command
             </span>
           </div>
           {negotiated ? (
@@ -190,7 +190,7 @@ export function AuditPane({ hostId }: { hostId: string }) {
             </dl>
           ) : (
             <p className="text-body-secondary mb-0">
-              The session did not report its negotiation — reconnect to refresh it.
+              The session did not report its negotiation - reconnect to refresh it.
             </p>
           )}
         </Card.Body>
@@ -207,7 +207,7 @@ export function AuditPane({ hostId }: { hostId: string }) {
             <p className="text-body-secondary mb-3">
               A handful of read-only commands: <code>sshd -T</code> settings,{" "}
               <code>authorized_keys</code> permissions, world-writable PATH
-              directories, and — where sudo allows — accounts with empty
+              directories, and - where sudo allows - accounts with empty
               passwords. Nothing is changed on the host.
             </p>
 
@@ -255,7 +255,7 @@ export function AuditPane({ hostId }: { hostId: string }) {
 
           {sortedFindings.length === 0 ? (
             <Alert variant="success" className="mb-0">
-              Nothing to report — every check that ran came back clean.
+              Nothing to report - every check that ran came back clean.
             </Alert>
           ) : (
             <div className="d-flex flex-column gap-2">
@@ -299,7 +299,7 @@ function CountsRow({ counts }: { counts: RemoteSeverityCounts }) {
 }
 
 /** Like the key audit's FindingCard, minus local fixes: remote remediation
- *  is instruction text only — shown and copyable, never executed. */
+ *  is instruction text only - shown and copyable, never executed. */
 function RemoteFindingCard({
   finding,
   onToggleSuppressed,

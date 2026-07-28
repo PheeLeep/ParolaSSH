@@ -4,7 +4,7 @@
 //! `private_file`. A task is a command someone intends to run as root on a
 //! named machine, so the file is no more readable than the address book is.
 //!
-//! Deleting a host takes its per-host tasks with it — `forget_host` is called
+//! Deleting a host takes its per-host tasks with it - `forget_host` is called
 //! from the same place the record is removed, so the file cannot accumulate
 //! tasks pinned to machines that no longer exist.
 
@@ -27,7 +27,7 @@ pub struct TaskStore {
 }
 
 impl TaskStore {
-    /// Read the list, treating a missing or unreadable file as empty — the
+    /// Read the list, treating a missing or unreadable file as empty - the
     /// same bargain `HostStore` makes, for the same reason.
     pub fn read(config_dir: &Path) -> Self {
         std::fs::read_to_string(config_dir.join(FILE_NAME))
@@ -48,7 +48,7 @@ impl TaskStore {
     }
 
     /// Everything offered on this host: global tasks plus its own, filtered to
-    /// what runs on its OS. Order is stable — global first, then per-host —
+    /// what runs on its OS. Order is stable - global first, then per-host -
     /// so the list does not reshuffle between visits.
     pub fn for_host(&self, host_id: &str, os: OsFamily) -> Vec<&TaskRecord> {
         let mut global: Vec<&TaskRecord> = Vec::new();
@@ -79,7 +79,7 @@ impl TaskStore {
                     .iter()
                     .position(|task| task.id == id)
                     .ok_or_else(|| {
-                        SshError::invalid("That task no longer exists — it may have been deleted.")
+                        SshError::invalid("That task no longer exists - it may have been deleted.")
                     })?;
 
                 // Age and run history belong to the task, not to the form.

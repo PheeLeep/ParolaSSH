@@ -24,7 +24,7 @@ export function HostDetail({
   onNavigate,
 }: {
   hostId: string;
-  /** Set when the caller knows which tab it wants — Sessions links to one. */
+  /** Set when the caller knows which tab it wants - Sessions links to one. */
   feature?: HostFeature;
   shellId?: number;
   onNavigate: Navigate;
@@ -41,8 +41,8 @@ export function HostDetail({
   });
 
   // Landing on a different host starts at Overview rather than carrying the
-  // previous host's tab across — Services on one box says nothing about
-  // another — unless the link asked for a tab by name.
+  // previous host's tab across - Services on one box says nothing about
+  // another - unless the link asked for a tab by name.
   useEffect(() => setFeature(requested ?? "overview"), [hostId, requested]);
 
   // Every tab except Overview needs a live session. Losing one mid-view would
@@ -142,7 +142,7 @@ export function HostDetail({
           {locked ? (
             <Alert variant="secondary" className="mb-0">
               Connect to this host to use {selected?.label}. It reads from the live
-              session — there is nothing to show without one.
+              session - there is nothing to show without one.
             </Alert>
           ) : feature === "overview" ? (
             <OverviewPane

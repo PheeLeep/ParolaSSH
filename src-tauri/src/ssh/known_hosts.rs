@@ -21,7 +21,7 @@ pub struct KnownHostsEntry {
     pub line: usize,
     /// `@revoked` or `@cert-authority`, when present.
     pub marker: Option<String>,
-    /// The host field as written — `|1|…` when hashed.
+    /// The host field as written - `|1|…` when hashed.
     pub hosts: String,
     pub hashed: bool,
     pub key_type: String,

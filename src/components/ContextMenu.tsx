@@ -10,7 +10,7 @@ export type ContextMenuItem =
       Icon?: LucideIcon;
       onSelect: () => void;
       disabled?: boolean;
-      /** Shown on hover — the place to say *why* an entry is disabled. */
+      /** Shown on hover - the place to say *why* an entry is disabled. */
       title?: string;
       danger?: boolean;
     };
@@ -25,8 +25,8 @@ const EDGE_GAP = 8;
  * inside a scroll container cannot clip it, and positioned `fixed` so it does
  * not count towards that container's overflow.
  *
- * Anything that moves the anchor out from under it — scrolling, resizing,
- * losing the window — closes it rather than leaving it stranded.
+ * Anything that moves the anchor out from under it - scrolling, resizing,
+ * losing the window - closes it rather than leaving it stranded.
  */
 export function ContextMenu({
   anchor,

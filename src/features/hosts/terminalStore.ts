@@ -87,7 +87,7 @@ export function countForHost(hostId: string): number {
   return forHost(hostId).length;
 }
 
-/** Every open terminal, across hosts — what the Sessions view lists. */
+/** Every open terminal, across hosts - what the Sessions view lists. */
 export function all(): TerminalEntry[] {
   return [...entries.values()].sort((a, b) => a.shellId - b.shellId);
 }
@@ -142,7 +142,7 @@ export async function open(
       if (!entry || entry.exited) return;
       entry.exited = true;
       entry.exitCode = exitCode;
-      terminal.write("\r\n\x1b[90m— session ended —\x1b[0m\r\n");
+      terminal.write("\r\n\x1b[90m- session ended -\x1b[0m\r\n");
       emit();
     }),
   );
@@ -306,11 +306,6 @@ export function rename(shellId: number, title: string) {
 
   entry.title = next;
   emit();
-}
-
-export function isRenamed(shellId: number): boolean {
-  const entry = entries.get(shellId);
-  return Boolean(entry && entry.title !== entry.defaultTitle);
 }
 
 export function focus(shellId: number) {

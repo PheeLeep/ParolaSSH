@@ -43,7 +43,7 @@ impl SecretVault {
             .unwrap_or(false)
     }
 
-    /// Drop one host's password — used when the credential is rejected, so a
+    /// Drop one host's password - used when the credential is rejected, so a
     /// stale password is not retried forever into an account lockout.
     pub fn forget(&self, host_id: &str) {
         if let Ok(mut passwords) = self.passwords.lock() {

@@ -1,8 +1,8 @@
 /** Transient status messages, pushed from anywhere.
  *
  *  A module singleton rather than a context, for the reason `terminalStore` is
- *  one: the things worth announcing — a transfer finishing, a folder being
- *  created — happen in code that outlives whichever pane started them, and a
+ *  one: the things worth announcing - a transfer finishing, a folder being
+ *  created - happen in code that outlives whichever pane started them, and a
  *  toast raised from a component that has since unmounted must still appear.
  *
  *  Errors that a pane can show inline should stay inline. This is for outcomes

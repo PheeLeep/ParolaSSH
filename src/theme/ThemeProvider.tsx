@@ -11,7 +11,7 @@ import {
 /** What the user picked. `system` follows the OS appearance setting. */
 export type ThemeMode = "light" | "dark" | "system";
 
-/** What actually gets painted — `system` is resolved away. */
+/** What actually gets painted - `system` is resolved away. */
 export type ResolvedTheme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "parolassh:theme";

@@ -5,7 +5,7 @@ import type { NavStyle } from "../features/settings/preferences";
 
 /**
  * Minimize / maximize / close for the undecorated window (Windows and Linux),
- * drawn in the convention `style` asks for — see Settings › Navigation layout.
+ * drawn in the convention `style` asks for - see Settings › Navigation layout.
  *
  * Close goes through `close()`, not `destroy()`, so the CloseGuard gets to
  * intercept it while SSH sessions are live.

@@ -45,7 +45,7 @@ pub enum Credentials {
         passphrase: Option<Zeroizing<String>>,
     },
     Agent,
-    /// Send no credential at all — see `AuthMethod::None`.
+    /// Send no credential at all - see `AuthMethod::None`.
     None,
 }
 
@@ -53,7 +53,7 @@ pub enum Credentials {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostKeyProblem {
-    /// `unknown` — never seen before. `changed` — does not match known_hosts.
+    /// `unknown` - never seen before. `changed` - does not match known_hosts.
     pub kind: String,
     pub fingerprint: String,
     pub algorithm: String,
@@ -90,7 +90,7 @@ struct Handler {
     /// Set when the user has already seen and accepted this host's key.
     trust_unknown: bool,
     verdict: Arc<Mutex<KeyVerdict>>,
-    /// Filled by `kex_done`, read by `connect` — same shape as `verdict`.
+    /// Filled by `kex_done`, read by `connect` - same shape as `verdict`.
     crypto: Arc<Mutex<Option<NegotiatedCrypto>>>,
 }
 
@@ -132,7 +132,7 @@ impl client::Handler for Handler {
                 fingerprint: fingerprint.clone(),
                 algorithm,
             }),
-            // A recorded key that no longer matches — never auto-accepted, not
+            // A recorded key that no longer matches - never auto-accepted, not
             // even with `trust_unknown`, which answered about a different key.
             Err(russh::keys::Error::KeyChanged { .. }) => Some(HostKeyProblem {
                 kind: "changed".into(),
@@ -250,7 +250,7 @@ impl Session {
                     return Err(host_key_error(target, &problem));
                 }
                 return Err(SshError::Io(format!(
-                    "Could not connect to {}:{} — {error}",
+                    "Could not connect to {}:{} - {error}",
                     target.hostname, target.port
                 )));
             }
@@ -425,7 +425,7 @@ async fn authenticate(
             let key = load_secret_key(&expanded, passphrase.as_ref().map(|p| p.as_str())).map_err(
                 |error| {
                     SshError::invalid(format!(
-                        "Could not load {} — {error}. If the key has a passphrase, enter it.",
+                        "Could not load {} - {error}. If the key has a passphrase, enter it.",
                         expanded.display()
                     ))
                 },
@@ -449,8 +449,8 @@ async fn authenticate(
 
         Credentials::Agent => authenticate_with_agent(handle, target).await,
 
-        // The server established who we are before SSH began — Tailscale does
-        // this over WireGuard — so it asks for nothing further.
+        // The server established who we are before SSH began - Tailscale does
+        // this over WireGuard - so it asks for nothing further.
         Credentials::None => handle
             .authenticate_none(target.username.clone())
             .await
@@ -491,7 +491,7 @@ async fn authenticate_with_agent(handle: &mut Handle<Handler>, target: &Target) 
 }
 
 /// Try each identity in turn until the server accepts one. A rejected key is
-/// not an error — an agent commonly holds keys for several hosts.
+/// not an error - an agent commonly holds keys for several hosts.
 async fn offer_agent_identities<S>(
     handle: &mut Handle<Handler>,
     target: &Target,
@@ -558,7 +558,7 @@ fn auth_failure_message(credentials: &Credentials, target: &Target) -> String {
         ),
         Credentials::None => format!(
             "{} would not accept “{}” without a credential. This host expects a \
-             password or a key — “no credential” only works where the server \
+             password or a key - “no credential” only works where the server \
              already knows you, as with Tailscale SSH.",
             target.hostname, target.username
         ),

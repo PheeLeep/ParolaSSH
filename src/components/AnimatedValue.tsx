@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 const FLASH_MS = 320;
 
 /**
- * Briefly flashes when `value` changes, so counts that move on their own —
- * the sidebar's online tallies, updated by the background heartbeat — get
+ * Briefly flashes when `value` changes, so counts that move on their own -
+ * the sidebar's online tallies, updated by the background heartbeat - get
  * noticed instead of silently ticking over.
  */
 export function AnimatedValue({ value }: { value: number | string }) {

@@ -79,7 +79,7 @@ export const VPN_LABELS: Record<VpnKind, string> = {
  *  warns when started beside another. */
 export function conflictNote(names: string[]): string {
   return (
-    `${names.join(" and ")} are connected at the same time — they can compete ` +
+    `${names.join(" and ")} are connected at the same time - they can compete ` +
     "for routes and DNS. Disconnect one if connections misbehave."
   );
 }

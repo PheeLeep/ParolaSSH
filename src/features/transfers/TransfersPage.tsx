@@ -1,24 +1,17 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { Badge, Button, Card, ProgressBar, Table } from "react-bootstrap";
-import {
-  ChevronsUp,
-  Download,
-  Eraser,
-  FolderOpen,
-  Upload,
-  X,
-} from "lucide-react";
+import { Badge, Button, Card, Form, ProgressBar, Table } from "react-bootstrap";
+import { Download, Eraser, FolderOpen, Upload, X } from "lucide-react";
 
 import type { Navigate } from "../../navigation";
-import type { TransferRecord } from "../hosts/types";
+import type { TransferPriority, TransferRecord } from "../hosts/types";
 import * as transfers from "./transferStore";
-import { formatBytes, percentOf } from "./format";
+import { formatBytes, formatSpeed, percentOf } from "./format";
 
 /**
  * Every transfer in the app, whichever host started it.
  *
- * Transfers outlive the pane that started them — you queue a download in one
- * host's Files tab and then go somewhere else — so this is the only place that
+ * Transfers outlive the pane that started them - you queue a download in one
+ * host's Files tab and then go somewhere else - so this is the only place that
  * shows all of them at once, and it keeps updating no matter where the bytes
  * are coming from.
  *
@@ -85,6 +78,7 @@ export function TransfersPage({ onNavigate }: { onNavigate: Navigate }) {
                 <th>Host</th>
                 <th>Priority</th>
                 <th className="transfers-table__progress">Progress</th>
+                <th className="text-end">Speed</th>
                 <th className="text-end">Actions</th>
               </tr>
             </thead>
@@ -139,27 +133,25 @@ function TransferRow({
       </td>
 
       <td>
-        <PriorityBadge priority={row.priority} />
+        {/* Only a waiting transfer can be re-prioritised; a running one has
+            already spent its slot, so the picker would decide nothing. */}
+        {row.state === "queued" ? (
+          <PrioritySelect row={row} />
+        ) : (
+          <PriorityBadge priority={row.priority} />
+        )}
       </td>
 
       <td className="transfers-table__progress">
         <Progress row={row} />
       </td>
 
+      <td className="text-end text-body-secondary small font-monospace text-nowrap">
+        {row.state === "running" ? formatSpeed(transfers.rateOf(row.id)) : "-"}
+      </td>
+
       <td className="text-end">
         <div className="d-inline-flex gap-1">
-          {/* Bumping only moves a transfer that is still waiting; a running one
-              has already spent its slot, so the control would do nothing. */}
-          {row.state === "queued" && row.priority !== "high" && (
-            <Button
-              size="sm"
-              variant="outline-secondary"
-              title="Move to the front of the queue"
-              onClick={() => void transfers.prioritize(row.id, "high")}
-            >
-              <ChevronsUp className="icon-sm" aria-hidden="true" />
-            </Button>
-          )}
           {pending && (
             <Button
               size="sm"
@@ -225,6 +217,34 @@ function Progress({ row }: { row: TransferRecord }) {
         </span>
       )}
     </span>
+  );
+}
+
+const PRIORITIES: { value: TransferPriority; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "normal", label: "Normal" },
+  { value: "low", label: "Low" },
+];
+
+/** The queue reorders as soon as this changes - Rust renumbers and the list
+ *  refreshes, so the new position shows up in the same tick. */
+function PrioritySelect({ row }: { row: TransferRecord }) {
+  return (
+    <Form.Select
+      size="sm"
+      className="priority-select"
+      value={row.priority}
+      aria-label={`Priority for ${row.name}`}
+      onChange={(event) =>
+        void transfers.prioritize(row.id, event.target.value as TransferPriority)
+      }
+    >
+      {PRIORITIES.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </Form.Select>
   );
 }
 

@@ -7,7 +7,7 @@
  * lives here instead, so the run can happen at connect time and the pane simply
  * shows what is already there.
  *
- * Cleared on the same events a terminal is — the report
+ * Cleared on the same events a terminal is - the report
  * describes a live session, and a stale one under a reconnected host would be
  * a lie about the machine as it is now.
  */

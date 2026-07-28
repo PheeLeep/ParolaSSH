@@ -34,7 +34,7 @@ pub enum ServiceState {
     Running,
     Stopped,
     Failed,
-    /// Transitional or exotic states — start-pending, reloading, and friends.
+    /// Transitional or exotic states - start-pending, reloading, and friends.
     Other,
 }
 
@@ -50,7 +50,7 @@ pub enum ServiceAction {
 #[serde(rename_all = "camelCase")]
 pub struct ServiceActionRequest {
     pub action: ServiceAction,
-    /// The service to act on — a systemd unit name or an SCM service name.
+    /// The service to act on - a systemd unit name or an SCM service name.
     pub unit: String,
 }
 
@@ -88,7 +88,7 @@ pub struct ServiceLog {
 }
 
 /// SCM event ids worth showing: 7036 state changes, 7031/7034 crashes. Never
-/// interpolated — the service-name filter runs in Rust, so no user input
+/// interpolated - the service-name filter runs in Rust, so no user input
 /// reaches this query.
 const WEVTUTIL_SCM_QUERY: &str = "wevtutil qe System \
     \"/q:*[System[Provider[@Name='Service Control Manager'] and \
@@ -198,7 +198,7 @@ fn parse_sc_query(stdout: &str) -> Vec<ServiceEntry> {
         } else if let Some(value) = trimmed.strip_prefix("DISPLAY_NAME:") {
             display = value.trim().to_string();
         } else if let Some(value) = trimmed.strip_prefix("STATE") {
-            // `STATE              : 4  RUNNING` — the word is the last field.
+            // `STATE              : 4  RUNNING` - the word is the last field.
             let word = value
                 .rsplit(|c: char| c.is_whitespace())
                 .next()
@@ -217,7 +217,7 @@ fn parse_sc_query(stdout: &str) -> Vec<ServiceEntry> {
     entries
 }
 
-/// Sequences that start a PowerShell substitution. Only these — not a bare `$`,
+/// Sequences that start a PowerShell substitution. Only these - not a bare `$`,
 /// which is ordinary in a service name: SQL Server Express installs itself as
 /// `MSSQL$SQLEXPRESS`.
 const POWERSHELL_SUBSTITUTIONS: &[&str] = &["$(", "${", "`"];
@@ -227,7 +227,7 @@ const POWERSHELL_SUBSTITUTIONS: &[&str] = &["$(", "${", "`"];
 ///
 /// The Windows rule exists because we cannot know which shell `sshd` uses.
 /// `"…"` quotes identically in cmd.exe and PowerShell except for `$` and a
-/// backtick, which PowerShell expands — so `$(…)` in a name would run against a
+/// backtick, which PowerShell expands - so `$(…)` in a name would run against a
 /// PowerShell `DefaultShell`. Refusing the substitution openers keeps one
 /// quoting scheme correct on both, with no probe. A bare `$` stays legal: it
 /// expands to nothing and `net` then rejects the truncated name, failing loudly
@@ -321,7 +321,7 @@ pub fn interpret_action(plan: &ServicePlan, output: CommandOutput) -> ServiceOut
     let succeeded = output.succeeded();
 
     let message = if succeeded {
-        format!("{} — done.", plan.summary)
+        format!("{} - done.", plan.summary)
     } else {
         let text = output.failure_text();
         if text.contains("incorrect password") || text.contains("Sorry, try again") {
@@ -757,7 +757,7 @@ The Windows Update service terminated unexpectedly.  It has done this 1 time(s).
         };
         let outcome = interpret_action(&plan, ok);
         assert!(outcome.succeeded);
-        assert_eq!(outcome.message, "Restart cron.service — done.");
+        assert_eq!(outcome.message, "Restart cron.service - done.");
 
         let denied = CommandOutput {
             stdout: "System error 5 has occurred.\r\n\r\nAccess is denied.\r\n".into(),

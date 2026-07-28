@@ -46,7 +46,7 @@ pub struct ConnectionInfo {
     /// What the key exchange negotiated, for the audit tab's free tier.
     pub negotiated: Option<super::client::NegotiatedCrypto>,
     pub connected_at: String,
-    /// Shells already open on this host — empty for a fresh connection.
+    /// Shells already open on this host - empty for a fresh connection.
     pub shell_ids: Vec<u64>,
     /// Whether the session holds the password it logged in with, for `sudo`.
     pub has_login_password: bool,
@@ -71,7 +71,7 @@ pub async fn probe_host(hostname: String, port: u16) -> SshResult<ProbeResult> {
 /// Connect, authenticate, and work out how this account elevates.
 ///
 /// `password` is required for password auth unless one is already remembered.
-/// `remember` keeps it for the rest of the app's run — see `secrets`.
+/// `remember` keeps it for the rest of the app's run - see `secrets`.
 #[tauri::command]
 pub async fn connect_host(
     app: AppHandle,
@@ -300,7 +300,7 @@ pub async fn power_host(
     logging::warn(
         "power",
         format!(
-            "Host {host_id}: {:?} (delay {} min) — {}",
+            "Host {host_id}: {:?} (delay {} min) - {}",
             request.action,
             request.delay_minutes,
             if outcome.succeeded { "accepted" } else { "refused" }
@@ -325,7 +325,7 @@ pub struct HostHealth {
     pub host_id: String,
     /// Whether there is a live authenticated session.
     pub connected: bool,
-    /// Whether the port answered — true for a reachable host we are not
+    /// Whether the port answered - true for a reachable host we are not
     /// logged in to.
     pub reachable: bool,
     pub latency_ms: Option<u64>,
@@ -380,7 +380,7 @@ pub async fn heartbeat(
     let health = futures_util::future::join_all(checks).await;
 
     // Reap sessions that failed their liveness check, and stop anything that
-    // was transferring over them — otherwise a dropped link leaves a progress
+    // was transferring over them - otherwise a dropped link leaves a progress
     // bar creeping against a connection that no longer exists.
     for entry in &health {
         if !entry.connected && registry.is_connected(&entry.host_id) {
@@ -586,11 +586,11 @@ pub async fn service_action(
 
     let output = live.session.exec(&plan.command, stdin.as_deref()).await?;
     let outcome = services::interpret_action(&plan, output);
-    // The unit and the verdict. Never `outcome`'s text — that is remote output.
+    // The unit and the verdict. Never `outcome`'s text - that is remote output.
     logging::info(
         "services",
         format!(
-            "Host {host_id}: {:?} {} — {}",
+            "Host {host_id}: {:?} {} - {}",
             request.action,
             request.unit,
             if outcome.succeeded { "ok" } else { "failed" }
@@ -666,7 +666,7 @@ pub async fn sample_metrics(
     super::metrics::sample(&live).await
 }
 
-/// What updates a host is waiting on. Read-only — there is no install verb.
+/// What updates a host is waiting on. Read-only - there is no install verb.
 #[tauri::command]
 pub async fn check_updates(
     registry: State<'_, SessionRegistry>,
@@ -706,7 +706,7 @@ pub async fn check_updates(
 /// commands.
 ///
 /// `password` is used only for the privileged retry when the unprivileged
-/// `sshd -T` was refused. `elevate: false` is honoured literally — no sudo
+/// `sshd -T` was refused. `elevate: false` is honoured literally - no sudo
 /// retry runs, even with a password the session already holds.
 #[tauri::command]
 pub async fn remote_audit(
@@ -735,11 +735,10 @@ pub async fn remote_audit(
                 .or_else(|| vault.recall(&host_id));
 
             let stdin = match &live.elevation {
-                Elevation::SudoPassword => match sudo_password {
-                    Some(password) => Some(format!("{}\n", password.as_str()).into_bytes()),
-                    // No password to offer: skip the retry, let the note explain.
-                    None => None,
-                },
+                // No password to offer: skip the retry, let the note explain.
+                Elevation::SudoPassword => {
+                    sudo_password.map(|password| format!("{}\n", password.as_str()).into_bytes())
+                }
                 _ => Some(Vec::new()),
             };
 
@@ -935,7 +934,7 @@ pub async fn create_remote_dir(
 
 /// Delete one remote file or empty directory.
 ///
-/// Refuses a symlink like everything else does — unlinking a link is safe in
+/// Refuses a symlink like everything else does - unlinking a link is safe in
 /// itself, but the row the user clicked says "latest.log" and they would
 /// reasonably expect the log to go. Refusing keeps the policy one sentence long.
 #[tauri::command]
@@ -966,7 +965,7 @@ pub async fn delete_remote_entry(
     result.map_err(|error| sftp::explain_error(&format!("Could not delete {path}"), &error.to_string()))
 }
 
-/// Rename an entry, or move it — the same SFTP request either way, the only
+/// Rename an entry, or move it - the same SFTP request either way, the only
 /// difference being whether the destination's parent is the one it is in.
 ///
 /// Refuses to act on a symlink, and refuses to land on anything that already
@@ -1015,7 +1014,7 @@ pub async fn rename_remote_entry(
 /// down and pushing them back: a copy that never crosses the network is both
 /// far faster and does not depend on this machine staying awake. SFTP has no
 /// copy request of its own, so this is the one file operation that needs a
-/// shell — hence the quoting, which is the same helper the power and service
+/// shell - hence the quoting, which is the same helper the power and service
 /// commands use.
 #[tauri::command]
 pub async fn copy_remote_entry(
@@ -1169,7 +1168,7 @@ pub async fn remote_conflicts(
 ///
 /// `relative` places the file inside `local_dir`, so a recursive folder
 /// transfer can mirror the tree. It comes from our own walk, but is sanitized
-/// segment by segment anyway — a server-supplied path must never climb out of
+/// segment by segment anyway - a server-supplied path must never climb out of
 /// the folder the user picked.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -1250,7 +1249,7 @@ pub async fn enqueue_upload(
         .map_err(|error| SshError::io("Could not read the file you chose", error))?;
     if !metadata.is_file() {
         return Err(SshError::invalid(
-            "Only regular files can be uploaded — pick a file, not a folder.",
+            "Only regular files can be uploaded - pick a file, not a folder.",
         ));
     }
 
@@ -1284,7 +1283,7 @@ pub async fn enqueue_upload(
     Ok(id)
 }
 
-/// A remote path that is free, disambiguating as `name (1).ext` — the same
+/// A remote path that is free, disambiguating as `name (1).ext` - the same
 /// scheme downloads use locally, so "keep both" means one thing in both
 /// directions.
 async fn available_remote_path(
@@ -1427,7 +1426,7 @@ pub async fn pump_transfers(
 /// hand the freed slots to whoever is still connected.
 ///
 /// Lives here rather than on `SessionRegistry` so the registry keeps knowing
-/// nothing about transfers — the two are joined at the command layer, not
+/// nothing about transfers - the two are joined at the command layer, not
 /// wired into each other.
 pub async fn release_host_transfers(
     app: &AppHandle,

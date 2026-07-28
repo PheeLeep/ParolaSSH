@@ -35,7 +35,7 @@ pub struct LiveSession {
     pub os_detail: String,
     pub elevation: Elevation,
     pub fingerprint: Option<String>,
-    /// What the first key exchange negotiated — the audit tab's tier 0.
+    /// What the first key exchange negotiated - the audit tab's tier 0.
     pub negotiated: Option<NegotiatedCrypto>,
     pub connected_at: String,
     /// Every open shell on this host, keyed by shell id. All ride the single
@@ -50,14 +50,14 @@ pub struct LiveSession {
     /// A tokio mutex because it is held across `await`.
     shell_open: tokio::sync::Mutex<()>,
     /// The password this session authenticated with, kept so `sudo` can reuse
-    /// it. Scoped to the session — disconnecting drops it, a narrower lifetime
+    /// it. Scoped to the session - disconnecting drops it, a narrower lifetime
     /// than the "remember me" vault.
     login_password: Mutex<Option<Zeroizing<String>>>,
     /// The last `/proc/stat` reading, so CPU percentage is a delta between
     /// polls. Written only after an exec completes, never across an await.
     prev_cpu: Mutex<Option<CpuTimes>>,
     /// The SFTP channel the file browser listens on, opened on first use.
-    /// Transfers deliberately do not share it — see `sftp::BrowseSession`.
+    /// Transfers deliberately do not share it - see `sftp::BrowseSession`.
     pub browse: BrowseSession,
 }
 
@@ -297,7 +297,7 @@ impl SessionRegistry {
         }
     }
 
-    /// Drop everything — used on app exit.
+    /// Drop everything - used on app exit.
     pub async fn disconnect_all(&self) {
         for host_id in self.connected_ids() {
             self.disconnect(&host_id).await;

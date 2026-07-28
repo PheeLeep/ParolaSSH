@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Card } from "react-bootstrap";
-// lucide v1 dropped brand icons, so no GitHub mark — GitBranch stands in.
+// lucide v1 dropped brand icons, so no GitHub mark - GitBranch stands in.
 import {
   Bug,
   ChevronLeft,
@@ -51,7 +51,7 @@ export function AboutPage({ onNavigate }: { onNavigate: Navigate }) {
         <h1 className="about-hero__title">ParolaSSH</h1>
         <p className="about-hero__version">Version {__APP_VERSION__}</p>
         <p className="text-body-secondary mb-0">
-          A desktop SSH console — saved hosts, key management, and terminals in
+          A desktop SSH console - saved hosts, key management, and terminals in
           one window.
         </p>
       </header>

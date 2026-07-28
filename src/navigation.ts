@@ -1,6 +1,6 @@
 import type { HostFeature } from "./features/hosts/HostFeatureNav";
 
-/** Which pane the main area is showing. Deliberately not a router yet —
+/** Which pane the main area is showing. Deliberately not a router yet -
  *  swap for TanStack Router once sessions need deep links. */
 export type View =
   | { kind: "welcome" }

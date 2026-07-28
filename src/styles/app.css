@@ -57,7 +57,7 @@ code,
   flex-direction: column;
 }
 
-/* A filling page owns its own scrolling — the listing scrolls inside the pane.
+/* A filling page owns its own scrolling - the listing scrolls inside the pane.
    Leaving the outer scroller live lets a long listing scroll the host header
    and the tabs off the top, which is exactly what they are pinned for. */
 .app-main:has(.page--fill) {
@@ -80,7 +80,7 @@ code,
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--parola-line);
   /* The backdrop-filter makes the navbar a stacking context, and with an
-     auto z-index the page content after it paints on top — cutting through
+     auto z-index the page content after it paints on top - cutting through
      its open dropdowns. Lift the whole strip above the body; Bootstrap's
      modals portal to <body> at z-index 1050+ and still win. */
   position: relative;
@@ -136,7 +136,7 @@ code,
 /* --------------------------------------- Window controls ----- */
 
 /* The window is undecorated (except on macOS), so the navbar doubles as the
-   titlebar. The controls bleed to the very edge of the window — a close
+   titlebar. The controls bleed to the very edge of the window - a close
    button with a gutter around it fails Fitts's law at the corner. */
 
 .window-controls {
@@ -168,13 +168,13 @@ code,
 
 /* Overlay titlebar on macOS: the native traffic lights sit on top of the
    navbar's left edge, so push our own content clear of them. Keyed on the real
-   host, not the chosen layout — the lights are there either way. */
+   host, not the chosen layout - the lights are there either way. */
 .app-navbar--mac-inset {
   padding-left: 5rem;
 }
 
 /* GTK client-side decorations: pill-shaped buttons with a gutter, and no
-   red close — the platform tints it like the others. */
+   red close - the platform tints it like the others. */
 .window-controls--linux {
   margin: 0 0 0 0.5rem;
   align-items: center;
@@ -198,7 +198,7 @@ code,
 }
 
 /* Traffic lights, drawn only when the layout asks for macOS on a machine that
-   is not a Mac — a real Mac already has the native ones. Glyphs surface on
+   is not a Mac - a real Mac already has the native ones. Glyphs surface on
    hover of the group, the way the platform does it. */
 .window-controls--mac {
   align-self: center;
@@ -367,7 +367,7 @@ code,
   background: var(--parola-unknown);
 }
 
-/* The halo means "it answered", so a reachable host wears it too — the
+/* The halo means "it answered", so a reachable host wears it too - the
    chain beside the dot is what says whether we are actually on the box. */
 .status-dot--connected,
 .status-dot--reachable {
@@ -379,8 +379,8 @@ code,
   background: var(--parola-offline);
 }
 
-/* Chain plus dot: two facts that can disagree — a box can be up while we
-   hold no session on it — so neither one has to stand for both. */
+/* Chain plus dot: two facts that can disagree - a box can be up while we
+   hold no session on it - so neither one has to stand for both. */
 .status-mark {
   display: inline-flex;
   flex: 0 0 auto;
@@ -427,7 +427,7 @@ code,
   color: var(--parola-offline);
 }
 
-/* Amber caution — deliberately the audit "medium" colour, not a red: it
+/* Amber caution - deliberately the audit "medium" colour, not a red: it
    flags something worth a look, not something broken. */
 .status-badge--warning {
   background: var(--parola-medium-soft);
@@ -497,7 +497,7 @@ code,
 }
 
 /* Opt-in for pages whose last section should take the leftover window
-   height — the terminal, which is unusable in a short fixed box. */
+   height - the terminal, which is unusable in a short fixed box. */
 .page--fill {
   display: flex;
   flex-direction: column;
@@ -508,8 +508,8 @@ code,
   padding-bottom: 1.5rem;
 }
 
-/* Everything above the filling pane is fixed chrome — the back link, the host
-   header, the feature tabs — and only the pane itself may take or give height.
+/* Everything above the filling pane is fixed chrome - the back link, the host
+   header, the feature tabs - and only the pane itself may take or give height.
    Flex items shrink by default, and `.feature-nav` scrolls on the x axis,
    which makes it a scroll container with no minimum: a long listing would
    squeeze the tabs down to a sliver instead of scrolling inside the pane. */
@@ -648,7 +648,7 @@ code,
   box-shadow: none;
 }
 
-/* Pinned columns — selection on the left, actions on the right — stay put while
+/* Pinned columns - selection on the left, actions on the right - stay put while
    the middle scrolls. The cells need their own background or the scrolling ones
    would show through; Bootstrap's hover and .table-active paint over it with an
    inset shadow, so those still read correctly. */
@@ -658,7 +658,7 @@ code,
 }
 
 /* The background has to out-specify Bootstrap's `.table > :not(caption) > * > *`,
-   which paints `--bs-table-bg` — transparent in this theme (theme.css). A bare
+   which paints `--bs-table-bg` - transparent in this theme (theme.css). A bare
    class loses that match, and the scrolled-under cells read straight through
    the pinned column. Tables live on cards, so the fill is the card surface;
    a table on the page background overrides the variable. */
@@ -817,7 +817,7 @@ code,
   font-family: var(--parola-mono);
   font-size: 0.8125rem;
   line-height: 1.5;
-  /* Public keys are one long unbroken token — wrap rather than scroll. */
+  /* Public keys are one long unbroken token - wrap rather than scroll. */
   overflow-wrap: anywhere;
   word-break: break-all;
 }
@@ -972,7 +972,7 @@ code,
   margin-bottom: 0.125rem;
 }
 
-/* A zero count is information, not an alarm — let it recede. */
+/* A zero count is information, not an alarm - let it recede. */
 .severity-tile.is-empty .severity-tile__icon,
 .severity-tile.is-empty .severity-tile__count {
   opacity: 0.4;
@@ -1212,7 +1212,7 @@ code,
 
 /* Deliberately not governed by the motion tokens. A spinner is the only
    signal that a command is still running, and a frozen one reads as a
-   hung app — so it keeps turning even at "off", just more slowly. */
+   hung app - so it keeps turning even at "off", just more slowly. */
 .spin {
   animation: parola-spin 0.9s linear infinite;
 }
@@ -2370,6 +2370,12 @@ code,
 
 .priority-badge {
   font-weight: 500;
+}
+
+/* Sized to its longest label, so the column doesn't jump as rows settle from
+   a select into a badge. */
+.priority-select {
+  width: 7rem;
 }
 
 /* ---- Toasts ------------------------------------------------------------- */

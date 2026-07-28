@@ -141,7 +141,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
               <ListChecks className="icon-sm" aria-hidden="true" />
               <h2 className="h6 mb-0">Built in</h2>
               <span className="text-body-secondary small">
-                written for {osLabel(os)} — none of them install anything
+                written for {osLabel(os)} - none of them install anything
               </span>
             </div>
 
@@ -170,7 +170,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
               <Pencil className="icon-sm" aria-hidden="true" />
               <h2 className="h6 mb-0">Yours</h2>
               <span className="text-body-secondary small">
-                run exactly as written — the app makes no claim about them
+                run exactly as written - the app makes no claim about them
               </span>
               <Button
                 size="sm"
@@ -198,7 +198,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
               </div>
             ) : (
               <Alert variant="secondary" className="mb-0">
-                No saved tasks for this host yet. A task is a command you keep — set it
+                No saved tasks for this host yet. A task is a command you keep - set it
                 global to get it on every host, or pin it to this one.
               </Alert>
             )}
@@ -330,7 +330,7 @@ function SavedCard({
 /* ── The gate ──────────────────────────────────────────────────────────── */
 
 /** What runs, shown before it runs. A destructive assessment adds a typed
- *  confirmation — not to prevent the command, which is the operator's to make,
+ *  confirmation - not to prevent the command, which is the operator's to make,
  *  but to make it impossible to reach by reflex. */
 function PlanDialog({
   name,
@@ -396,7 +396,7 @@ function PlanDialog({
   );
 }
 
-/** The assessment, in the operator's terms. Absent when nothing matched —
+/** The assessment, in the operator's terms. Absent when nothing matched -
  *  and deliberately *not* replaced with "looks safe", which the check has no
  *  basis to say. */
 function DangerNotice({ danger }: { danger: DangerAssessment }) {
@@ -424,7 +424,7 @@ function DangerNotice({ danger }: { danger: DangerAssessment }) {
       </ul>
 
       <div className="small text-body-secondary mt-2 mb-0">
-        This is a check on the text of the command — it catches common mistakes, not a
+        This is a check on the text of the command - it catches common mistakes, not a
         command written to hide what it does. Read the command above; it is the one that
         runs.
       </div>
@@ -604,7 +604,7 @@ function TaskEditor({
             spellCheck={false}
           />
           <Form.Text className="text-body-secondary">
-            Run exactly as written, in a non-interactive shell — nothing can answer a
+            Run exactly as written, in a non-interactive shell - nothing can answer a
             prompt, so pass the flag that skips it.
           </Form.Text>
         </Form.Group>
@@ -632,7 +632,7 @@ function TaskEditor({
         />
         <div className="text-body-secondary small mt-n2">
           {global
-            ? "Offered on every host. Pressing it still runs on one machine — the one you are looking at."
+            ? "Offered on every host. Pressing it still runs on one machine - the one you are looking at."
             : "Offered on this host only, and deleted with it."}
         </div>
 

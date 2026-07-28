@@ -2,7 +2,7 @@
 //!
 //! Every test here is `#[ignore]`d, so a default `cargo test` reports them
 //! *ignored*. They used to return early when the environment was unset, which
-//! libtest counted as **passed** — a green suite that had connected to nothing.
+//! libtest counted as **passed** - a green suite that had connected to nothing.
 //!
 //! Run them deliberately, against a throwaway box you are willing to have
 //! rebooted:
@@ -15,14 +15,14 @@
 //! ```
 //!
 //! Asking for them without naming a machine is a hard failure, not a silent
-//! pass — see `config`.
+//! pass - see `config`.
 //!
 //! The power test schedules a reboot far out then cancels it, and verifies the
 //! cancel per platform, so nothing here reboots the machine.
 //!
 //! Linux and Windows both assert; `skip` remains only for macOS/BSD, which no
-//! VM covers yet. A skip still reports `ok` — libtest has no runtime "skipped"
-//! outcome — so prefer a per-OS assertion over calling it.
+//! VM covers yet. A skip still reports `ok` - libtest has no runtime "skipped"
+//! outcome - so prefer a per-OS assertion over calling it.
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
@@ -40,7 +40,7 @@ struct LiveConfig {
 ///
 /// Missing configuration panics. These tests only run when asked for by name,
 /// so getting here without a host means the run was meant to happen and
-/// cannot — which is a failure, not something to pass quietly.
+/// cannot - which is a failure, not something to pass quietly.
 fn config() -> LiveConfig {
     fn required(name: &str) -> String {
         std::env::var(name).unwrap_or_else(|_| {
@@ -63,8 +63,8 @@ fn config() -> LiveConfig {
     }
 }
 
-/// A host-capability skip. Still reports `ok` — libtest has no runtime
-/// "skipped" — so this only makes the gap findable. Prefer a per-OS assertion.
+/// A host-capability skip. Still reports `ok` - libtest has no runtime
+/// "skipped" - so this only makes the gap findable. Prefer a per-OS assertion.
 fn skip(reason: &str) {
     eprintln!("=== SKIPPED (still reported as ok): {reason} ===");
 }
@@ -117,7 +117,7 @@ async fn a_wrong_password_is_refused_clearly() {
     };
     let wrong = Credentials::Password(Zeroizing::new("definitely-not-the-password".into()));
 
-    // `Session` is deliberately not `Debug` — it holds a live connection — so
+    // `Session` is deliberately not `Debug` - it holds a live connection - so
     // the result is matched rather than unwrapped.
     let message = match Session::connect(&target, &wrong, true).await {
         Ok(session) => {
@@ -424,7 +424,7 @@ async fn schedules_a_reboot_over_sudo_then_cancels_it() {
         action: PowerAction::Reboot,
         delay_minutes: 600,
         force: false,
-        message: Some("ParolaSSH integration test — will be cancelled".into()),
+        message: Some("ParolaSSH integration test - will be cancelled".into()),
     };
 
     let plan = power::plan(report.os, &report.elevation, &scheduled).unwrap();
@@ -469,7 +469,7 @@ async fn schedules_a_reboot_over_sudo_then_cancels_it() {
     assert!(cancelled.succeeded, "cancel failed: {}", cancelled.message);
 
     // Prove it, per platform. systemd leaves a scheduled file behind; Windows
-    // has no such file, so ask it to cancel again — with nothing pending that
+    // has no such file, so ask it to cancel again - with nothing pending that
     // must fail.
     if report.os == OsFamily::Windows {
         let again = session.exec("shutdown /a", None).await.unwrap();
@@ -510,7 +510,7 @@ async fn a_bad_sudo_password_fails_without_rebooting_anything() {
 
     // Windows has no sudo: the OpenSSH logon already holds the full token, so
     // there is no password to get wrong. Assert that rather than skipping, and
-    // plan only — executing here would schedule a real reboot.
+    // plan only - executing here would schedule a real reboot.
     if report.os == OsFamily::Windows {
         assert_eq!(report.elevation, Elevation::WindowsAdminToken);
 
@@ -559,8 +559,8 @@ async fn the_login_password_is_reused_for_sudo() {
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
 
-    // The reuse question does not arise on Windows — nothing downstream ever
-    // asks for a password — but the session must still be usable afterwards.
+    // The reuse question does not arise on Windows - nothing downstream ever
+    // asks for a password - but the session must still be usable afterwards.
     if report.os == OsFamily::Windows {
         assert_eq!(report.elevation, Elevation::WindowsAdminToken);
         assert!(session.is_alive().await, "the session should still be alive");
@@ -765,7 +765,7 @@ async fn a_denied_path_says_sftp_cannot_elevate() {
     // Root-owned, mode 0640, on every Linux box.
     assert!(
         sftp::stat_regular_file(&sftp, "/etc/shadow").await.is_ok(),
-        "stat needs no read permission — if this fails the premise has changed"
+        "stat needs no read permission - if this fails the premise has changed"
     );
 
     let opened = sftp.open("/etc/shadow".to_string()).await;
@@ -813,7 +813,7 @@ async fn the_home_directory_is_an_absolute_path_we_can_list() {
 
 /// A gigabyte of random bytes, up and back down, hashed at both ends.
 ///
-/// The point is not that SFTP works — the smaller round trip covers that. It is
+/// The point is not that SFTP works - the smaller round trip covers that. It is
 /// that the *chunking* holds at a size where an off-by-one in an offset, a lost
 /// buffer tail, or a `.part` renamed early would actually show up, on a file far
 /// larger than any buffer involved. Random content matters: a file of zeros
@@ -1024,7 +1024,7 @@ async fn rename_moves_and_never_overwrites() {
     assert!(sftp.try_exists(format!("{root}/sub/a.txt")).await.unwrap());
     assert!(!sftp.try_exists(format!("{root}/a.txt")).await.unwrap());
 
-    // Onto an existing name, the server refuses — which is what the command
+    // Onto an existing name, the server refuses - which is what the command
     // relies on rather than checking and hoping.
     write_new(&sftp, &format!("{root}/c.txt"), b"third").await;
     assert!(

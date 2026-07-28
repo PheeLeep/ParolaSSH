@@ -1,10 +1,10 @@
-//! Asking — or at least noticing — the Twingate client.
+//! Asking - or at least noticing - the Twingate client.
 //!
 //! Twingate publishes no local status API. Linux's headless client ships
 //! `twingate status`; macOS and Windows get presence detection only, and the
 //! `detail` strings say so rather than claiming more than we know.
 //!
-//! Linux also gets `twingate resources` — the client stating which addresses it
+//! Linux also gets `twingate resources` - the client stating which addresses it
 //! owns and whether each is still authenticated. That matters because resources
 //! are often plain ranges like `192.168.1.0/24` that no heuristic could
 //! attribute to a VPN.
@@ -35,8 +35,8 @@ pub async fn status() -> VpnStatus {
     VpnStatus::not_installed(VpnKind::Twingate)
 }
 
-/// Map the one-word answer of `twingate status` — `online`, `offline`,
-/// `authenticating`, `not-running` — onto our shape. Words we have not seen
+/// Map the one-word answer of `twingate status` - `online`, `offline`,
+/// `authenticating`, `not-running` - onto our shape. Words we have not seen
 /// are shown as-is; an empty answer gets called out rather than invented.
 #[cfg(any(target_os = "linux", test))]
 fn interpret(stdout: &str) -> VpnStatus {
@@ -111,7 +111,7 @@ fn presence_only(running: bool) -> VpnStatus {
         installed: true,
         up: running,
         detail: if running {
-            // Running counts as up — the best signal available — but the
+            // Running counts as up - the best signal available - but the
             // wording keeps the uncertainty visible.
             "app running (connection state not visible)".to_string()
         } else {
@@ -194,8 +194,8 @@ pub async fn resources() -> Vec<TwingateResource> {
 }
 
 /// Read the table `twingate resources` prints: tab-separated name, address,
-/// alias (`-` for none), auth status. Rows that do not fit — header, errors, a
-/// future format change — are skipped rather than half-parsed.
+/// alias (`-` for none), auth status. Rows that do not fit - header, errors, a
+/// future format change - are skipped rather than half-parsed.
 fn parse_resources(stdout: &str) -> Vec<TwingateResource> {
     stdout
         .lines()

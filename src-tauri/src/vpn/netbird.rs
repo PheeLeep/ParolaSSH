@@ -1,7 +1,7 @@
 //! Asking the NetBird client how it feels.
 //!
-//! NetBird is the same shape of product as Tailscale — a WireGuard mesh
-//! behind a coordination server — and offers the same kind of interface:
+//! NetBird is the same shape of product as Tailscale - a WireGuard mesh
+//! behind a coordination server - and offers the same kind of interface:
 //! one `netbird status --json` that behaves identically on all three
 //! platforms, so it is the only one used.
 
@@ -72,7 +72,7 @@ fn interpret(stdout: &str) -> VpnStatus {
 
     let (up, detail) = match parsed.management {
         Some(Management { connected: true }) => (true, "connected".to_string()),
-        Some(_) => (false, "management disconnected — try `netbird up`".to_string()),
+        Some(_) => (false, "management disconnected - try `netbird up`".to_string()),
         None => (false, "not connected".to_string()),
     };
 

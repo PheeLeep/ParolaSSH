@@ -4,7 +4,7 @@
 //! `journalctl -f`. This is the other path: no PTY, no timeout, output
 //! forwarded as events until the command ends or the pane closes it.
 //!
-//! Security posture is inherited from `shell.rs` unchanged — addressed events,
+//! Security posture is inherited from `shell.rs` unchanged - addressed events,
 //! batched output, UTF-8 reassembled with the same `Decoder`. The batching loop
 //! is a deliberate copy rather than a shared generic: the two differ only in
 //! payload shape, and threading a type parameter through reads worse.
@@ -124,7 +124,7 @@ pub async fn open(
         while let Some(message) = reader.wait().await {
             let decoded = match message {
                 ChannelMsg::Data { ref data } => stdout.push(data).map(StreamMsg::Out),
-                ChannelMsg::ExtendedData { ref data, ext } if ext == 1 => {
+                ChannelMsg::ExtendedData { ref data, ext: 1 } => {
                     stderr.push(data).map(StreamMsg::Err)
                 }
                 // Keep reading: output may still be in flight behind the status.
@@ -210,7 +210,7 @@ async fn batch_and_emit(
 
     // A command that ended by itself has to release its own slot. Until this
     // existed only `close_stream` removed the handle, so every stream that
-    // finished on its own — a task, a journal whose unit stopped — stayed in
+    // finished on its own - a task, a journal whose unit stopped - stayed in
     // the map counting against `MAX_STREAMS_PER_HOST`, and the fifth one on a
     // host was refused with "too many streams open" while none were.
     //

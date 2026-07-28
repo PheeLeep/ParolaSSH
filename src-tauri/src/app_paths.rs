@@ -1,7 +1,7 @@
 //! Where the app keeps its own files.
 //!
-//! Tauri resolves this per platform — `%APPDATA%` on Windows,
-//! `~/Library/Application Support` on macOS, `~/.config` on Linux — so nothing
+//! Tauri resolves this per platform - `%APPDATA%` on Windows,
+//! `~/Library/Application Support` on macOS, `~/.config` on Linux - so nothing
 //! else in the codebase has to know the difference.
 
 use std::path::PathBuf;

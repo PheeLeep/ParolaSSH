@@ -100,7 +100,7 @@ export function WelcomeScreen({ onNavigate }: { onNavigate: Navigate }) {
   );
 }
 
-/** The audit result belongs where you land, not behind a menu — a key that
+/** The audit result belongs where you land, not behind a menu - a key that
  *  went world-readable is not something you go looking for. */
 function AuditTeaser({ onNavigate }: { onNavigate: Navigate }) {
   const { report, loading } = useKeys();

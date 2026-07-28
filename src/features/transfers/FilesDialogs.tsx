@@ -9,10 +9,10 @@ import type { RemoteEntry } from "../hosts/types";
  *  rather than a round trip away. */
 function nameProblem(name: string): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return null; // Not an error yet — just nothing to submit.
+  if (!trimmed) return null; // Not an error yet - just nothing to submit.
   if (trimmed === "." || trimmed === "..") return "That name means a folder that already exists.";
   if (trimmed.includes("/") || trimmed.includes("\\")) {
-    return "A name cannot contain a slash — this creates one folder, not a path.";
+    return "A name cannot contain a slash - this creates one folder, not a path.";
   }
   if (trimmed.includes(":")) return "A name cannot contain a colon.";
   if (/[\u0000-\u001f\u007f]/.test(trimmed)) {
@@ -24,7 +24,7 @@ function nameProblem(name: string): string | null {
 /** Create a folder on the remote host.
  *
  *  Replaces `window.prompt`, which the webview renders as an unstyled browser
- *  dialog announcing `localhost:1420` — it looks like the page is compromised,
+ *  dialog announcing `localhost:1420` - it looks like the page is compromised,
  *  and it cannot validate or explain anything.
  */
 export function NewFolderDialog({
@@ -112,7 +112,7 @@ export function NewFolderDialog({
 
 /** Confirm deleting one or many remote entries.
  *
- *  Replaces `window.confirm`, which this webview does not reliably block on —
+ *  Replaces `window.confirm`, which this webview does not reliably block on -
  *  the delete went through whether or not you agreed. Beyond being styled, an
  *  in-app modal is the only version that actually asks.
  */

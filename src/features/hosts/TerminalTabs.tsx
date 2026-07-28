@@ -48,7 +48,7 @@ export function TerminalTabs({
     setRenamingId(shellId);
   }, []);
 
-  // Renaming ends by handing the keyboard back to the terminal — the reason
+  // Renaming ends by handing the keyboard back to the terminal - the reason
   // you opened the tab in the first place.
   const endRename = useCallback((shellId: number) => {
     renamingRef.current = false;
@@ -162,13 +162,13 @@ export function TerminalTabs({
                       startRename(entry.shellId);
                     }
                   }}
-                  // F2 works too, but only while the tab itself holds focus —
+                  // F2 works too, but only while the tab itself holds focus -
                   // clicking one hands the keyboard straight to the terminal,
                   // so promising it in the tooltip would be a lie for most.
                   title={
                     entry.exited
-                      ? "Session ended — double-click to rename"
-                      : `${entry.title} — double-click to rename`
+                      ? "Session ended - double-click to rename"
+                      : `${entry.title} - double-click to rename`
                   }
                 >
                   <SquareTerminal className="icon-sm" aria-hidden="true" />
@@ -259,7 +259,7 @@ export function TerminalTabs({
 /**
  * The tab label, while it is being renamed.
  *
- * Enter and blur commit, Escape restores what was there before — the shape
+ * Enter and blur commit, Escape restores what was there before - the shape
  * every rename-in-place has, so it needs no explanation in the UI. An empty
  * name is not rejected: the store reads it as "put the original back", which
  * is the only other thing someone clearing the field could mean.
@@ -330,7 +330,7 @@ function FontMenu({ shellId }: { shellId: number }) {
         className="no-caret"
         title={
           overridden
-            ? `Font — ${font.size}px, this terminal only`
+            ? `Font - ${font.size}px, this terminal only`
             : "Font for this terminal"
         }
         aria-label="Font for this terminal"

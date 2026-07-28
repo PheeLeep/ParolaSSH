@@ -53,7 +53,7 @@ impl KeyPermissions {
         }
     }
 
-    /// True when group or others can *write* — sshd rejects a config or
+    /// True when group or others can *write* - sshd rejects a config or
     /// `authorized_keys` file in this state.
     pub fn is_group_or_world_writable(&self) -> Option<bool> {
         match self {

@@ -4,7 +4,7 @@
 //! write it back, so two windows cannot serve different lists.
 //!
 //! Running follows the audit's streaming path rather than `Session::exec`,
-//! which caps at thirty seconds — a task is arbitrary length by definition,
+//! which caps at thirty seconds - a task is arbitrary length by definition,
 //! and a backup that takes four minutes must not be cut off at thirty seconds
 //! with its output discarded.
 //!
@@ -134,7 +134,7 @@ pub fn plan_task(
     )
 }
 
-/// Assess an arbitrary command without saving or running it — what the editor
+/// Assess an arbitrary command without saving or running it - what the editor
 /// calls as the operator types, so the warning appears before the task exists.
 #[tauri::command]
 pub fn assess_task_command(
@@ -202,7 +202,7 @@ pub async fn start_task(
         ));
     }
 
-    // The task's name and whether it elevated — never its command, and never
+    // The task's name and whether it elevated - never its command, and never
     // its output. A task's output describes the machine in detail and belongs
     // on screen, not in a file on this one.
     logging::info(
@@ -239,7 +239,7 @@ pub async fn start_task(
     Ok(stream_id)
 }
 
-/// Find a task by id — built-in or saved — and return its command and whether
+/// Find a task by id - built-in or saved - and return its command and whether
 /// it elevates by default.
 ///
 /// Built-ins are looked up first: their ids are `kebab-case` words and saved
@@ -256,7 +256,7 @@ fn resolve(
 
     let store = TaskStore::read(&config_dir(app)?);
     let task = store.get(task_id).ok_or_else(|| {
-        SshError::invalid("That task no longer exists — it may have been deleted.")
+        SshError::invalid("That task no longer exists - it may have been deleted.")
     })?;
 
     // Scope is enforced here, not only in the list: a stale window holding a
@@ -285,7 +285,7 @@ mod tests {
     fn builtin_and_saved_ids_cannot_collide() {
         // `resolve` checks the catalog first, so a saved task can never
         // shadow a built-in. That is only safe while the two id shapes stay
-        // distinct — saved ids are minted as `t-<hex>`.
+        // distinct - saved ids are minted as `t-<hex>`.
         for task in catalog::BUILTIN_TASKS {
             assert!(
                 !task.id.starts_with("t-"),

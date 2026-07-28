@@ -1,7 +1,7 @@
 //! Persistence for saved connections.
 //!
 //! One JSON file in the app config directory, written owner-only through
-//! `private_file` — it is a list of every machine you administer, so it is not
+//! `private_file` - it is a list of every machine you administer, so it is not
 //! left at whatever `umask` allows.
 
 use std::path::{Path, PathBuf};
@@ -53,7 +53,7 @@ impl HostStore {
                     .iter()
                     .position(|host| host.id == id)
                     .ok_or_else(|| {
-                        SshError::invalid("That connection no longer exists — it may have been deleted.")
+                        SshError::invalid("That connection no longer exists - it may have been deleted.")
                     })?;
 
                 // `lastConnected` is owned by the connect path, not the form.

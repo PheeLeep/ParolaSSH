@@ -67,7 +67,7 @@ function AppShell() {
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
   // Transfers run whether or not their page is open, so the store listens from
-  // launch — otherwise the sidebar badge would only come alive once someone
+  // launch - otherwise the sidebar badge would only come alive once someone
   // visited Transfers. `start` is idempotent.
   useEffect(() => {
     transfers.start();

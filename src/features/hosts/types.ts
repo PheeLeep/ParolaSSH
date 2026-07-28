@@ -376,8 +376,77 @@ export interface RemoteAuditReport {
   score: number;
   tier1Ran: boolean;
   tier1Note: string | null;
-  lynis: string | null;
   checkedAtMs: number;
+}
+
+/* ── Tasks ─────────────────────────────────────────────────────────────── */
+
+/** Where a task appears. `global` still runs on exactly one host — the one
+ *  being looked at — it is only offered everywhere. */
+export type TaskScope = { kind: "global" } | { kind: "host"; hostId: string };
+
+/** How much a command deserves to be stopped at. `none` is "nothing matched",
+ *  never "this is safe" — see the module doc on the Rust side. */
+export type DangerLevel = "none" | "caution" | "destructive";
+
+export interface DangerReason {
+  label: string;
+  detail: string;
+  level: DangerLevel;
+}
+
+export interface DangerAssessment {
+  level: DangerLevel;
+  reasons: DangerReason[];
+}
+
+/** A task the app ships, already resolved to this host's OS. */
+export interface BuiltinTask {
+  id: string;
+  name: string;
+  description: string;
+  command: string;
+  elevated: boolean;
+}
+
+/** A task the operator saved. `command` is their text, run verbatim. */
+export interface TaskRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  command: string;
+  elevated: boolean;
+  scope: TaskScope;
+  /** Empty means every family. */
+  osFamilies: OsFamily[];
+  createdAt: string | null;
+  lastRunAt: string | null;
+}
+
+export interface TaskDraft {
+  id?: string | null;
+  name: string;
+  description?: string | null;
+  command: string;
+  elevated: boolean;
+  scope: TaskScope;
+  osFamilies: OsFamily[];
+}
+
+export interface HostTasks {
+  os: OsFamily;
+  builtin: BuiltinTask[];
+  saved: TaskRecord[];
+}
+
+/** Exactly what a press would run. `command` includes the sudo wrapper; the
+ *  pane shows both so a long `sudo sh -c '…'` stays readable. */
+export interface TaskPlan {
+  command: string;
+  innerCommand: string;
+  elevated: boolean;
+  needsPassword: boolean;
+  danger: DangerAssessment;
 }
 
 export const AUTH_METHOD_LABELS: Record<AuthMethod, string> = {

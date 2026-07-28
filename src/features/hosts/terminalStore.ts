@@ -11,7 +11,8 @@ import {
   type TerminalFont,
 } from "../settings/preferences";
 
-const THEMES = {
+/** One palette for every piece of remote output in the app. */
+export const THEMES = {
   dark: {
     background: "#12151c",
     foreground: "#d7dce5",

@@ -387,9 +387,8 @@ async fn tier1_audit_reads_sshd_posture_with_sudo() {
         report.elevation.is_usable(),
     );
     println!(
-        "sshd config: {} · lynis: {:?} · note: {:?}",
+        "sshd config: {} · note: {:?}",
         gathered.sshd_config.is_some(),
-        gathered.lynis,
         gathered.note
     );
 

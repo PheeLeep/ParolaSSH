@@ -8,8 +8,6 @@
 //!   permissions, world-writable PATH directories, and (only with elevation,
 //!   which `/etc/shadow` demands) empty-password accounts. What could not be
 //!   checked is named in a note, never guessed at.
-//! * **Tier 2 — detection only.** Whether Lynis is installed, and its version.
-//!   Running it is not built yet; installing it from a GUI never will be.
 //!
 //! Report shape follows `ssh::audit`: same `Severity`, counts, and scoring.
 //! Findings are not the local `Finding` type, whose `Remediation` can be an
@@ -55,8 +53,6 @@ pub struct RemoteAuditReport {
     pub tier1_ran: bool,
     /// What tier 1 could not check, and why. `None` when everything ran.
     pub tier1_note: Option<String>,
-    /// Lynis version line when installed — tier 2's detection result.
-    pub lynis: Option<String>,
     pub checked_at_ms: i64,
 }
 
@@ -159,17 +155,15 @@ fn tier0_findings(crypto: &NegotiatedCrypto) -> Vec<NewFinding> {
 
 // ------------------------------------------------------------------- tier 1
 
-/// The unprivileged batch: sshd posture, key file mode, PATH hygiene, and
-/// tier 2's Lynis detection, separated by named markers.
+/// The unprivileged batch: sshd posture, key file mode, and PATH hygiene,
+/// separated by named markers.
 ///
 /// `/usr/sbin` is commonly absent from a non-root PATH, hence the fallback.
 pub const TIER1_COMMAND: &str = "sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; \
      echo ---PAROLA:stat---; \
      stat -c %a ~/.ssh/authorized_keys 2>/dev/null || stat -f %Lp ~/.ssh/authorized_keys 2>/dev/null; \
      echo ---PAROLA:path---; \
-     for d in $(echo \"$PATH\" | tr ':' ' '); do find \"$d\" -maxdepth 0 -perm -0002 2>/dev/null; done; \
-     echo ---PAROLA:lynis---; \
-     command -v lynis >/dev/null 2>&1 && lynis --version 2>/dev/null | head -1";
+     for d in $(echo \"$PATH\" | tr ':' ' '); do find \"$d\" -maxdepth 0 -perm -0002 2>/dev/null; done";
 
 /// The privileged retry, run only when the unprivileged `sshd -T` failed and a
 /// sudo route exists: the daemon config again, plus the empty-password check
@@ -355,7 +349,6 @@ pub struct GatheredTier1 {
     pub sshd_config: Option<String>,
     pub authorized_keys_mode: String,
     pub writable_path_dirs: String,
-    pub lynis: Option<String>,
     pub shadow: Option<String>,
     /// Why sshd posture (and the shadow check) could not run, when they
     /// could not.
@@ -375,7 +368,7 @@ pub fn assemble(
         new_findings.extend(tier0_findings(crypto));
     }
 
-    let (tier1_ran, tier1_note, lynis) = match tier1 {
+    let (tier1_ran, tier1_note) = match tier1 {
         Some(gathered) => {
             if let Some(config) = gathered.sshd_config.as_deref() {
                 new_findings.extend(sshd_findings(config));
@@ -385,9 +378,9 @@ pub fn assemble(
             if let Some(shadow) = gathered.shadow.as_deref() {
                 new_findings.extend(shadow_findings(shadow));
             }
-            (true, gathered.note.clone(), gathered.lynis.clone())
+            (true, gathered.note.clone())
         }
-        None => (false, None, None),
+        None => (false, None),
     };
 
     let findings: Vec<RemoteFinding> = new_findings
@@ -418,7 +411,6 @@ pub fn assemble(
         score,
         tier1_ran,
         tier1_note,
-        lynis,
         checked_at_ms: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
@@ -471,11 +463,6 @@ pub fn gather_tier1(
         sshd_config,
         authorized_keys_mode: sections.get("stat").cloned().unwrap_or_default(),
         writable_path_dirs: sections.get("path").cloned().unwrap_or_default(),
-        lynis: sections
-            .get("lynis")
-            .map(|text| text.trim())
-            .filter(|text| !text.is_empty())
-            .map(str::to_string),
         shadow,
         note,
     }
@@ -648,21 +635,18 @@ maxauthtries 10\n";
     fn sections_are_split_on_their_markers() {
         let stdout = "permitrootlogin no\nport 22\n\
                       ---PAROLA:stat---\n600\n\
-                      ---PAROLA:path---\n\n\
-                      ---PAROLA:lynis---\nLynis 3.0.9\n";
+                      ---PAROLA:path---\n\n";
         let (first, sections) = parse_sections(stdout);
         assert!(first.contains("permitrootlogin"));
         assert_eq!(sections.get("stat").map(String::as_str), Some("600"));
         assert_eq!(sections.get("path").map(String::as_str), Some(""));
-        assert_eq!(sections.get("lynis").map(String::as_str), Some("Lynis 3.0.9"));
     }
 
     #[test]
     fn a_permission_denied_sshd_run_asks_for_the_privileged_retry() {
         let denied = output(
             "sshd re-exec requires execution with an absolute path\n\
-             Permission denied\n---PAROLA:stat---\n600\n---PAROLA:path---\n\
-             ---PAROLA:lynis---\n",
+             Permission denied\n---PAROLA:stat---\n600\n---PAROLA:path---\n",
         );
         assert!(needs_privileged_retry(&denied));
 
@@ -673,8 +657,7 @@ maxauthtries 10\n";
     #[test]
     fn gather_prefers_the_privileged_config_and_notes_what_was_skipped() {
         let unprivileged = output(
-            "Permission denied\n---PAROLA:stat---\n600\n---PAROLA:path---\n\
-             ---PAROLA:lynis---\nLynis 3.0.9\n",
+            "Permission denied\n---PAROLA:stat---\n600\n---PAROLA:path---\n",
         );
 
         // With a sudo retry, the config and the shadow check both arrive.
@@ -682,7 +665,6 @@ maxauthtries 10\n";
         let gathered = gather_tier1(&unprivileged, Some(&privileged), true);
         assert!(gathered.sshd_config.unwrap().contains("permitrootlogin"));
         assert_eq!(gathered.shadow.as_deref(), Some("guest"));
-        assert_eq!(gathered.lynis.as_deref(), Some("Lynis 3.0.9"));
         assert!(gathered.note.is_none());
 
         // Without elevation, the degradation is named, not glossed over.
@@ -715,7 +697,6 @@ maxauthtries 10\n";
             sshd_config: Some("permitrootlogin yes\n".to_string()),
             authorized_keys_mode: "600".to_string(),
             writable_path_dirs: "/opt/a\n/opt/b\n".to_string(),
-            lynis: None,
             shadow: None,
             note: None,
         };

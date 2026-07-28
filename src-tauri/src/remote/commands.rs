@@ -648,7 +648,7 @@ pub async fn follow_service_log(
     // Addressed to the calling window only, like terminal output.
     let label = webview.label().to_string();
 
-    let handle = stream::open(&live.session, app, label, host_id, &command).await?;
+    let handle = stream::open(&live.session, app, label, host_id, &command, None).await?;
     let stream_id = handle.id;
     live.add_stream(handle);
 
@@ -703,7 +703,7 @@ pub async fn check_updates(
 }
 
 /// Audit a connected host: tier 0 from the handshake, tier 1 from read-only
-/// commands, tier 2 as Lynis detection only.
+/// commands.
 ///
 /// `password` is used only for the privileged retry when the unprivileged
 /// `sshd -T` was refused. `elevate: false` is honoured literally — no sudo

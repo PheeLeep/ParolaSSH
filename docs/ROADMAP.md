@@ -51,7 +51,7 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 | Services | ✅ | List, start/stop/restart with the sudo/UAC route, journal + follow / SCM events |
 | Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
 | Updates | ✅ | apt/dnf pending list; Windows shows hotfix history when PSWindowsUpdate is absent |
-| Audit | ✅ | Tiers 0–1 built, tier 2 is detect-only; details below |
+| Audit | ✅ | Tiers 0–2 built, tier 2 opt-in behind its own consent; details below |
 | Files | ✅ | SFTP browse, transfer, rename/move/copy, delete; symlinks listed but never followed |
 
 ### Files — the two rules ✅
@@ -173,16 +173,18 @@ of tiles scans as a column of numbers: `UserRound`, `Clock`, `Activity`,
 `Signal`, `Network`, `History`, `Fingerprint`. The feature nav uses `Server`,
 `SquareTerminal`, `Boxes`, `Gauge`, `Package`, `ShieldCheck`, `FolderOpen`.
 
-**Audit is tiered — Lynis is not the starting point.**
+**Audit is tiered, and every tier is the app's own work.**
 
 | Tier | What | State |
 |---|---|---|
 | 0 | Crypto from the handshake russh already did — weak kex, CBC ciphers, `ssh-rsa`+SHA-1, strict-kex | ✅ via `Handler::kex_done`; no remote command, no privileges |
 | 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH | ✅ read-only; degrades honestly without root |
-| 2 | Lynis, **opt-in only** — detect `command -v lynis`, never install | Detection shipped; the run itself is deferred |
 
-Verified: Lynis is not installed on the test VM, which is the normal case.
-Silently installing a package on someone's server from a GUI is out.
+A third-party deep scanner (Lynis) was built and then removed: driving another
+tool's minutes-long run was its own subsystem, and the ground it covered belongs
+to the Tasks module instead — which keeps the rule that shaped the first
+attempt, asserted by a test rather than written in a comment: nothing is ever
+installed on someone's server from a GUI.
 
 Tier-0 honesty: russh's default preference lists contain no SHA-1 kex and no
 CBC cipher, so those two rules can never fire against the current client — a
@@ -222,6 +224,137 @@ module, the pane says so and lists recent installed hotfixes instead — and
 never installs the module to improve its own answer. Nothing on any
 platform is ever installed from the Updates pane; it reports, the operator
 decides in a terminal.
+
+---
+
+## Tasks — one-click commands ✅
+
+A task is a command with a name. Two kinds share one pane and are never
+interleaved, because the app is making a different claim about each.
+
+| | Built in | Yours |
+|---|---|---|
+| Authored by | `tasks/catalog.rs`, per OS, in Rust | the operator |
+| Command | constructed and unit-tested | run verbatim, never rewritten |
+| The claim | this is what it does | this is what you typed |
+
+**Global means "offered everywhere", not "runs everywhere".** A global task
+appears on every host whose OS it supports; pressing it runs on the one machine
+being looked at. There is no fan-out — one press, one host, which is the only
+version of this feature where the confirmation dialog can honestly name what it
+is about to touch. Per-host tasks are pinned to one id and are deleted with the
+host record (`forget_host_tasks`, called from the same place the record goes),
+so the file cannot accumulate commands aimed at machines that no longer exist.
+
+| Decision | Why |
+|---|---|
+| Plan and run are two commands | `plan_task` builds the exact string and assesses it; `start_task` runs it. The UI must call the first and show what it returns before it may call the second |
+| The command is never sent back across the boundary | `start_task` takes a *task id* and rebuilds the plan server-side. A window that showed one command and submitted another would be the worst bug this module could have, and passing the command through the webview is what would make it possible |
+| Elevation is per task, and per press | `elevated` is a field the operator sets, not something inferred from what the command looks like. A press can override it. A task that says it runs as root and cannot **errors** — it never quietly runs as someone else |
+| The `sudo` wrapper is `sh -c '…'` | So a task with pipes, redirects or several statements elevates as a whole rather than only its first word. Both forms are shown: the wrapper is the app's doing and is labelled as such |
+| Runs on the `stream` path | `Session::exec` caps at thirty seconds. A backup that takes four minutes must not be cut off with its output discarded |
+| One run per host | Starting a second while one is live **throws** rather than returning quietly — a button that does nothing and says nothing is indistinguishable from a broken one. The same lesson the removed Lynis card paid for |
+| Stopping stops *watching* | Closing the channel does not reach in and kill a process running on the host. The feed says exactly that rather than implying the command was cancelled |
+| An unidentified OS is offered nothing | `OsFamily::Unknown` gets no built-ins. Picking a family and hoping is how the wrong command runs |
+
+**A stream that ends by itself releases its own slot.** Found by running five
+tasks in a row on one host: the fifth was refused with "too many streams open"
+while nothing was running. Only `close_stream` ever called `remove_stream`, so
+every stream that finished on its own stayed in the registry counting against
+`MAX_STREAMS_PER_HOST` — a leak the Tasks pane merely exposed, since it is the
+first feature that opens and finishes short streams repeatedly. `batch_and_emit`
+now reaps the handle at the moment it emits `stream://closed`, which fixes the
+followed-journal path with it.
+
+The run store is `taskStore.ts`, keyed by host and disposed on the same four
+moments a terminal is — disconnected, heartbeat reaped it, stopped, app exit.
+Switching hosts or tabs closes nothing. The feed is an xterm for the reason the
+Lynis feed had to become one: a real command emits cursor and colour escapes,
+and a `<pre>` renders them as literal text.
+
+### The danger check ✅
+
+`tasks/danger.rs` reads a command for the shapes that end badly and reports what
+it finds. It is worth being precise about what this is:
+
+**It is a typo catcher, not a security boundary.** It matches text. A command
+that hides its intent — behind a variable, a base64 blob, a script it downloads
+— walks straight past every rule, and adding rules does not change that. The
+operator writes these commands and already holds the credentials to run them by
+hand. What is being defended against is the stray `/`, the line pasted from a
+forum, the task written for the wrong host.
+
+That framing decides the tuning, and the tuning is the whole feature:
+
+| Decision | Why |
+|---|---|
+| Three levels, and `none` never says "safe" | `none` means *nothing matched*. The dialog shows no green tick, because the check has no basis to issue one |
+| It never blocks | `destructive` requires typing `RUN`; it does not refuse. Stopping an operator from doing their job is not this app's role — making it impossible to reach by reflex is |
+| Both flags before a delete is reported | `rm -r` prompts and `rm -f` cannot take a tree. Warning on either alone is noise, and noise is what teaches people to click through warnings |
+| `/var/log` is caution, `/var` is destruction | Losing logs is bad and survivable. Spending the strongest word on it leaves nothing for `rm -rf /` |
+| Rules follow the host's OS | A `del /f /s /q c:\` in a task aimed at Linux is a *broken* task, not a dangerous one, and flagging it would be the wrong warning. An unidentified host gets both rule sets, which is the cautious reading and the honest one |
+| Word-boundary matching | `cat /var/run/reboot-required` and `grep shutdown /var/log/syslog` must not fire. A check with false positives is a check nobody reads — there is a test for each of these |
+| The assessment runs on what was *typed* | Not on the wrapped form. Reporting the app's own `sudo` back as a finding of the operator's would be a lie |
+
+A separate rule flags a password on the command line. It is not destructive at
+all — it is here because arguments are readable through `ps` by every account on
+the host, and this app sends secrets to stdin everywhere else. A task should not
+become the exception by accident.
+
+The built-in catalog is held to its own rules by test rather than by comment:
+no entry may contain a package-manager install verb, and no entry may assess as
+`destructive`. A shipped task may be disruptive — `restart-ssh` is, and validates
+the config with `sshd -t` first precisely because a bad config takes the daemon
+down with no way back in — but a built-in reaching the level that demands typed
+confirmation should be a deliberate decision, not a passing test.
+
+## Posture checks on connect ✅
+
+Settings › Startup › **Check posture on connect**, off by default. Tiers 0–1
+run by themselves the moment a host connects.
+
+**At connect time, not at pane-open time.** The first cut ran the checks from an
+effect inside the Audit pane, which is not "on connect" at all: nothing happened
+until the tab was opened, and the tab may never be. `connect()` fires it now,
+and the report lives in `auditCache` — keyed by host, cleared on the same four
+events a terminal is — so the pane shows what already ran rather than owning it.
+`markAttempted` means the connect-time run and the pane's catch-up (for a host
+already connected when the preference was switched on) can never both fire.
+Failure is silent by design: this is a background courtesy, and a toast about it
+would interrupt whatever the operator connected to do.
+
+**Unprivileged always.** It takes exactly the path the *Run without root* button
+takes by hand, and the report names what it had to skip — the same note it shows
+when elevation is declined. A sudo prompt that appears because a pane was opened
+is a prompt nobody asked for, and a password sent on a schedule is not consent.
+
+Off by default for the same reason the whole audit is opt-in: the checks are
+read-only, but running anything at all on someone's server unasked is a decision
+the operator makes once, deliberately.
+
+## VPN detection is cached ✅
+
+Three things wanted the same answer — the 30 s navbar poll, the host-row glyphs,
+and *every* failed probe's explanation — and each call spawned up to six local
+processes. A page of unreachable hosts fanned out into dozens of
+`tailscale status` invocations all saying the same thing.
+
+`vpn/cache.rs` is a TTL cache whose lock is held across the load, which is what
+gives single-flight: a second caller waits for the first rather than starting
+its own, then finds the entry fresh. The wait is bounded by the existing 3 s
+`CLI_TIMEOUT`, so a wedged client delays callers rather than hanging them.
+
+| Decision | Why |
+|---|---|
+| Two TTLs — statuses 10 s, Twingate resources 300 s | The two answers age differently. A client going up or down is what the pill exists to show; the resource list is administrator-defined and near-static |
+| Statuses stay under the 30 s poll | So a scheduled poll always does real work, and only the burst a single render produces is absorbed |
+| `Freshness::Forced` for the refresh button, `Cached` for the poll | A user pressing refresh must reach the clients themselves, or the cache has quietly disabled the button |
+| A forced load that *started after the click* satisfies the click | Three impatient clicks cost one CLI round, not three |
+| `explain_unreachable` now reads both from the cache | It also stopped calling `twingate::status()` separately — the detection pass it already needed contains it |
+| Tailscale peers stay uncached | The import dialog is user-triggered and infrequent, and a stale peer list would offer machines that have left the tailnet |
+
+Six cache tests, all against a call-counting loader — no VPN client anywhere
+near them, as the rest of the module's tests already require.
 
 ---
 
@@ -418,7 +551,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 202 |
+| Rust unit | `cargo test --lib` | 219 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |

@@ -35,14 +35,14 @@ pub mod transfer_task;
 pub mod transfers;
 pub mod updates;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The remote operating system family, which decides how to phrase a command.
 ///
 /// `Unknown` is a real outcome, not a failure: a locked-down shell may refuse
 /// both probes, and the UI should say so rather than guess and reboot the
 /// wrong way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OsFamily {
     Linux,

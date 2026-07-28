@@ -14,6 +14,9 @@ import * as api from "../api";
 import { errorMessage } from "../api";
 import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
+import * as auditCache from "../auditCache";
+import { readAutoAudit } from "../../settings/preferences";
+import { useStoreSubscription } from "../../../lib/useStoreSubscription";
 import { SeverityBadge } from "../../keys/KeyIndicators";
 import type {
   RemoteAuditReport,
@@ -43,13 +46,17 @@ export function AuditPane({ hostId }: { hostId: string }) {
   const requestElevation = useElevation();
   const connection = getConnection(hostId);
 
-  const [report, setReport] = useState<RemoteAuditReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A report from one host must never linger under another's audit tab.
+  // The report lives with the session, not with this component: the checks may
+  // have run at connect time, long before this pane was opened. Keyed by host,
+  // so one machine's report can never linger under another's tab.
+  useStoreSubscription(auditCache.subscribe);
+  const report = auditCache.get(hostId) ?? null;
+  const setReport = (fresh: RemoteAuditReport) => auditCache.set(hostId, fresh);
+
   useEffect(() => {
-    setReport(null);
     setError(null);
   }, [hostId]);
 
@@ -62,6 +69,32 @@ export function AuditPane({ hostId }: { hostId: string }) {
     connection !== undefined &&
     connection.elevation.kind !== "unavailable" &&
     connection.os !== "windows";
+
+  // The connect-time run is the main path (see `autoAudit` in HostsProvider).
+  // This is the catch-up for the host that was already connected when the
+  // preference was switched on — same unprivileged call, and `markAttempted`
+  // means the two can never both fire.
+  useEffect(() => {
+    if (!readAutoAudit() || connection === undefined) return;
+    if (!auditCache.markAttempted(hostId)) return;
+
+    let cancelled = false;
+    void (async () => {
+      setBusy(true);
+      try {
+        const fresh = await api.remoteAudit(hostId, null, false);
+        if (!cancelled) auditCache.set(hostId, fresh);
+      } catch (caught) {
+        if (!cancelled) setError(errorMessage(caught));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostId, connection]);
 
   const run = async () => {
     let password: string | null = null;
@@ -96,13 +129,13 @@ export function AuditPane({ hostId }: { hostId: string }) {
     await api.setRemoteFindingSuppressed(hostId, finding.id, !finding.suppressed);
     // Recomputed locally rather than re-running the audit: dismissing a
     // finding should not cost another round of remote commands.
-    setReport((previous) => {
-      if (!previous) return previous;
-      const findings = previous.findings.map((entry) =>
-        entry.id === finding.id ? { ...entry, suppressed: !entry.suppressed } : entry,
-      );
-      return { ...previous, findings, counts: count(findings), score: score(findings) };
-    });
+    const previous = auditCache.get(hostId);
+    if (!previous) return;
+
+    const findings = previous.findings.map((entry) =>
+      entry.id === finding.id ? { ...entry, suppressed: !entry.suppressed } : entry,
+    );
+    setReport({ ...previous, findings, counts: count(findings), score: score(findings) });
   };
 
   const sortedFindings = report
@@ -237,35 +270,6 @@ export function AuditPane({ hostId }: { hostId: string }) {
           )}
         </>
       )}
-
-      {/* Tier 2 — detection only, by decision. */}
-      <Card>
-        <Card.Body className="d-flex gap-2">
-          <Info className="icon-sm flex-shrink-0 mt-1 text-body-secondary" aria-hidden="true" />
-          <div className="text-body-secondary small">
-            {report?.lynis ? (
-              <>
-                <span className="fw-semibold text-body">{report.lynis}</span> is
-                installed on this host. Running a full Lynis audit (minutes, pegs
-                a core) from this pane is planned but not built yet — run{" "}
-                <code>sudo lynis audit system</code> in the terminal if you want
-                one now.
-              </>
-            ) : report ? (
-              <>
-                Lynis is not installed on this host, which is the normal case.
-                This app will never install it for you; the checks above are the
-                built-in tier.
-              </>
-            ) : (
-              <>
-                The deep scan tier uses Lynis when the host already has it.
-                Running the checks above also detects whether it is installed.
-              </>
-            )}
-          </div>
-        </Card.Body>
-      </Card>
     </div>
   );
 }

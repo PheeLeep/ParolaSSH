@@ -7,7 +7,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ConnectionInfo,
+  DangerAssessment,
   DirListing,
+  HostTasks,
+  TaskDraft,
+  TaskPlan,
+  TaskRecord,
   HostDraft,
   OnConflict,
   HostHealth,
@@ -241,7 +246,7 @@ export const checkUpdates = (hostId: string) =>
 
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 
-/** Tiers 0–1 plus Lynis detection. `password` feeds the sudo retry only, and
+/** Tiers 0–1. `password` feeds the sudo retry only, and
  *  `elevate: false` skips that retry even when the session holds a password. */
 export const remoteAudit = (
   hostId: string,
@@ -259,6 +264,59 @@ export const setRemoteFindingSuppressed = (
   findingId: string,
   suppressed: boolean,
 ) => invoke<void>("set_remote_finding_suppressed", { hostId, findingId, suppressed });
+
+/* ── Tasks ─────────────────────────────────────────────────────────────── */
+
+/** What this host can run: the built-ins its OS supports, plus the saved
+ *  tasks scoped to it. Safe to call while disconnected — the OS reads back as
+ *  `unknown` and no built-in is offered rather than a guess. */
+export const listHostTasks = (hostId: string) =>
+  invoke<HostTasks>("list_host_tasks", { hostId });
+
+/** Every saved task, for the list that manages them across hosts. */
+export const listAllTasks = () => invoke<TaskRecord[]>("list_all_tasks");
+
+export const saveTask = (draft: TaskDraft) =>
+  invoke<TaskRecord>("save_task", { draft });
+
+export const deleteTask = (id: string) => invoke<TaskRecord>("delete_task", { id });
+
+/** Drop every task pinned to a host. Called when the host itself is deleted. */
+export const forgetHostTasks = (hostId: string) =>
+  invoke<number>("forget_host_tasks", { hostId });
+
+/** Exactly what a press would run, and what the app makes of it. Runs nothing.
+ *
+ *  `elevated` overrides the task's own setting for this one press; leave it
+ *  undefined to take the task's default. */
+export const planTask = (hostId: string, taskId: string, elevated?: boolean) =>
+  invoke<TaskPlan>("plan_task", { hostId, taskId, elevated: elevated ?? null });
+
+/** Assess a command that has not been saved yet — what the editor calls as
+ *  the operator types. */
+export const assessTaskCommand = (command: string, hostId?: string | null) =>
+  invoke<DangerAssessment>("assess_task_command", {
+    hostId: hostId ?? null,
+    command,
+  });
+
+/** Run a task. Resolves to the stream id; output arrives as `stream://output`
+ *  events and `closeStream` stops watching.
+ *
+ *  The command is *not* sent — the backend rebuilds the plan from the task id,
+ *  so a window showing one command can never submit another. */
+export const startTask = (
+  hostId: string,
+  taskId: string,
+  elevated?: boolean,
+  password?: string | null,
+) =>
+  invoke<number>("start_task", {
+    hostId,
+    taskId,
+    elevated: elevated ?? null,
+    password: password ?? null,
+  });
 
 /* ── Files (SFTP) ──────────────────────────────────────────────────────── */
 

@@ -215,3 +215,35 @@ export async function applyStoredConcurrency(): Promise<void> {
     // The default is already in force; nothing to recover.
   }
 }
+
+/* ── Audit on connect ──────────────────────────────────────────────────── */
+
+export const AUTO_AUDIT_STORAGE_KEY = "parolassh:auto-audit";
+
+/**
+ * Whether the Audit pane runs its posture checks by itself when a host is
+ * connected.
+ *
+ * **Unprivileged only, and off by default.** The checks it runs are read-only,
+ * but running anything on someone's server without being asked is a decision
+ * the operator makes once, deliberately. The elevated half is never automatic:
+ * a sudo prompt that appears because a pane was opened is a prompt nobody asked
+ * for, and a password sent on a schedule is not consent. The report says which
+ * checks were skipped, exactly as it does when elevation is declined by hand.
+ */
+export function readAutoAudit(): boolean {
+  try {
+    return localStorage.getItem(AUTO_AUDIT_STORAGE_KEY) === "on";
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+    return false;
+  }
+}
+
+export function writeAutoAudit(enabled: boolean): void {
+  try {
+    localStorage.setItem(AUTO_AUDIT_STORAGE_KEY, enabled ? "on" : "off");
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+}

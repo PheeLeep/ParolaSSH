@@ -9,6 +9,7 @@ import { AuditPane } from "./panes/AuditPane";
 import { OsBadge, OverviewPane } from "./panes/OverviewPane";
 import { PerformancePane } from "./panes/PerformancePane";
 import { ServicesPane } from "./panes/ServicesPane";
+import { TasksPane } from "./panes/TasksPane";
 import { UpdatesPane } from "./panes/UpdatesPane";
 import { useHostActions } from "./useHostActions";
 import { FilesPane } from "../transfers/FilesPane";
@@ -155,6 +156,8 @@ export function HostDetail({
             <ServicesPane hostId={hostId} />
           ) : feature === "performance" ? (
             <PerformancePane hostId={hostId} />
+          ) : feature === "tasks" ? (
+            <TasksPane hostId={hostId} />
           ) : feature === "updates" ? (
             <UpdatesPane hostId={hostId} />
           ) : feature === "audit" ? (

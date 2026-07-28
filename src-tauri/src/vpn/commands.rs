@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::tailscale::{self, PeerListing};
-use super::{bind, detect_all, twingate, VpnBinding, VpnStatus};
+use super::{bind, Freshness, VpnBinding, VpnStatus};
 
 /// Everything the UI shows about VPNs, gathered in one detection pass.
 #[derive(Serialize)]
@@ -37,9 +37,21 @@ pub struct ResourceInfo {
 /// share a single round of CLI calls per poll. Infallible by design: a
 /// machine with no VPNs returns two `not installed` entries and no bindings,
 /// not an error, so the UI renders the same shape either way.
+///
+/// `force` distinguishes the scheduled poll from the user pressing refresh:
+/// a poll takes what the cache has, a person asking gets a real CLI round.
 #[tauri::command]
-pub async fn vpn_overview(hostnames: Vec<String>) -> VpnOverview {
-    let (statuses, resources) = tokio::join!(detect_all(), twingate::resources());
+pub async fn vpn_overview(hostnames: Vec<String>, force: bool) -> VpnOverview {
+    let freshness = if force {
+        Freshness::Forced
+    } else {
+        Freshness::Cached
+    };
+
+    let (statuses, resources) = tokio::join!(
+        super::statuses(freshness),
+        super::resources(freshness)
+    );
 
     let bindings = hostnames
         .iter()

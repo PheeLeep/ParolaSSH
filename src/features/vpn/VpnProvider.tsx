@@ -49,7 +49,9 @@ export function VpnProvider({ children }: { children: ReactNode }) {
       if (!force && document.hidden) return;
       const hostnames = hostnamesKey === "" ? [] : hostnamesKey.split("\n");
       try {
-        const overview = await api.vpnOverview(hostnames);
+        // `force` means the user asked, in both senses: poll while hidden,
+        // and go past the backend's cache to the clients themselves.
+        const overview = await api.vpnOverview(hostnames, force);
         setStatuses(overview.statuses);
         setResources(overview.twingateResources);
         setBindings(

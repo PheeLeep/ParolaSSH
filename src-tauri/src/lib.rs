@@ -7,6 +7,7 @@ pub mod remote;
 // Public so the integration tests in `tests/` can drive the audit against
 // fixture directories.
 pub mod ssh;
+pub mod tasks;
 #[cfg(desktop)]
 pub mod tray;
 pub mod vpn;
@@ -116,6 +117,15 @@ pub fn run() {
             // Remote audit
             remote::commands::remote_audit,
             remote::commands::set_remote_finding_suppressed,
+            // Tasks
+            tasks::commands::list_host_tasks,
+            tasks::commands::list_all_tasks,
+            tasks::commands::save_task,
+            tasks::commands::delete_task,
+            tasks::commands::forget_host_tasks,
+            tasks::commands::plan_task,
+            tasks::commands::assess_task_command,
+            tasks::commands::start_task,
             // Files (SFTP)
             remote::commands::list_remote_dir,
             remote::commands::remote_home_dir,

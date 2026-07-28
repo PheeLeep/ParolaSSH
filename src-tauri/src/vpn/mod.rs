@@ -7,6 +7,7 @@
 //! Detection is shallow and read-only: find the client, ask its own CLI, never
 //! touch its configuration. A VPN that is not installed is a normal outcome.
 
+mod cache;
 pub mod commands;
 mod netbird;
 mod tailscale;
@@ -20,9 +21,31 @@ use std::time::Duration;
 
 use serde::Serialize;
 
+pub use cache::Freshness;
+use cache::TtlCache;
+
 /// How long a client's CLI gets before we assume it is wedged. These are local
 /// commands that normally return in milliseconds.
 const CLI_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The last detection pass, shared by the navbar poll, the host-row glyphs and
+/// every probe explanation. See `cache` for why this exists.
+static STATUS_CACHE: TtlCache<Vec<VpnStatus>> = TtlCache::new(cache::STATUS_TTL);
+
+/// The last `twingate resources` listing, on a much longer TTL.
+static RESOURCE_CACHE: TtlCache<Vec<twingate::TwingateResource>> =
+    TtlCache::new(cache::RESOURCE_TTL);
+
+/// Every VPN's condition, from the cache unless the caller insists otherwise.
+/// **Prefer this to `detect_all`** — that one always spawns processes.
+pub async fn statuses(freshness: Freshness) -> Vec<VpnStatus> {
+    STATUS_CACHE.get(freshness, detect_all).await
+}
+
+/// The Twingate resource list, from the cache unless the caller insists.
+pub async fn resources(freshness: Freshness) -> Vec<twingate::TwingateResource> {
+    RESOURCE_CACHE.get(freshness, twingate::resources).await
+}
 
 /// The VPNs this module knows how to recognise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -83,7 +106,10 @@ impl VpnStatus {
 
 /// Check every VPN we know how to recognise, concurrently. Boxed so adding a
 /// provider is one line here plus its module.
-pub async fn detect_all() -> Vec<VpnStatus> {
+///
+/// Spawns one process per provider every time it is called; `statuses` is the
+/// door most callers should use.
+async fn detect_all() -> Vec<VpnStatus> {
     let checks: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = VpnStatus> + Send>>> = vec![
         Box::pin(tailscale::status()),
         Box::pin(twingate::status()),
@@ -191,16 +217,22 @@ pub fn bind(
 
 /// The extra sentence a failed probe earns when its address looks VPN-bound.
 /// `None` when there is nothing useful to add.
+///
+/// Reads the cache throughout: a page of unreachable hosts explains itself from
+/// one detection pass, and the answer is at most `STATUS_TTL` old — which is
+/// fresher than the probe that just failed.
 pub async fn explain_unreachable(hostname: &str) -> Option<String> {
     // Resources are often plain LAN addresses no heuristic could attribute, so
     // the list outranks the lexical hints.
-    let resources = twingate::resources().await;
+    let resources = resources(Freshness::Cached).await;
+    let statuses = statuses(Freshness::Cached).await;
+
     if let Some(resource) = resources.iter().find(|r| r.matches(hostname)) {
-        return Some(twingate_advice(resource, &twingate::status().await));
+        let twingate = statuses.iter().find(|s| s.kind == VpnKind::Twingate)?;
+        return Some(twingate_advice(resource, twingate));
     }
 
-    let hint = address_hint(hostname)?;
-    advice(hint, &detect_all().await)
+    advice(address_hint(hostname)?, &statuses)
 }
 
 /// What to say when the dead address is a known Twingate resource. Every branch

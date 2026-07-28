@@ -10,7 +10,10 @@ import {
 } from "react";
 import * as api from "./api";
 import { errorMessage } from "./api";
+import * as auditCache from "./auditCache";
+import { readAutoAudit } from "../settings/preferences";
 import * as terminals from "./terminalStore";
+import * as tasks from "./taskStore";
 import type {
   ConnectionInfo,
   HostDraft,
@@ -126,8 +129,13 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       if (connectionsRef.current[id]) {
         await terminals.closeHost(id).catch(() => undefined);
+        await tasks.closeHost(id).catch(() => undefined);
+        auditCache.forget(id);
         await api.disconnectHost(id).catch(() => undefined);
       }
+      // Tasks pinned to this host go with it: the file must not
+      // accumulate commands aimed at a machine that is gone.
+      await api.forgetHostTasks(id).catch(() => undefined);
       await api.deleteHost(id);
       setConnections(({ [id]: _removed, ...rest }) => rest);
       await refresh();
@@ -160,7 +168,11 @@ export function HostsProvider({ children }: { children: ReactNode }) {
           const next: Record<string, ConnectionInfo> = {};
           for (const [hostId, info] of Object.entries(previous)) {
             if (stillConnected.has(hostId)) next[hostId] = info;
-            else void terminals.closeHost(hostId);
+            else {
+              void terminals.closeHost(hostId);
+              void tasks.closeHost(hostId);
+              auditCache.forget(hostId);
+            }
           }
           return Object.keys(next).length === Object.keys(previous).length
             ? previous
@@ -190,6 +202,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     try {
       const info = await api.connectHost(id, options);
       setConnections((previous) => ({ ...previous, [id]: info }));
+      void autoAudit(id);
       return info;
     } catch (caught) {
       setHealth((previous) => ({
@@ -202,6 +215,8 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(async (id: string) => {
     await terminals.closeHost(id);
+    await tasks.closeHost(id);
+    auditCache.forget(id);
     await api.disconnectHost(id);
     setConnections(({ [id]: _removed, ...rest }) => rest);
 
@@ -235,6 +250,8 @@ export function HostsProvider({ children }: { children: ReactNode }) {
         outcome.succeeded && request.action !== "cancel" && request.delayMinutes === 0;
       if (terminal) {
         void terminals.closeHost(id);
+        void tasks.closeHost(id);
+        auditCache.forget(id);
         setConnections(({ [id]: _removed, ...rest }) => rest);
         setHealth((previous) => ({
           ...previous,
@@ -306,6 +323,32 @@ export function HostsProvider({ children }: { children: ReactNode }) {
   ]);
 
   return <HostsContext.Provider value={value}>{children}</HostsContext.Provider>;
+}
+
+/**
+ * Settings › Startup › "Check posture on connect", honoured at the moment of
+ * connecting rather than when the Audit pane is opened — a check that waits for
+ * a pane to be opened is not "on connect", and the pane may never be opened.
+ *
+ * Unprivileged always (`elevate: false`). A sudo prompt raised by connecting is
+ * a prompt nobody asked for, and a password sent automatically is not consent;
+ * the report names the checks it had to skip, exactly as it does when
+ * elevation is declined by hand.
+ *
+ * Failure is silent by design. This is a background courtesy, not something the
+ * operator asked for right now, and a toast about it would interrupt whatever
+ * they connected to do. Opening the pane and pressing the button reports
+ * properly.
+ */
+async function autoAudit(hostId: string): Promise<void> {
+  if (!readAutoAudit()) return;
+  if (!auditCache.markAttempted(hostId)) return;
+
+  try {
+    auditCache.set(hostId, await api.remoteAudit(hostId, null, false));
+  } catch {
+    // Silent: see above.
+  }
 }
 
 function statusFor(

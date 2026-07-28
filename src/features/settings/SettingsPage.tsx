@@ -34,10 +34,12 @@ import {
   MIN_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_FAMILIES,
   clampConcurrency,
+  readAutoAudit,
   readMaxConcurrentTransfers,
   readNavLayout,
   readStartupView,
   readTerminalFont,
+  writeAutoAudit,
   writeMaxConcurrentTransfers,
   writeNavLayout,
   writeStartupView,
@@ -83,6 +85,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const [tab, setTab] = useState<SettingsTab>("appearance");
   const [navLayout, setNavLayout] = useState<NavLayout>(readNavLayout);
   const [startup, setStartup] = useState<StartupView>(readStartupView);
+  const [autoAudit, setAutoAudit] = useState<boolean>(readAutoAudit);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
   const [sshDir, setSshDir] = useState<SshLocation | null>(null);
@@ -106,6 +109,11 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeNavLayout = (next: NavLayout) => {
     setNavLayout(next);
     writeNavLayout(next);
+  };
+
+  const changeAutoAudit = (next: boolean) => {
+    setAutoAudit(next);
+    writeAutoAudit(next);
   };
 
   const changeStartup = (next: StartupView) => {
@@ -219,7 +227,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
         <Card.Body>
           <h2 className="section-title mb-3">Startup</h2>
 
-          <SettingRow title="Opening screen" hint="Where ParolaSSH lands on launch." last>
+          <SettingRow title="Opening screen" hint="Where ParolaSSH lands on launch.">
             <Segmented<StartupView>
               label="Opening screen"
               value={startup}
@@ -228,6 +236,20 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
                 { value: "welcome", label: "Home", Icon: Home },
                 { value: "hosts", label: "All hosts", Icon: Server },
               ]}
+            />
+          </SettingRow>
+
+          <SettingRow
+            title="Check posture on connect"
+            hint="Runs the Audit tab's read-only checks once a host connects, without asking. Only the unprivileged half: the checks needing root stay behind their prompt, and the report names what it had to skip."
+            last
+          >
+            <Form.Check
+              type="switch"
+              id="auto-audit"
+              aria-label="Check posture on connect"
+              checked={autoAudit}
+              onChange={(event) => changeAutoAudit(event.target.checked)}
             />
           </SettingRow>
         </Card.Body>

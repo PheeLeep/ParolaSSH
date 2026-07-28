@@ -16,10 +16,11 @@ use std::time::Duration;
 use russh::client::Msg;
 use russh::{ChannelMsg, ChannelWriteHalf, Sig};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
 
 use super::client::Session;
+use super::registry::SessionRegistry;
 use super::shell::Decoder;
 use crate::ssh::{SshError, SshResult};
 
@@ -72,12 +73,18 @@ const MAX_BATCH: usize = 64 * 1024;
 /// Run `command` on the session and stream its output.
 ///
 /// `webview_label` names the window that will receive the events.
+///
+/// `stdin` exists for `sudo -S`, which reads the password from it: the bytes
+/// are sent and the input half closed immediately, so the command never waits
+/// on a terminal that a PTY-less stream does not have. Callers with nothing to
+/// send pass `None` and leave stdin open, as a followed journal expects.
 pub async fn open(
     session: &Session,
     app: AppHandle,
     webview_label: String,
     host_id: String,
     command: &str,
+    stdin: Option<&[u8]>,
 ) -> SshResult<StreamHandle> {
     let stream_id = NEXT_STREAM_ID.fetch_add(1, Ordering::Relaxed);
     let channel = session.open_channel().await?;
@@ -88,6 +95,17 @@ pub async fn open(
         .map_err(|error| SshError::Io(format!("The server refused the command: {error}")))?;
 
     let (mut reader, writer) = channel.split();
+
+    if let Some(bytes) = stdin {
+        writer
+            .data_bytes(bytes.to_vec())
+            .await
+            .map_err(|error| SshError::Io(format!("Could not send input: {error}")))?;
+        writer
+            .eof()
+            .await
+            .map_err(|error| SshError::Io(format!("Could not close input: {error}")))?;
+    }
 
     let (sender, receiver) = mpsc::unbounded_channel::<StreamMsg>();
 
@@ -184,11 +202,25 @@ async fn batch_and_emit(
         webview_label.as_str(),
         CLOSED_EVENT,
         ClosedEvent {
-            host_id,
+            host_id: host_id.clone(),
             stream_id,
             exit_code,
         },
     );
+
+    // A command that ended by itself has to release its own slot. Until this
+    // existed only `close_stream` removed the handle, so every stream that
+    // finished on its own — a task, a journal whose unit stopped — stayed in
+    // the map counting against `MAX_STREAMS_PER_HOST`, and the fifth one on a
+    // host was refused with "too many streams open" while none were.
+    //
+    // The channel is already gone, so the handle is dropped rather than
+    // closed. `try_state` because a test harness may not manage a registry.
+    if let Some(registry) = app.try_state::<SessionRegistry>() {
+        if let Some(live) = registry.get(&host_id) {
+            live.remove_stream(stream_id);
+        }
+    }
 }
 
 enum StreamMsg {

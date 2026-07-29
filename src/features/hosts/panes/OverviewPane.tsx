@@ -5,6 +5,7 @@ import {
   Fingerprint,
   History,
   Network,
+  Route,
   ShieldAlert,
   ShieldCheck,
   Signal,
@@ -12,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { OsIcon } from "../OsIcon";
+import { useHosts } from "../HostsProvider";
 import { StatusBadge } from "../StatusIndicator";
 import type { HostRow } from "../HostsProvider";
 import {
@@ -33,7 +35,18 @@ export function OverviewPane({
   connection?: ConnectionInfo;
   health?: HostHealth;
 }) {
+  const { hosts } = useHosts();
   const blocked = connection?.elevation.kind === "unavailable";
+  const jumpHost = hosts.find((entry) => entry.id === host.proxyJump);
+
+  const jumpTile = jumpHost && (
+    <Stat
+      label="Reached through"
+      value={jumpHost.label}
+      sub={`${jumpHost.username}@${jumpHost.hostname}:${jumpHost.port}`}
+      Icon={Route}
+    />
+  );
 
   return (
     <div className="d-flex flex-column gap-3">
@@ -63,6 +76,7 @@ export function OverviewPane({
             sub={health ? "checked every 30s" : "not yet checked"}
             Icon={Activity}
           />
+          {jumpTile}
         </div>
       ) : (
         <div className="stat-grid">
@@ -91,6 +105,7 @@ export function OverviewPane({
             sub={formatAbsolute(host.lastConnected)}
             Icon={History}
           />
+          {jumpTile}
         </div>
       )}
       

@@ -22,6 +22,10 @@ use super::CommandOutput;
 use crate::ssh::paths::SshPaths;
 use crate::ssh::{SshError, SshResult};
 
+/// A handshake in progress, either straight to the host or through a jump.
+type ConnectFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Handle<Handler>, russh::Error>> + Send>>;
+
 /// How long to wait for the TCP connect and key exchange.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long a one-shot command may run before we give up on it.
@@ -199,6 +203,9 @@ pub struct Session {
     /// What the first key exchange negotiated. `None` only if russh never
     /// called `kex_done`, which would mean no handshake happened at all.
     pub negotiated: Option<NegotiatedCrypto>,
+    /// The session this one is tunnelled through. Held because the tunnel is a
+    /// channel of that session: dropping it closes this connection.
+    jump: Option<Box<Session>>,
 }
 
 impl Session {
@@ -207,6 +214,30 @@ impl Session {
         target: &Target,
         credentials: &Credentials,
         trust_unknown: bool,
+    ) -> SshResult<Self> {
+        Self::connect_inner(target, credentials, trust_unknown, None).await
+    }
+
+    /// Same, reached through an already-authenticated session rather than a
+    /// direct TCP connection - ssh's `ProxyJump`.
+    ///
+    /// The target's own host key is still checked against `known_hosts` under
+    /// its own name, exactly as a direct connection would: the tunnel changes
+    /// how the bytes travel, not who is trusted.
+    pub async fn connect_via(
+        target: &Target,
+        credentials: &Credentials,
+        trust_unknown: bool,
+        jump: Session,
+    ) -> SshResult<Self> {
+        Self::connect_inner(target, credentials, trust_unknown, Some(Box::new(jump))).await
+    }
+
+    async fn connect_inner(
+        target: &Target,
+        credentials: &Credentials,
+        trust_unknown: bool,
+        jump: Option<Box<Session>>,
     ) -> SshResult<Self> {
         let known_hosts = SshPaths::discover()?.known_hosts();
         let verdict = Arc::new(Mutex::new(KeyVerdict::default()));
@@ -230,8 +261,37 @@ impl Session {
             ..Default::default()
         });
 
-        let address = (target.hostname.as_str(), target.port);
-        let connect = client::connect(config, address, handler);
+        // Two different futures, boxed so one `timeout` covers both paths.
+        let connect: ConnectFuture = match &jump {
+            None => {
+                // Owned, so the future borrows nothing and stays `'static`.
+                let address = (target.hostname.clone(), target.port);
+                Box::pin(client::connect(config, address, handler))
+            }
+            Some(jump) => {
+                let channel = jump
+                    .handle
+                    // The originator fields are advisory and only reach the
+                    // jump host's log, so they name nothing about this machine.
+                    .channel_open_direct_tcpip(
+                        target.hostname.clone(),
+                        target.port as u32,
+                        "127.0.0.1",
+                        0,
+                    )
+                    .await
+                    .map_err(|error| {
+                        SshError::invalid(format!(
+                            "The jump host would not open a tunnel to {}:{} - {error}. It may \
+                             refuse forwarding (AllowTcpForwarding no), or the address may not \
+                             resolve from there.",
+                            target.hostname, target.port
+                        ))
+                    })?;
+
+                Box::pin(client::connect_stream(config, channel.into_stream(), handler))
+            }
+        };
 
         let mut handle = match tokio::time::timeout(CONNECT_TIMEOUT, connect).await {
             Err(_) => {
@@ -267,7 +327,7 @@ impl Session {
             .and_then(|verdict| verdict.accepted_fingerprint.clone());
         let negotiated = crypto.lock().ok().and_then(|slot| slot.clone());
 
-        Ok(Self { handle, fingerprint, negotiated })
+        Ok(Self { handle, fingerprint, negotiated, jump })
     }
 
     /// Run one command, optionally feeding it stdin, and collect its output.
@@ -376,11 +436,17 @@ impl Session {
             .map_err(|error| SshError::Io(format!("Could not open a session channel: {error}")))
     }
 
+    /// Closes this session, then any jump session carrying it - in that order,
+    /// so the tunnel is not pulled out from under a live disconnect.
     pub async fn close(&self) {
         let _ = self
             .handle
             .disconnect(Disconnect::ByApplication, "", "en")
             .await;
+
+        if let Some(jump) = &self.jump {
+            Box::pin(jump.close()).await;
+        }
     }
 }
 

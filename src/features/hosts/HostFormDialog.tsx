@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Col, Form, Modal, Row, Spinner } from "react-bootstrap";
 import { CircleCheck, CircleX, Plug, Server, TriangleAlert } from "lucide-react";
 import * as api from "./api";
@@ -32,7 +32,7 @@ export function HostFormDialog({
   onClose: () => void;
   onSaved?: (id: string) => void;
 }) {
-  const { save } = useHosts();
+  const { hosts, save } = useHosts();
   const { keys } = useKeys();
 
   const [draft, setDraft] = useState<HostDraft>(emptyDraft());
@@ -45,6 +45,26 @@ export function HostFormDialog({
   const [probing, setProbing] = useState(false);
 
   const isEdit = Boolean(initialDraft?.id);
+
+  /** Every saved host except this one and anything already jumping through it.
+   *  A loop is refused at connect time; not offering one is kinder. */
+  const jumpChoices = useMemo(() => {
+    const self = initialDraft?.id;
+    if (!self) return hosts;
+
+    const jumpsThroughSelf = (start: string) => {
+      const seen = new Set<string>();
+      let id: string | null | undefined = start;
+      while (id && !seen.has(id)) {
+        if (id === self) return true;
+        seen.add(id);
+        id = hosts.find((host) => host.id === id)?.proxyJump;
+      }
+      return false;
+    };
+
+    return hosts.filter((host) => host.id !== self && !jumpsThroughSelf(host.id));
+  }, [hosts, initialDraft?.id]);
 
   // Reset whenever the dialog opens, so a previous edit never bleeds through.
   useEffect(() => {
@@ -304,6 +324,28 @@ export function HostFormDialog({
             </Form.Group>
           </Col>
         </Row>
+
+        <Form.Group className="mb-3">
+          <Form.Label>Jump host</Form.Label>
+          <Form.Select
+            value={draft.proxyJump ?? ""}
+            onChange={(event) => update("proxyJump", event.target.value || null)}
+          >
+            <option value="">Connect directly</option>
+            {jumpChoices.map((host) => (
+              <option key={host.id} value={host.id}>
+                {host.label} ({host.username}@{host.hostname})
+              </option>
+            ))}
+          </Form.Select>
+          <Form.Text className="text-body-secondary">
+            Reaches this machine through another saved connection, the way ssh's{" "}
+            <code>ProxyJump</code> does. The jump host uses its own credentials,
+            so connect to it directly once first to record its host key.{" "}
+            <strong>Check port</strong> above still probes from this machine and
+            will say offline for a host only reachable through the jump.
+          </Form.Text>
+        </Form.Group>
 
         <Form.Group>
           <Form.Label>Notes</Form.Label>

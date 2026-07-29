@@ -10,6 +10,7 @@
 pub mod audit;
 pub mod config;
 pub mod generate;
+pub mod import;
 pub mod keys;
 pub mod known_hosts;
 pub mod paths;

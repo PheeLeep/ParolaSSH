@@ -15,7 +15,8 @@ use crate::ssh::keys::KeyScan;
 use crate::ssh::paths::SshPaths;
 use crate::ssh::perms::KeyPermissions;
 use crate::ssh::store::Suppressions;
-use crate::ssh::{audit, config, generate, keys, perms, SshError, SshResult};
+use crate::ssh::import::ImportListing;
+use crate::ssh::{audit, config, generate, import, keys, perms, SshError, SshResult};
 
 fn ssh_dir() -> SshResult<PathBuf> {
     SshPaths::discover().map(|paths| paths.dir)
@@ -64,6 +65,13 @@ pub fn list_ssh_keys() -> SshResult<KeyScan> {
     let dir = ssh_dir()?;
     let config = config::SshConfig::read(&SshPaths::new(&dir).config());
     keys::scan(&dir, &config.identity_files())
+}
+
+/// Hosts defined in `~/.ssh/config`, as importable connections.
+#[tauri::command]
+pub fn ssh_config_hosts() -> SshResult<ImportListing> {
+    let dir = ssh_dir()?;
+    Ok(import::listing(&SshPaths::new(&dir).config()))
 }
 
 /// Run the security audit over `~/.ssh`.

@@ -59,6 +59,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::ssh_location,
             commands::list_ssh_keys,
+            commands::ssh_config_hosts,
             commands::audit_ssh_dir,
             commands::set_finding_suppressed,
             commands::restrict_permissions,

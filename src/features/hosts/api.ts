@@ -14,6 +14,7 @@ import type {
   TaskPlan,
   TaskRecord,
   HostDraft,
+  ImportListing,
   OnConflict,
   HostHealth,
   HostMetrics,
@@ -55,6 +56,9 @@ export const deleteHost = (id: string) => invoke<SshHost>("delete_host", { id })
 export const listHostGroups = () => invoke<string[]>("list_host_groups");
 
 export const listHostTags = () => invoke<string[]>("list_host_tags");
+
+/** Hosts defined in `~/.ssh/config`, as importable connections. */
+export const sshConfigHosts = () => invoke<ImportListing>("ssh_config_hosts");
 
 /* ── Reaching them ─────────────────────────────────────────────────────── */
 

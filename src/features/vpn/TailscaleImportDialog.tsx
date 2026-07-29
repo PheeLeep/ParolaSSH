@@ -125,6 +125,7 @@ export function TailscaleImportDialog({
           keyPath: null,
           group: group.trim() || DEFAULT_GROUP,
           tags: peer.tags,
+          proxyJump: null,
           notes: `Imported from Tailscale${peer.os ? ` · ${peer.os}` : ""}`,
         });
       }

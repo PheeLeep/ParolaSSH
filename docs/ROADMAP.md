@@ -411,6 +411,49 @@ server component is *"only available on: Linux, macOS open source"*, so a
 Windows peer can never accept `none` however the tailnet routes to it. Reaching
 a node over Tailscale and being served **by** Tailscale are different things.
 
+## Import from `~/.ssh/config` ✅
+
+The config was already parsed for `IdentityFile`; `ssh/import.rs` reads the rest
+of it into importable connections. Opened from the hosts table toolbar.
+
+| Decision | Why |
+|---|---|
+| First matching value wins, in file order | OpenSSH's own rule. It is why a trailing `Host *` acts as a fallback and a leading one does not, and reproducing it is the only way an imported host matches what `ssh <alias>` does |
+| Only concrete patterns become candidates | `Host *`, `web0?` and `!secret` describe a *set*. A set has no address to connect to, so those blocks supply defaults and never appear as rows |
+| `exists: false` rather than an empty list | No config file is not the same answer as a config holding no single-machine blocks, and the dialog says which |
+| `Include` is reported, not followed | Following it means resolving globs relative to two base directories and guarding against include loops. Saying plainly that included hosts are missing is honest and costs nothing |
+| `ProxyCommand` is named, not silently dropped | It is the one directive whose absence would make an imported host fail for a reason the row never mentioned |
+| Only the first `ProxyJump` hop is imported | Chained jumps import as one hop with a note, rather than quietly becoming a different topology |
+| An unparseable `Port` falls back to 22 with a note | The rest of the block is still worth importing |
+| Passwords are never read | The config holds none. Imported hosts default to the batch's auth method, except where the block names its own `IdentityFile` |
+
+Aliases are matched to jump hosts in a **second pass**, after every selection is
+saved: a jump host has no id until it exists. A selected entry whose jump host
+is neither selected nor already saved is named in a warning and imported as a
+direct connection rather than being refused.
+
+## ProxyJump ✅
+
+The audit has advised using `ProxyJump` since tier 1 shipped; the app can now do
+it. `proxy_jump` on a host record holds **the id of another saved connection**,
+not an ssh_config string.
+
+| Decision | Why |
+|---|---|
+| A jump host is a saved connection, not a config string | It then has its own credentials, its own key policy, its own audit history. Parsing `user@host:port` into a second, weaker host model would duplicate all of it |
+| The tunnel is `channel_open_direct_tcpip` + `connect_stream` | russh 0.62 has both. No new dependency, and the target's handshake is ordinary from there |
+| The jump `Session` is held inside the one it carries | The tunnel *is* a channel of that session. Dropping the jump would close the connection riding on it, so `Session.jump` owns it and `close()` tears down inner-first |
+| The target's host key is still checked under its own name | The tunnel changes how the bytes travel, not who is trusted |
+| `trust_unknown` is false at every hop | The dialog asked about the *target*. That consent cannot stand in for a different machine's key, so an unknown jump host says to connect to it directly first, where the question can honestly be asked |
+| A jump host's password comes from the vault only | Same reason. There is no second password prompt, and the error names the host to connect first |
+| Chains are capped at 4 and loops are refused | `jump::resolve` walks the chain before anything is dialled. A loop is a config mistake, not a topology, and the form does not offer a host that already jumps through the one being edited |
+| Probes stay direct | `probe_host` opens a TCP socket from this machine, so a host only reachable through a jump reads as offline. The form says so rather than routing probes through a session that may not exist yet |
+
+Chain resolution is unit-tested (ordering, loops, self-reference, deleted jump
+host, depth cap). The tunnel itself has **not** been exercised against a live
+VM yet - there is no `#[ignore]`d live test for it, because the live suite takes
+one host from the environment and a jump needs two.
+
 ## Open questions
 
 | Question | State |
@@ -551,7 +594,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 219 |
+| Rust unit | `cargo test --lib` | 280 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |

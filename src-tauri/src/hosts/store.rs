@@ -163,6 +163,7 @@ mod tests {
             group: "Lab".into(),
             tags: vec!["vm".into()],
             notes: None,
+            proxy_jump: None,
         }
     }
 

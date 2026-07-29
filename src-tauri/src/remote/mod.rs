@@ -22,6 +22,7 @@
 pub mod audit;
 pub mod client;
 pub mod commands;
+pub mod jump;
 pub mod metrics;
 pub mod power;
 pub mod probe;

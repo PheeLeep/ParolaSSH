@@ -21,6 +21,9 @@ export interface SshHost {
   group: string;
   tags: string[];
   notes: string | null;
+  /** Id of the saved connection to tunnel through, or null for a direct
+   *  connection. Ssh's `ProxyJump`, pointed at a host we already hold. */
+  proxyJump: string | null;
   /** ISO 8601, or null if never connected. */
   lastConnected: string | null;
 }
@@ -37,6 +40,7 @@ export interface HostDraft {
   group: string;
   tags: string[];
   notes: string | null;
+  proxyJump: string | null;
 }
 
 /** What connecting must ask for before a private key can be loaded.
@@ -473,6 +477,30 @@ export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
   unavailable: "Cannot elevate",
 };
 
+/* ── Importing from ~/.ssh/config ──────────────────────────────────────── */
+
+/** One `Host` block that names a single machine. */
+export interface ImportCandidate {
+  alias: string;
+  hostname: string;
+  port: number;
+  /** Empty when the config names no `User`. */
+  username: string;
+  keyPath: string | null;
+  /** Alias named by `ProxyJump`, matched to another candidate on import. */
+  proxyJump: string | null;
+  line: number;
+  notes: string[];
+}
+
+export interface ImportListing {
+  path: string;
+  /** False means no config file at all, which is not an empty one. */
+  exists: boolean;
+  candidates: ImportCandidate[];
+  notes: string[];
+}
+
 export const DEFAULT_PORT = 22;
 export const DEFAULT_GROUP = "Ungrouped";
 
@@ -487,6 +515,7 @@ export function emptyDraft(group = DEFAULT_GROUP): HostDraft {
     group,
     tags: [],
     notes: null,
+    proxyJump: null,
   };
 }
 
@@ -502,5 +531,6 @@ export function draftFromHost(host: SshHost): HostDraft {
     group: host.group,
     tags: [...host.tags],
     notes: host.notes,
+    proxyJump: host.proxyJump,
   };
 }

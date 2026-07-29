@@ -1,16 +1,18 @@
 import { useMemo, useState } from "react";
 import { Alert, Button, Card, Spinner, Stack } from "react-bootstrap";
-import { Plug, Plus } from "lucide-react";
+import { FileInput, Plug, Plus } from "lucide-react";
 import { DataTable } from "../../components/DataTable";
 import { createHostColumns } from "./columns";
 import { useHosts, type HostRow } from "./HostsProvider";
 import { useHostActions } from "./useHostActions";
 import { useHostContextMenu } from "./useHostContextMenu";
+import { SshConfigImportDialog } from "./SshConfigImportDialog";
 import type { Navigate } from "../../navigation";
 
 export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { hosts, connectedCount, loading, error } = useHosts();
   const [selected, setSelected] = useState<HostRow[]>([]);
+  const [importing, setImporting] = useState(false);
 
   const { actions, add, dialogs } = useHostActions({
     // A terminal lives on the detail pane, so opening one navigates there.
@@ -65,6 +67,14 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
                   <Button
                     size="sm"
                     variant="outline-secondary"
+                    onClick={() => setImporting(true)}
+                  >
+                    <FileInput aria-hidden="true" />
+                    Import from ssh_config
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline-secondary"
                     // Each connection may need its own password, so this walks
                     // them one dialog at a time rather than firing in parallel.
                     disabled={selected.length !== 1}
@@ -84,6 +94,11 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
           )}
         </Card.Body>
       </Card>
+
+      <SshConfigImportDialog
+        show={importing}
+        onClose={() => setImporting(false)}
+      />
 
       {contextMenu}
       {dialogs}

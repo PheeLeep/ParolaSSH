@@ -105,11 +105,6 @@ export function LogsPanel() {
     <Card className="mb-3">
       <Card.Body>
         <h2 className="section-title mb-1">Logs</h2>
-        <p className="text-body-secondary small mb-3">
-          What ParolaSSH did, kept on this machine so a failure can be read back
-          later. Connections, power and service actions, and transfers - never
-          passwords, key material, or output from a remote machine.
-        </p>
 
         {error && <Alert variant="danger">{error}</Alert>}
 

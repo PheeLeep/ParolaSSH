@@ -45,6 +45,9 @@ pub struct HostRecord {
     pub tags: Vec<String>,
     #[serde(default)]
     pub notes: Option<String>,
+    /// Id of the saved connection to tunnel through, if any.
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
     /// ISO 8601 of the last successful connection, or `None` if never.
     #[serde(default)]
     pub last_connected: Option<String>,
@@ -69,6 +72,8 @@ pub struct HostDraft {
     pub tags: Vec<String>,
     #[serde(default)]
     pub notes: Option<String>,
+    #[serde(default)]
+    pub proxy_jump: Option<String>,
 }
 
 /// Group name used when the form leaves the field blank.
@@ -112,6 +117,20 @@ impl HostDraft {
             ));
         }
 
+        let proxy_jump = self
+            .proxy_jump
+            .as_ref()
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty());
+
+        // The deeper loops are caught when the chain is walked; this one is
+        // worth refusing at the form, where it can be pointed at.
+        if proxy_jump.is_some() && proxy_jump == self.id {
+            return Err(SshError::invalid(
+                "A connection cannot jump through itself.",
+            ));
+        }
+
         // An unnamed connection falls back to `user@host` rather than being
         // rejected: the label is a convenience, not information we need.
         let label = match self.label.trim() {
@@ -141,6 +160,7 @@ impl HostDraft {
                 .notes
                 .map(|note| note.trim().to_string())
                 .filter(|note| !note.is_empty()),
+            proxy_jump,
         })
     }
 }
@@ -157,6 +177,7 @@ pub struct ValidDraft {
     pub group: String,
     pub tags: Vec<String>,
     pub notes: Option<String>,
+    pub proxy_jump: Option<String>,
 }
 
 impl ValidDraft {
@@ -173,6 +194,7 @@ impl ValidDraft {
             group: self.group,
             tags: self.tags,
             notes: self.notes,
+            proxy_jump: self.proxy_jump,
             last_connected,
         }
     }
@@ -218,6 +240,7 @@ mod tests {
             group: "  Lab  ".into(),
             tags: vec!["web".into(), " Web ".into(), "".into(), "db".into()],
             notes: Some("   ".into()),
+            proxy_jump: None,
         }
     }
 
@@ -270,5 +293,19 @@ mod tests {
         let mut no_key = draft();
         no_key.auth_method = AuthMethod::Publickey;
         assert!(no_key.validate().is_err());
+    }
+
+    #[test]
+    fn a_connection_cannot_jump_through_itself() {
+        let mut looped = draft();
+        looped.id = Some("h-1".into());
+        looped.proxy_jump = Some(" h-1 ".into());
+        assert!(looped.validate().is_err());
+
+        // A blank jump host is no jump host, not a loop.
+        let mut blank = draft();
+        blank.id = Some("h-1".into());
+        blank.proxy_jump = Some("  ".into());
+        assert_eq!(blank.validate().unwrap().proxy_jump, None);
     }
 }

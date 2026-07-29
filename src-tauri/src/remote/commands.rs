@@ -12,6 +12,7 @@ use zeroize::Zeroizing;
 
 use super::client::{Credentials, Session, Target};
 use super::power::{self, Elevation, PowerOutcome, PowerRequest, PowerPlan, PrivilegeReport};
+use super::jump;
 use super::probe::{self, ProbeResult};
 use super::registry::{LiveSession, SessionRegistry};
 use super::secrets::SecretVault;
@@ -90,8 +91,10 @@ pub async fn connect_host(
     // freed heap.
     let password = password.map(Zeroizing::new);
     let config_dir = config_dir(&app)?;
-    let host = HostStore::read(&config_dir)
-        .get(&host_id)
+    let saved = HostStore::read(&config_dir).hosts;
+    let host = saved
+        .iter()
+        .find(|host| host.id == host_id)
         .cloned()
         .ok_or_else(|| SshError::invalid("That connection no longer exists."))?;
 
@@ -103,7 +106,15 @@ pub async fn connect_host(
         username: host.username.clone(),
     };
 
-    let session = match Session::connect(&target, &credentials, trust_unknown).await {
+    // Dialled outermost first; each hop tunnels through the one before it.
+    let via = open_jump_chain(&saved, &host_id, &vault).await?;
+
+    let attempt = match via {
+        None => Session::connect(&target, &credentials, trust_unknown).await,
+        Some(jump) => Session::connect_via(&target, &credentials, trust_unknown, jump).await,
+    };
+
+    let session = match attempt {
         Ok(session) => session,
         Err(error) => {
             // The target and the reason, never the credential.
@@ -823,6 +834,54 @@ pub fn set_remote_finding_suppressed(
 }
 
 /// Decide what to authenticate with, given the record and what the UI sent.
+/// Connect through every jump host in front of `host_id`, returning the last
+/// session in the chain - the one the target is reached through.
+///
+/// A jump host is never prompted for: the dialog is about the target, so its
+/// answer cannot stand in for another machine's key or password. An unknown
+/// key or a missing password says to connect that host directly first, which
+/// is where those questions can honestly be asked.
+async fn open_jump_chain(
+    saved: &[HostRecord],
+    host_id: &str,
+    vault: &SecretVault,
+) -> SshResult<Option<Session>> {
+    let chain = jump::resolve(saved, host_id)?;
+    let mut via: Option<Session> = None;
+
+    for hop in chain {
+        let credentials = build_credentials(&hop, None, vault).map_err(|error| {
+            SshError::invalid(format!(
+                "Jump host “{}”: {error} Connect to it directly first.",
+                hop.label
+            ))
+        })?;
+
+        let target = Target {
+            hostname: hop.hostname.clone(),
+            port: hop.port,
+            username: hop.username.clone(),
+        };
+
+        // `trust_unknown` is false at every hop, whatever was answered for the
+        // target: that consent was about a different machine's key.
+        let opened = match via {
+            None => Session::connect(&target, &credentials, false).await,
+            Some(previous) => Session::connect_via(&target, &credentials, false, previous).await,
+        };
+
+        via = Some(opened.map_err(|error| {
+            logging::warn(
+                "ssh",
+                format!("Jump through {}@{}:{} failed", target.username, target.hostname, target.port),
+            );
+            SshError::invalid(format!("Jump host “{}”: {error}", hop.label))
+        })?);
+    }
+
+    Ok(via)
+}
+
 fn build_credentials(
     host: &HostRecord,
     password: Option<&str>,
@@ -1517,6 +1576,7 @@ mod tests {
             group: String::new(),
             tags: Vec::new(),
             notes: None,
+            proxy_jump: None,
             last_connected: None,
         }
     }

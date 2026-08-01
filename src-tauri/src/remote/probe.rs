@@ -4,10 +4,14 @@
 //! and a wrong password all end with "could not connect", but only one is fixed
 //! by changing the port field, so the probe reports which it was.
 //!
-//! It reads the banner rather than assuming port 22 means SSH.
+//! It reads the banner rather than assuming port 22 means SSH. When a username
+//! is provided it also performs a throwaway SSH handshake to discover which
+//! authentication methods the server advertises.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use russh::client;
 use serde::Serialize;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -18,6 +22,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Banner arrives immediately on a real sshd; this only bounds the wait for
 /// something that accepted the connection and then went quiet.
 const BANNER_TIMEOUT: Duration = Duration::from_secs(3);
+/// The auth-method probe is a full SSH handshake; allow more than the banner.
+const AUTH_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// What answered on the port.
 #[derive(Debug, Clone, Serialize)]
@@ -35,6 +41,11 @@ pub struct ProbeResult {
     pub latency_ms: Option<u64>,
     /// Plain-language result, ready to show.
     pub message: String,
+    /// Auth methods the server will accept, discovered via `authenticate_none`.
+    /// `None` when no username was given or the server is not SSH.
+    pub auth_methods: Option<Vec<String>>,
+    /// SSH handshake log lines from the probe connection.
+    pub logs: Vec<String>,
 }
 
 /// Open a TCP connection and read whatever greets us.
@@ -112,6 +123,8 @@ pub async fn probe(hostname: &str, port: u16) -> SshResult<ProbeResult> {
         banner,
         latency_ms: Some(latency_ms),
         message,
+        auth_methods: None,
+        logs: Vec::new(),
     })
 }
 
@@ -140,7 +153,128 @@ fn unreachable(hostname: &str, port: u16, message: String) -> ProbeResult {
         banner: None,
         latency_ms: None,
         message,
+        auth_methods: None,
+        logs: Vec::new(),
     }
+}
+
+// ── Auth method detection ───────────────────────────────────────────────
+
+/// Minimal handler that accepts any host key - this is a throwaway probe,
+/// not a real session, and no credential is ever sent.
+struct ProbeHandler {
+    accepted: Arc<Mutex<bool>>,
+    logs: Arc<Mutex<Vec<String>>>,
+}
+
+impl client::Handler for ProbeHandler {
+    type Error = russh::Error;
+
+    async fn check_server_key(
+        &mut self,
+        key: &russh::keys::ssh_key::PublicKey,
+    ) -> Result<bool, Self::Error> {
+        if let Ok(mut slot) = self.accepted.lock() {
+            *slot = true;
+        }
+        if let Ok(mut log) = self.logs.lock() {
+            log.push(format!("Host key: {} {}", key.algorithm(), key.fingerprint(Default::default())));
+        }
+        Ok(true)
+    }
+
+    async fn auth_banner(
+        &mut self,
+        banner: &str,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Ok(mut log) = self.logs.lock() {
+            for line in banner.lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    log.push(format!("Banner: {trimmed}"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn kex_done(
+        &mut self,
+        _shared_secret: Option<&[u8]>,
+        names: &russh::Names,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if let Ok(mut log) = self.logs.lock() {
+            log.push(format!("KEX: {}", names.kex.as_ref()));
+            log.push(format!("Host key algorithm: {}", names.key));
+            log.push(format!("Cipher: {}", names.cipher.as_ref()));
+            log.push(format!("Client MAC: {}", names.client_mac.as_ref()));
+            log.push(format!("Server MAC: {}", names.server_mac.as_ref()));
+            if names.strict_kex() {
+                log.push("Strict KEX: enabled".to_string());
+            }
+        }
+        Ok(())
+    }
+}
+
+pub struct AuthProbeResult {
+    pub methods: Vec<String>,
+    pub logs: Vec<String>,
+}
+
+/// Connect, call `authenticate_none`, and read the methods the server will
+/// accept. The connection is dropped immediately after.
+pub async fn detect_auth_methods(
+    hostname: &str,
+    port: u16,
+    username: &str,
+) -> Option<AuthProbeResult> {
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let handler = ProbeHandler {
+        accepted: Arc::new(Mutex::new(false)),
+        logs: Arc::clone(&logs),
+    };
+
+    let config = Arc::new(client::Config {
+        inactivity_timeout: Some(AUTH_PROBE_TIMEOUT),
+        ..Default::default()
+    });
+
+    let address = (hostname.to_string(), port);
+    let connect = client::connect(config, address, handler);
+    let mut handle = match tokio::time::timeout(AUTH_PROBE_TIMEOUT, connect).await {
+        Ok(Ok(h)) => h,
+        _ => return None,
+    };
+
+    let result = handle.authenticate_none(username).await.ok()?;
+
+    let methods = match result {
+        client::AuthResult::Success => vec!["none".to_string()],
+        client::AuthResult::Failure {
+            remaining_methods, ..
+        } => remaining_methods
+            .iter()
+            .map(|m| <&str>::from(m).to_string())
+            .collect(),
+    };
+
+    if let Ok(mut log) = logs.lock() {
+        let names: Vec<&str> = methods.iter().map(|s| s.as_str()).collect();
+        log.push(format!("Auth methods: {}", names.join(", ")));
+    }
+
+    let _ = handle
+        .disconnect(russh::Disconnect::ByApplication, "", "en")
+        .await;
+
+    let collected = logs.lock().ok().map(|l| l.clone()).unwrap_or_default();
+    Some(AuthProbeResult {
+        methods,
+        logs: collected,
+    })
 }
 
 #[cfg(test)]

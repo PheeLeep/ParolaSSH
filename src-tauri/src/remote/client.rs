@@ -11,11 +11,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use russh::client::{self, Handle};
+use russh::client::{self, Handle, Msg};
 use russh::keys::known_hosts::{check_known_hosts_path, learn_known_hosts_path};
 use russh::keys::{load_secret_key, PrivateKeyWithHashAlg};
-use russh::{ChannelMsg, Disconnect};
+use russh::{Channel, ChannelMsg, Disconnect};
 use serde::Serialize;
+use tokio::sync::mpsc;
 use zeroize::Zeroizing;
 
 use super::CommandOutput;
@@ -87,6 +88,15 @@ pub struct NegotiatedCrypto {
     pub strict_kex: bool,
 }
 
+/// A `forwarded-tcpip` channel the server opened for a remote port forward.
+pub struct ForwardedChannel {
+    pub channel: Channel<Msg>,
+    pub connected_address: String,
+    pub connected_port: u32,
+    pub originator_address: String,
+    pub originator_port: u32,
+}
+
 struct Handler {
     hostname: String,
     port: u16,
@@ -96,6 +106,7 @@ struct Handler {
     verdict: Arc<Mutex<KeyVerdict>>,
     /// Filled by `kex_done`, read by `connect` - same shape as `verdict`.
     crypto: Arc<Mutex<Option<NegotiatedCrypto>>>,
+    forwarded_tx: mpsc::UnboundedSender<ForwardedChannel>,
 }
 
 impl client::Handler for Handler {
@@ -194,6 +205,28 @@ impl client::Handler for Handler {
         }
         Ok(())
     }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        originator_address: &str,
+        originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        reply.accept().await;
+        let _ = self.forwarded_tx.send(ForwardedChannel {
+            channel,
+            connected_address: connected_address.to_string(),
+            connected_port,
+            originator_address: originator_address.to_string(),
+            originator_port,
+        });
+        Ok(())
+    }
 }
 
 /// An authenticated connection.
@@ -206,6 +239,9 @@ pub struct Session {
     /// The session this one is tunnelled through. Held because the tunnel is a
     /// channel of that session: dropping it closes this connection.
     jump: Option<Box<Session>>,
+    /// Incoming `forwarded-tcpip` channels from remote port forwards. Taken
+    /// once by the tunnel dispatcher; `None` after that.
+    forwarded_rx: Arc<tokio::sync::Mutex<Option<mpsc::UnboundedReceiver<ForwardedChannel>>>>,
 }
 
 impl Session {
@@ -242,6 +278,7 @@ impl Session {
         let known_hosts = SshPaths::discover()?.known_hosts();
         let verdict = Arc::new(Mutex::new(KeyVerdict::default()));
         let crypto = Arc::new(Mutex::new(None));
+        let (forwarded_tx, forwarded_rx) = mpsc::unbounded_channel();
 
         let handler = Handler {
             hostname: target.hostname.clone(),
@@ -250,6 +287,7 @@ impl Session {
             trust_unknown,
             verdict: Arc::clone(&verdict),
             crypto: Arc::clone(&crypto),
+            forwarded_tx,
         };
 
         let config = Arc::new(client::Config {
@@ -327,7 +365,8 @@ impl Session {
             .and_then(|verdict| verdict.accepted_fingerprint.clone());
         let negotiated = crypto.lock().ok().and_then(|slot| slot.clone());
 
-        Ok(Self { handle, fingerprint, negotiated, jump })
+        let forwarded_rx = Arc::new(tokio::sync::Mutex::new(Some(forwarded_rx)));
+        Ok(Self { handle, fingerprint, negotiated, jump, forwarded_rx })
     }
 
     /// Run one command, optionally feeding it stdin, and collect its output.
@@ -434,6 +473,38 @@ impl Session {
             .channel_open_session()
             .await
             .map_err(|error| SshError::Io(format!("Could not open a session channel: {error}")))
+    }
+
+    /// Ask the server to listen on `address:port` and forward connections back.
+    pub async fn tcpip_forward(&self, address: &str, port: u16) -> SshResult<u16> {
+        self.handle
+            .tcpip_forward(address, port as u32)
+            .await
+            .map(|p| p as u16)
+            .map_err(|error| {
+                SshError::invalid(format!(
+                    "The server refused to listen on {address}:{port} - {error}. \
+                     It may disallow forwarding (GatewayPorts / AllowTcpForwarding)."
+                ))
+            })
+    }
+
+    /// Tell the server to stop listening on a previously forwarded port.
+    pub async fn cancel_tcpip_forward(&self, address: &str, port: u16) -> SshResult<()> {
+        self.handle
+            .cancel_tcpip_forward(address, port as u32)
+            .await
+            .map_err(|error| {
+                SshError::Io(format!("Could not cancel forwarding on {address}:{port} - {error}"))
+            })
+    }
+
+    /// Take the receiver for incoming `forwarded-tcpip` channels. Returns
+    /// `None` if already taken (only one dispatcher should run per session).
+    pub async fn take_forwarded_rx(
+        &self,
+    ) -> Option<mpsc::UnboundedReceiver<ForwardedChannel>> {
+        self.forwarded_rx.lock().await.take()
     }
 
     /// Open a direct-tcpip channel to `host:port` through this session.

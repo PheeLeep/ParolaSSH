@@ -55,6 +55,9 @@ export type TerminalEntry = {
 const entries = new Map<number, TerminalEntry>();
 const listeners = new Set<() => void>();
 
+// Broadcast: type once, send to every selected shell.
+let broadcastTargets = new Set<string>();
+let broadcastEnabled = false;
 
 let version = 0;
 
@@ -159,9 +162,15 @@ export async function open(
   }
 
   terminal.onData((data) => {
-    void api.writeShell(hostId, shellId!, data).catch(() => {
-      
-    });
+    if (broadcastEnabled && broadcastTargets.has(broadcastKey(hostId, shellId!))) {
+      const targets = [...broadcastTargets].map((key) => {
+        const [h, s] = key.split(":");
+        return { hostId: h, shellId: Number(s) };
+      });
+      void api.broadcastShells(targets, data).catch(() => {});
+    } else {
+      void api.writeShell(hostId, shellId!, data).catch(() => {});
+    }
   });
 
   const defaultTitle = title ?? `shell ${countForHost(hostId) + 1}`;
@@ -314,4 +323,34 @@ export function focus(shellId: number) {
 
 export function clear(shellId: number) {
   entries.get(shellId)?.terminal.clear();
+}
+
+/* ── Broadcast ──────────────────────────────────────────────────────────── */
+
+function broadcastKey(hostId: string, shellId: number): string {
+  return `${hostId}:${shellId}`;
+}
+
+export function setBroadcastTargets(targets: Set<string>) {
+  broadcastTargets = targets;
+  broadcastEnabled = targets.size > 0;
+  emit();
+}
+
+export function clearBroadcast() {
+  broadcastTargets = new Set();
+  broadcastEnabled = false;
+  emit();
+}
+
+export function isBroadcasting(): boolean {
+  return broadcastEnabled;
+}
+
+export function getBroadcastTargets(): Set<string> {
+  return broadcastTargets;
+}
+
+export function isBroadcastTarget(hostId: string, shellId: number): boolean {
+  return broadcastTargets.has(broadcastKey(hostId, shellId));
 }

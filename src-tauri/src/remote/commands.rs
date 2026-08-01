@@ -54,15 +54,29 @@ pub struct ConnectionInfo {
 }
 
 /// Check the port before spending time on a handshake. Needs no credentials.
+/// When `username` is provided and the server is SSH, also discovers which
+/// authentication methods the server will accept.
 #[tauri::command]
-pub async fn probe_host(hostname: String, port: u16) -> SshResult<ProbeResult> {
-    let mut result = probe::probe(hostname.trim(), port).await?;
+pub async fn probe_host(
+    hostname: String,
+    port: u16,
+    username: Option<String>,
+) -> SshResult<ProbeResult> {
+    let trimmed = hostname.trim();
+    let mut result = probe::probe(trimmed, port).await?;
 
-    // Silence from a VPN address is usually the VPN's doing, not the host's.
-    // Kept out of `probe` so that stays a pure network primitive.
     if !result.reachable {
         if let Some(advice) = crate::vpn::explain_unreachable(&result.hostname).await {
             result.message = format!("{} {advice}", result.message);
+        }
+    }
+
+    if result.is_ssh {
+        if let Some(user) = username.as_deref().filter(|u| !u.trim().is_empty()) {
+            if let Some(auth) = probe::detect_auth_methods(trimmed, port, user.trim()).await {
+                result.auth_methods = Some(auth.methods);
+                result.logs = auth.logs;
+            }
         }
     }
 
@@ -475,6 +489,30 @@ pub async fn write_shell(
         .ok_or_else(|| SshError::invalid("That terminal has been closed."))?;
 
     shell.write(&data).await
+}
+
+/// Send the same keystrokes to multiple shells across hosts.
+#[tauri::command]
+pub async fn broadcast_shells(
+    registry: State<'_, SessionRegistry>,
+    targets: Vec<BroadcastTarget>,
+    data: String,
+) -> SshResult<()> {
+    for target in &targets {
+        if let Some(live) = registry.get(&target.host_id) {
+            if let Some(shell) = live.shell(target.shell_id) {
+                let _ = shell.write(&data).await;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BroadcastTarget {
+    pub host_id: String,
+    pub shell_id: u64,
 }
 
 /// Tell one shell its window changed.
@@ -1546,6 +1584,28 @@ pub async fn open_tunnel(
 }
 
 #[tauri::command]
+pub async fn open_remote_tunnel(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    remote_port: u16,
+    remote_bind_host: String,
+    local_host: String,
+    local_port: u16,
+) -> SshResult<super::tunnel::TunnelInfo> {
+    super::tunnel::open_remote(
+        app,
+        &registry,
+        host_id,
+        remote_bind_host,
+        remote_port,
+        local_host,
+        local_port,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn close_tunnel(
     registry: State<'_, SessionRegistry>,
     host_id: String,
@@ -1554,7 +1614,16 @@ pub async fn close_tunnel(
     let live = registry.require(&host_id)?;
     match live.remove_tunnel(tunnel_id) {
         Some(handle) => {
-            handle.stop();
+            if handle.direction == super::tunnel::TunnelDirection::Remote {
+                let _ = live
+                    .session
+                    .cancel_tcpip_forward(&handle.remote_host, handle.remote_port)
+                    .await;
+                let key = (handle.remote_host.clone(), handle.remote_port as u32);
+                live.remote_targets().lock().await.remove(&key);
+            } else {
+                handle.stop();
+            }
             Ok(())
         }
         None => Err(SshError::invalid("That tunnel is not running.")),

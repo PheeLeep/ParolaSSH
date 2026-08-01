@@ -15,6 +15,24 @@ import {
   type ProbeResult,
 } from "./types";
 
+const AUTH_METHOD_PROBE_LABELS: Record<string, string> = {
+  password: "Password",
+  publickey: "Public key",
+  "keyboard-interactive": "Keyboard interactive",
+  hostbased: "Host-based",
+  none: "None",
+};
+
+function authMethodSupported(method: AuthMethod, serverMethods: string[]): boolean {
+  const map: Record<AuthMethod, string[]> = {
+    password: ["password", "keyboard-interactive"],
+    publickey: ["publickey"],
+    agent: ["publickey"],
+    none: ["none"],
+  };
+  return map[method].some((m) => serverMethods.includes(m));
+}
+
 /**
  * Add or edit a connection.
  *
@@ -92,7 +110,9 @@ export function HostFormDialog({
     setProbing(true);
     setProbe(null);
     try {
-      setProbe(await api.probeHost(draft.hostname.trim(), draft.port));
+      setProbe(
+        await api.probeHost(draft.hostname.trim(), draft.port, draft.username.trim()),
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -202,6 +222,35 @@ export function HostFormDialog({
                 {probe.latencyMs !== null && (
                   <span className="text-body-secondary"> ({probe.latencyMs} ms)</span>
                 )}
+                {probe.authMethods && probe.authMethods.length > 0 && (
+                  <div className="mt-1">
+                    Server accepts:{" "}
+                    {probe.authMethods.map((m) => (
+                      <span key={m} className="badge bg-secondary bg-opacity-25 text-body me-1">
+                        {AUTH_METHOD_PROBE_LABELS[m] ?? m}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {probe.logs.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="text-body-secondary" style={{ cursor: "pointer" }}>
+                      SSH handshake log ({probe.logs.length} lines)
+                    </summary>
+                    <pre className="mb-0 mt-1 small text-body-secondary" style={{ whiteSpace: "pre-wrap", fontSize: "0.75rem" }}>
+                      {probe.logs.join("\n")}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            </Alert>
+          )}
+          {probe?.authMethods && !authMethodSupported(draft.authMethod, probe.authMethods) && (
+            <Alert variant="warning" className="mt-2 mb-0 d-flex gap-2 py-2 small">
+              <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+              <div>
+                The selected method (<strong>{AUTH_METHOD_LABELS[draft.authMethod]}</strong>)
+                was not advertised by the server. Connecting may fail.
               </div>
             </Alert>
           )}

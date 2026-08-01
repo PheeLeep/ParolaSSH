@@ -1,13 +1,13 @@
-import { useSyncExternalStore } from "react";
-import { Button, Card, ListGroup } from "react-bootstrap";
-import { ChevronRight, Plus, SquareTerminal, Unplug, X } from "lucide-react";
+import { useCallback, useSyncExternalStore } from "react";
+import { Badge, Button, Card, Form, ListGroup } from "react-bootstrap";
+import { ChevronRight, Plus, Radio, SquareTerminal, Unplug, X } from "lucide-react";
 import { useHosts, type HostRow } from "../hosts/HostsProvider";
 import { StatusDot } from "../hosts/StatusIndicator";
 import * as terminals from "../hosts/terminalStore";
 import { useHostActions } from "../hosts/useHostActions";
 import type { Navigate } from "../../navigation";
 
-type ShellRow = { shellId: number; title: string; exited: boolean; exitCode: number | null };
+type ShellRow = { shellId: number; hostId: string; title: string; exited: boolean; exitCode: number | null };
 type HostSessions = { host: HostRow; shells: ShellRow[] };
 
 /**
@@ -29,14 +29,32 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
       host,
       shells: open
         .filter((entry) => entry.hostId === host.id)
-        .map(({ shellId, title, exited, exitCode }) => ({
+        .map(({ shellId, hostId: hid, title, exited, exitCode }) => ({
           shellId,
+          hostId: hid,
           title,
           exited,
           exitCode,
         })),
     }))
     .filter(({ host, shells }) => host.status === "connected" || shells.length > 0);
+
+  const broadcasting = terminals.isBroadcasting();
+  const broadcastSet = terminals.getBroadcastTargets();
+
+  const toggleBroadcastTarget = useCallback((hostId: string, shellId: number) => {
+    const key = `${hostId}:${shellId}`;
+    const next = new Set(broadcastSet);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    terminals.setBroadcastTargets(next);
+  }, [broadcastSet]);
+
+  const toggleBroadcast = useCallback(() => {
+    if (broadcasting) {
+      terminals.clearBroadcast();
+    }
+  }, [broadcasting]);
 
   const live = open.filter((entry) => !entry.exited).length;
   const hostCount = rows.filter(({ shells }) => shells.length > 0).length;
@@ -54,6 +72,12 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
                 }`}
           </p>
         </div>
+        {broadcasting && (
+          <Button size="sm" variant="warning" onClick={toggleBroadcast}>
+            <Radio className="icon-sm me-1" aria-hidden="true" />
+            Broadcasting to {broadcastSet.size}
+          </Button>
+        )}
       </header>
 
       {rows.length === 0 ? (
@@ -121,6 +145,14 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
                         key={shell.shellId}
                         className="d-flex align-items-center gap-2 px-0"
                       >
+                        <Form.Check
+                          type="checkbox"
+                          disabled={shell.exited}
+                          checked={broadcastSet.has(`${shell.hostId}:${shell.shellId}`)}
+                          onChange={() => toggleBroadcastTarget(shell.hostId, shell.shellId)}
+                          title="Include in broadcast"
+                          aria-label={`Broadcast to ${shell.title}`}
+                        />
                         <SquareTerminal
                           className="icon-sm text-body-secondary"
                           aria-hidden="true"
@@ -134,6 +166,12 @@ export function SessionsPage({ onNavigate }: { onNavigate: Navigate }) {
                                 : `exit ${shell.exitCode}`}
                             </span>
                           )}
+                          {!shell.exited &&
+                            broadcastSet.has(`${shell.hostId}:${shell.shellId}`) && (
+                              <Badge bg="warning" text="dark" className="ms-2 fw-normal" style={{ fontSize: "0.65rem" }}>
+                                broadcast
+                              </Badge>
+                            )}
                         </span>
 
                         <Button

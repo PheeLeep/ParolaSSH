@@ -64,9 +64,10 @@ export const sshConfigHosts = () => invoke<ImportListing>("ssh_config_hosts");
 
 /* ── Reaching them ─────────────────────────────────────────────────────── */
 
-/** Is anything listening on that port, and does it speak SSH? */
-export const probeHost = (hostname: string, port: number) =>
-  invoke<ProbeResult>("probe_host", { hostname, port });
+/** Is anything listening on that port, and does it speak SSH?
+ *  When `username` is provided, also detects supported auth methods. */
+export const probeHost = (hostname: string, port: number, username?: string) =>
+  invoke<ProbeResult>("probe_host", { hostname, port, username: username || null });
 
 /** Connect and authenticate. `trustUnknown` records an unrecognised host key -
  *  pass it only once the user has seen and accepted the fingerprint. */
@@ -144,6 +145,11 @@ export const listShells = (hostId: string) =>
 
 export const writeShell = (hostId: string, shellId: number, data: string) =>
   invoke<void>("write_shell", { hostId, shellId, data });
+
+export const broadcastShells = (
+  targets: { hostId: string; shellId: number }[],
+  data: string,
+) => invoke<void>("broadcast_shells", { targets, data });
 
 export const resizeShell = (
   hostId: string,
@@ -423,6 +429,21 @@ export const openTunnel = (
   remotePort: number,
 ) =>
   invoke<TunnelInfo>("open_tunnel", { hostId, localPort, remoteHost, remotePort });
+
+export const openRemoteTunnel = (
+  hostId: string,
+  remotePort: number,
+  remoteBindHost: string,
+  localHost: string,
+  localPort: number,
+) =>
+  invoke<TunnelInfo>("open_remote_tunnel", {
+    hostId,
+    remotePort,
+    remoteBindHost,
+    localHost,
+    localPort,
+  });
 
 export const closeTunnel = (hostId: string, tunnelId: number) =>
   invoke<void>("close_tunnel", { hostId, tunnelId });

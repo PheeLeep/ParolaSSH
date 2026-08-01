@@ -101,6 +101,7 @@ pub fn run() {
             remote::commands::open_shell,
             remote::commands::list_shells,
             remote::commands::write_shell,
+            remote::commands::broadcast_shells,
             remote::commands::resize_shell,
             remote::commands::close_shell,
             // Long-running streams (followed logs)
@@ -148,6 +149,7 @@ pub fn run() {
             remote::commands::clear_finished_transfers,
             // Port forwarding
             remote::commands::open_tunnel,
+            remote::commands::open_remote_tunnel,
             remote::commands::close_tunnel,
             remote::commands::list_tunnels,
         ])

@@ -5,8 +5,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Alert, Button, Dropdown, Form, Spinner } from "react-bootstrap";
-import { Eraser, Minus, Pencil, Plus, SquareTerminal, Type, X } from "lucide-react";
+import { Alert, Badge, Button, Dropdown, Form, Spinner } from "react-bootstrap";
+import { Eraser, Minus, Pencil, Plus, Radio, SquareTerminal, Type, X } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 import { errorMessage } from "./api";
 import * as store from "./terminalStore";
@@ -177,6 +177,11 @@ export function TerminalTabs({
                     <span className="shell-tab__exit">
                       {entry.exitCode === null ? "ended" : entry.exitCode}
                     </span>
+                  )}
+                  {!entry.exited && store.isBroadcastTarget(hostId, entry.shellId) && (
+                    <Badge bg="warning" text="dark" className="ms-1" style={{ fontSize: "0.55rem", padding: "1px 4px" }}>
+                      <Radio className="icon-sm" aria-hidden="true" style={{ width: 10, height: 10 }} />
+                    </Badge>
                   )}
                 </button>
               )}

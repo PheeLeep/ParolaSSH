@@ -102,6 +102,8 @@ export interface ProbeResult {
   banner: string | null;
   latencyMs: number | null;
   message: string;
+  authMethods: string[] | null;
+  logs: string[];
 }
 
 export type PowerAction = "shutdown" | "reboot" | "cancel";
@@ -479,10 +481,14 @@ export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
 
 /* ── Tunnels (port forwarding) ────────────────────────────────────────── */
 
+export type TunnelDirection = "local" | "remote";
+
 export interface TunnelInfo {
   id: number;
   hostId: string;
+  direction: TunnelDirection;
   localPort: number;
+  localHost: string;
   remoteHost: string;
   remotePort: number;
   activeConnections: number;

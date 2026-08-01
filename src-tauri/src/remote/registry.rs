@@ -10,6 +10,7 @@
 //! await and is a `tokio::sync::Mutex`.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use zeroize::Zeroizing;
@@ -20,7 +21,7 @@ use super::power::Elevation;
 use super::sftp::BrowseSession;
 use super::shell::ShellHandle;
 use super::stream::StreamHandle;
-use super::tunnel::TunnelHandle;
+use super::tunnel::{self, RemoteForwardMap, TunnelHandle};
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
 
@@ -59,6 +60,11 @@ pub struct LiveSession {
     prev_cpu: Mutex<Option<CpuTimes>>,
     /// Active port-forwarding tunnels, keyed by tunnel id.
     tunnels: Mutex<HashMap<u64, TunnelHandle>>,
+    /// Remote forward targets - the dispatcher reads this to route incoming
+    /// `forwarded-tcpip` channels to local addresses.
+    remote_targets: RemoteForwardMap,
+    /// Whether the remote-forward dispatcher task has been spawned.
+    remote_dispatch: AtomicBool,
     /// The SFTP channel the file browser listens on, opened on first use.
     /// Transfers deliberately do not share it - see `sftp::BrowseSession`.
     pub browse: BrowseSession,
@@ -90,6 +96,8 @@ impl LiveSession {
             login_password: Mutex::new(None),
             prev_cpu: Mutex::new(None),
             tunnels: Mutex::new(HashMap::new()),
+            remote_targets: tunnel::new_remote_forward_map(),
+            remote_dispatch: AtomicBool::new(false),
             browse: BrowseSession::default(),
         }
     }
@@ -221,6 +229,18 @@ impl LiveSession {
             .lock()
             .map(|tunnels| tunnels.values().map(|t| t.info()).collect())
             .unwrap_or_default()
+    }
+
+    pub fn remote_targets(&self) -> RemoteForwardMap {
+        Arc::clone(&self.remote_targets)
+    }
+
+    pub fn remote_dispatch_started(&self) -> bool {
+        self.remote_dispatch.load(Ordering::Relaxed)
+    }
+
+    pub fn mark_remote_dispatch_started(&self) {
+        self.remote_dispatch.store(true, Ordering::Relaxed);
     }
 
     pub fn stop_all_tunnels(&self) {

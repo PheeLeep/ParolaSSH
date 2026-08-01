@@ -34,6 +34,7 @@ pub mod shell;
 pub mod stream;
 pub mod transfer_task;
 pub mod transfers;
+pub mod tunnel;
 pub mod updates;
 
 use serde::{Deserialize, Serialize};

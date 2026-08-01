@@ -477,6 +477,23 @@ export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
   unavailable: "Cannot elevate",
 };
 
+/* ── Tunnels (port forwarding) ────────────────────────────────────────── */
+
+export interface TunnelInfo {
+  id: number;
+  hostId: string;
+  localPort: number;
+  remoteHost: string;
+  remotePort: number;
+  activeConnections: number;
+}
+
+export interface TunnelEvent {
+  hostId: string;
+  tunnelId: number;
+  kind: string;
+}
+
 /* ── Importing from ~/.ssh/config ──────────────────────────────────────── */
 
 /** One `Host` block that names a single machine. */

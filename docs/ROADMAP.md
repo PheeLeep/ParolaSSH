@@ -450,9 +450,45 @@ not an ssh_config string.
 | Probes stay direct | `probe_host` opens a TCP socket from this machine, so a host only reachable through a jump reads as offline. The form says so rather than routing probes through a session that may not exist yet |
 
 Chain resolution is unit-tested (ordering, loops, self-reference, deleted jump
-host, depth cap). The tunnel itself has **not** been exercised against a live
-VM yet - there is no `#[ignore]`d live test for it, because the live suite takes
-one host from the environment and a jump needs two.
+host, depth cap), and the tunnel is confirmed working against a real bastion.
+There is still no `#[ignore]`d live test for it: the live suite takes one host
+from the environment and a jump needs two, so the proof is manual.
+
+## FIDO key honest refusal
+
+FIDO security keys (`sk-ed25519`, `sk-ecdsa`) are detected correctly - the UI
+shows a USB glyph and the right wording - but direct signing is not supported:
+`ssh-key`'s `try_sign` does not handle SK keys, and actual signing needs a
+CTAP2 conversation with the hardware token.
+
+Rather than letting the user walk into a dead end, the connect dialog now
+refuses SK keys at the public-key path and shows a message naming `ssh-add -K`
+and the SSH agent method as the working route. The passphrase prompt that
+previously appeared for hardware keys has been removed, and the Connect button
+is disabled.
+
+Full in-process FIDO auth is deferred - see the memory record for the
+cross-platform breakdown (libfido2/Linux, IOKit/macOS, WebAuthn/Windows).
+
+## Local port forwarding
+
+`ssh -L` as a UI feature. A tunnel listens on a local TCP port and, for each
+incoming connection, opens a `direct-tcpip` channel through the SSH session
+to a remote target, then relays bytes bidirectionally.
+
+| Decision | Why |
+|---|---|
+| Tunnels live on the session, not globally | Disconnecting a host stops its tunnels. A tunnel without a session has nothing to forward through |
+| Local port 0 means "pick one" | The OS chooses a free port; the UI reports what it got |
+| Remote host defaults to 127.0.0.1 | The common case is reaching a service on the server itself |
+| Each connection gets its own `direct-tcpip` channel | Parallel connections are independent, and a slow one cannot block another |
+| Tunnels are stopped on disconnect | `stop_all_tunnels` runs before shells and streams are drained, so the accept loop exits before the session closes |
+| Active connection count is tracked | The pane shows how many connections are flowing through each tunnel |
+| No remote forwarding yet | `tcpip_forward` and `server_channel_open_forwarded_tcpip` exist in russh but require wiring the Handler trait callback. Local forwarding covers the most common use case |
+
+The Tunnels tab appears in the host feature nav beside Files. The form asks for
+a local port (optional), remote host and remote port, and each running tunnel
+shows its endpoints with a close button and active connection count.
 
 ## Open questions
 
@@ -594,7 +630,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 280 |
+| Rust unit | `cargo test --lib` | 281 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |

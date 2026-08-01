@@ -95,9 +95,10 @@ export function ConnectDialog({
   if (!host) return null;
 
   const needsPassword = host.authMethod === "password";
+  const isFidoKey = host.authMethod === "publickey" && need?.kind === "hardware";
   // Only once we know the key is locked - and never for one that is not.
   const needsPassphrase =
-    host.authMethod === "publickey" && need !== null && need.kind !== "notNeeded";
+    host.authMethod === "publickey" && need !== null && need.kind !== "notNeeded" && !isFidoKey;
   const checkingKey = host.authMethod === "publickey" && need === null;
 
   const attempt = async (trustUnknown: boolean) => {
@@ -125,7 +126,7 @@ export function ConnectDialog({
     }
   };
 
-  const canSubmit = !busy && !checkingKey && (!needsPassword || password.length > 0);
+  const canSubmit = !busy && !checkingKey && !isFidoKey && (!needsPassword || password.length > 0);
 
   return (
     <Modal show onHide={onClose} centered backdrop="static">
@@ -182,17 +183,30 @@ export function ConnectDialog({
           </p>
         )}
 
+        {isFidoKey && need?.kind === "hardware" && (
+          <Alert variant="info" className="d-flex gap-2">
+            <Usb className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+            <div>
+              <div className="fw-semibold mb-1">
+                This key lives on a security token
+              </div>
+              <code>{host.keyPath ?? "The key"}</code> is a {need.algorithm} key
+              - signing requires the hardware authenticator, which this app
+              cannot drive directly yet.
+              <div className="mt-2">
+                To connect with it, switch this host to <strong>SSH agent</strong> auth
+                and load the key with <code>ssh-add -K {host.keyPath ?? "path/to/key"}</code>.
+                The agent handles the token conversation for you.
+              </div>
+            </div>
+          </Alert>
+        )}
+
         {needsPassphrase && need && (
           <Form.Group className="mb-3">
             <Form.Label className="d-flex align-items-center gap-2">
-              {need.kind === "hardware" ? (
-                <Usb className="icon-sm" aria-hidden="true" />
-              ) : (
-                <KeyRound className="icon-sm" aria-hidden="true" />
-              )}
-              {need.kind === "hardware"
-                ? "Security key PIN or passphrase"
-                : "Key passphrase"}
+              <KeyRound className="icon-sm" aria-hidden="true" />
+              Key passphrase
             </Form.Label>
             <Form.Control
               type="password"
@@ -211,12 +225,6 @@ export function ConnectDialog({
                 <>
                   <code>{host.keyPath ?? "The key"}</code> is encrypted - this
                   unlocks it, and is never stored.
-                </>
-              )}
-              {need.kind === "hardware" && (
-                <>
-                  {need.algorithm} lives on a token: it may want a PIN here and
-                  a touch on the device itself.
                 </>
               )}
               {need.kind === "unknown" && (

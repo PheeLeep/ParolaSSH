@@ -20,6 +20,7 @@ use super::power::Elevation;
 use super::sftp::BrowseSession;
 use super::shell::ShellHandle;
 use super::stream::StreamHandle;
+use super::tunnel::TunnelHandle;
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
 
@@ -56,6 +57,8 @@ pub struct LiveSession {
     /// The last `/proc/stat` reading, so CPU percentage is a delta between
     /// polls. Written only after an exec completes, never across an await.
     prev_cpu: Mutex<Option<CpuTimes>>,
+    /// Active port-forwarding tunnels, keyed by tunnel id.
+    tunnels: Mutex<HashMap<u64, TunnelHandle>>,
     /// The SFTP channel the file browser listens on, opened on first use.
     /// Transfers deliberately do not share it - see `sftp::BrowseSession`.
     pub browse: BrowseSession,
@@ -86,6 +89,7 @@ impl LiveSession {
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
             prev_cpu: Mutex::new(None),
+            tunnels: Mutex::new(HashMap::new()),
             browse: BrowseSession::default(),
         }
     }
@@ -199,6 +203,34 @@ impl LiveSession {
             .and_then(|mut streams| streams.remove(&stream_id))
     }
 
+    pub fn add_tunnel(&self, handle: TunnelHandle) {
+        if let Ok(mut tunnels) = self.tunnels.lock() {
+            tunnels.insert(handle.id, handle);
+        }
+    }
+
+    pub fn remove_tunnel(&self, tunnel_id: u64) -> Option<TunnelHandle> {
+        self.tunnels
+            .lock()
+            .ok()
+            .and_then(|mut tunnels| tunnels.remove(&tunnel_id))
+    }
+
+    pub fn tunnel_infos(&self) -> Vec<super::tunnel::TunnelInfo> {
+        self.tunnels
+            .lock()
+            .map(|tunnels| tunnels.values().map(|t| t.info()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn stop_all_tunnels(&self) {
+        if let Ok(tunnels) = self.tunnels.lock() {
+            for handle in tunnels.values() {
+                handle.stop();
+            }
+        }
+    }
+
     /// Empty the map, returning everything that was in it.
     pub fn drain_streams(&self) -> Vec<Arc<StreamHandle>> {
         self.streams
@@ -230,6 +262,7 @@ impl SessionRegistry {
 
         if let Some(previous) = previous {
             tokio::spawn(async move {
+                previous.stop_all_tunnels();
                 for shell in previous.drain_shells() {
                     shell.close().await;
                 }
@@ -283,7 +316,7 @@ impl SessionRegistry {
     pub async fn disconnect(&self, host_id: &str) -> bool {
         match self.remove(host_id) {
             Some(live) => {
-                // Every shell, not just the active one.
+                live.stop_all_tunnels();
                 for shell in live.drain_shells() {
                     shell.close().await;
                 }

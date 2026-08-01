@@ -1,5 +1,6 @@
 import {
   Boxes,
+  Cable,
   FolderOpen,
   Gauge,
   ListChecks,
@@ -18,7 +19,8 @@ export type HostFeature =
   | "tasks"
   | "updates"
   | "audit"
-  | "files";
+  | "files"
+  | "tunnels";
 
 type FeatureDef = {
   id: HostFeature;
@@ -38,6 +40,7 @@ export const HOST_FEATURES: FeatureDef[] = [
   { id: "updates", label: "Updates", Icon: Package, ready: true, needsSession: true },
   { id: "audit", label: "Audit", Icon: ShieldCheck, ready: true, needsSession: true },
   { id: "files", label: "Files", Icon: FolderOpen, ready: true, needsSession: true },
+  { id: "tunnels", label: "Tunnels", Icon: Cable, ready: true, needsSession: true },
 ];
 
 export function HostFeatureNav({

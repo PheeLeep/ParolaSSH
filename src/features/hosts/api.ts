@@ -38,6 +38,8 @@ import type {
   TransferProgress,
   TransferRecord,
   TransferSummary,
+  TunnelEvent,
+  TunnelInfo,
   TreeListing,
   UpdateReport,
 } from "./types";
@@ -411,6 +413,30 @@ export const setMaxConcurrentTransfers = (value: number) =>
 
 export const clearFinishedTransfers = () =>
   invoke<number>("clear_finished_transfers");
+
+/* ── Tunnels (port forwarding) ───────────────────────────────────────── */
+
+export const openTunnel = (
+  hostId: string,
+  localPort: number,
+  remoteHost: string,
+  remotePort: number,
+) =>
+  invoke<TunnelInfo>("open_tunnel", { hostId, localPort, remoteHost, remotePort });
+
+export const closeTunnel = (hostId: string, tunnelId: number) =>
+  invoke<void>("close_tunnel", { hostId, tunnelId });
+
+export const listTunnels = (hostId: string) =>
+  invoke<TunnelInfo[]>("list_tunnels", { hostId });
+
+export function onTunnelEvent(
+  handler: (event: TunnelEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<TunnelEvent>("tunnel://state", ({ payload }) =>
+    handler(payload),
+  );
+}
 
 /** Byte-level progress for one transfer. Unlike the terminal and stream events
  *  these are broadcast, not addressed to a webview: the Transfers page is

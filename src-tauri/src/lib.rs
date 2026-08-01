@@ -146,6 +146,10 @@ pub fn run() {
             remote::commands::set_transfer_priority,
             remote::commands::set_max_concurrent_transfers,
             remote::commands::clear_finished_transfers,
+            // Port forwarding
+            remote::commands::open_tunnel,
+            remote::commands::close_tunnel,
+            remote::commands::list_tunnels,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

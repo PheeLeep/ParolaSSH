@@ -2414,3 +2414,17 @@ code,
   margin-bottom: 0.75rem;
   overflow-wrap: anywhere;
 }
+
+/* ── Tunnels ──────────────────────────────────────────────────────────── */
+
+.tunnel-list__row {
+  border-bottom: var(--bs-border-width) solid var(--bs-border-color);
+}
+
+.tunnel-list__row:last-child {
+  border-bottom: 0;
+}
+
+.tunnel-list__row:hover {
+  background: var(--parola-hover);
+}

@@ -436,6 +436,23 @@ impl Session {
             .map_err(|error| SshError::Io(format!("Could not open a session channel: {error}")))
     }
 
+    /// Open a direct-tcpip channel to `host:port` through this session.
+    pub async fn channel_open_direct_tcpip(
+        &self,
+        host: &str,
+        port: u16,
+    ) -> SshResult<russh::Channel<client::Msg>> {
+        self.handle
+            .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+            .await
+            .map_err(|error| {
+                SshError::invalid(format!(
+                    "Could not open a tunnel to {host}:{port} - {error}. \
+                     The server may refuse forwarding (AllowTcpForwarding no)."
+                ))
+            })
+    }
+
     /// Closes this session, then any jump session carrying it - in that order,
     /// so the tunnel is not pulled out from under a live disconnect.
     pub async fn close(&self) {

@@ -1523,6 +1523,53 @@ pub struct TransferSummary {
     pub max_concurrent: usize,
 }
 
+// --- Port forwarding ---
+
+#[tauri::command]
+pub async fn open_tunnel(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    local_port: u16,
+    remote_host: String,
+    remote_port: u16,
+) -> SshResult<super::tunnel::TunnelInfo> {
+    super::tunnel::open_local(
+        app,
+        &registry,
+        host_id,
+        local_port,
+        remote_host,
+        remote_port,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn close_tunnel(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    tunnel_id: u64,
+) -> SshResult<()> {
+    let live = registry.require(&host_id)?;
+    match live.remove_tunnel(tunnel_id) {
+        Some(handle) => {
+            handle.stop();
+            Ok(())
+        }
+        None => Err(SshError::invalid("That tunnel is not running.")),
+    }
+}
+
+#[tauri::command]
+pub async fn list_tunnels(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<Vec<super::tunnel::TunnelInfo>> {
+    let live = registry.require(&host_id)?;
+    Ok(live.tunnel_infos())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

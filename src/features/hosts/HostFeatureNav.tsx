@@ -51,26 +51,20 @@ export function HostFeatureNav({
 }) {
   return (
     <nav className="feature-nav" aria-label="Host sections">
-      {HOST_FEATURES.map((feature) => {
-        const locked = feature.needsSession && !connected;
-
-        return (
-          <button
-            key={feature.id}
-            type="button"
-            className={`feature-nav__item${
-              active === feature.id ? " is-active" : ""
-            }${locked ? " is-locked" : ""}`}
-            onClick={() => onSelect(feature.id)}
-            aria-current={active === feature.id ? "page" : undefined}
-            title={locked ? "Connect to this host first" : undefined}
-          >
-            <feature.Icon className="icon-sm" aria-hidden="true" />
-            {feature.label}
-            {!feature.ready && <span className="feature-nav__soon">soon</span>}
-          </button>
-        );
-      })}
+      {/* Tabs that need a session are hidden until one exists. */}
+      {HOST_FEATURES.filter((feature) => connected || !feature.needsSession).map((feature) => (
+        <button
+          key={feature.id}
+          type="button"
+          className={`feature-nav__item${active === feature.id ? " is-active" : ""}`}
+          onClick={() => onSelect(feature.id)}
+          aria-current={active === feature.id ? "page" : undefined}
+        >
+          <feature.Icon className="icon-sm" aria-hidden="true" />
+          {feature.label}
+          {!feature.ready && <span className="feature-nav__soon">soon</span>}
+        </button>
+      ))}
     </nav>
   );
 }

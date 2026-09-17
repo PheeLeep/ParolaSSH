@@ -1867,7 +1867,7 @@ code,
   transition: color var(--parola-duration-fast) var(--parola-ease);
 }
 
-.feature-nav__item:hover:not(.is-locked) {
+.feature-nav__item:hover {
   color: var(--bs-body-color);
 }
 
@@ -1875,10 +1875,6 @@ code,
   color: var(--bs-emphasis-color);
   font-weight: 600;
   border-bottom-color: var(--parola-accent);
-}
-
-.feature-nav__item.is-locked {
-  opacity: 0.45;
 }
 
 .feature-nav__soon {

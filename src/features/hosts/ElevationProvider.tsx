@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Alert, Button, Form, Modal } from "react-bootstrap";
+import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
 import {
   ChevronDown,
   ChevronRight,
@@ -17,6 +17,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import * as api from "./api";
+import { errorMessage } from "./api";
 import { useHosts } from "./HostsProvider";
 import { ELEVATION_LABELS } from "./types";
 
@@ -115,9 +116,17 @@ function ElevationPrompt({
   const [showDetails, setShowDetails] = useState(false);
   /** A sudo password typed earlier this session and accepted by sudo. */
   const [keptSudo, setKeptSudo] = useState(false);
+  /** Checking a typed password with sudo; the prompt is locked meanwhile. */
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  /** The request a verification started for, so a stale answer is dropped. */
+  const requestRef = useRef(request);
+  requestRef.current = request;
 
   useEffect(() => {
     setPassword("");
+    setBusy(false);
+    setError(null);
     setReuseLogin(true);
     setCommandExpanded(false);
     setShowDetails(false);
@@ -138,7 +147,9 @@ function ElevationPrompt({
 
   if (!request) return null;
 
-  const cancel = () => onSettle({ outcome: "cancelled" });
+  const cancel = () => {
+    if (!busy) onSettle({ outcome: "cancelled" });
+  };
 
   // Raised from inside other modals, which Bootstrap's default stacking would
   // otherwise render on top.
@@ -170,15 +181,31 @@ function ElevationPrompt({
   const canReuse = needsPassword && (keptSudo || connection.hasLoginPassword);
   const usingLogin = canReuse && reuseLogin;
   const canGrant =
-    !blocked && (!needsPassword || usingLogin || password.length > 0);
+    !busy && !blocked && (!needsPassword || usingLogin || password.length > 0);
 
-  const grant = () =>
-    onSettle({
-      outcome: "granted",
-      // Null tells Rust to use the kept sudo password, else the login one.
-      // Neither travels through the webview.
-      password: usingLogin ? null : password || null,
-    });
+  const grant = async () => {
+    if (!canGrant) return;
+    // Null tells Rust to use the kept sudo password, else the login one.
+    // Neither travels through the webview.
+    if (!needsPassword || usingLogin) {
+      onSettle({ outcome: "granted", password: null });
+      return;
+    }
+    const asked = request;
+    setBusy(true);
+    setError(null);
+    try {
+      // Accepted means kept on the session, so the caller can pass null.
+      await api.verifySudoPassword(asked.hostId, password);
+      if (requestRef.current !== asked) return;
+      setPassword("");
+      onSettle({ outcome: "granted", password: null });
+    } catch (caught) {
+      if (requestRef.current !== asked) return;
+      setError(errorMessage(caught));
+      setBusy(false);
+    }
+  };
 
   const title = blocked
     ? "Cannot elevate"
@@ -188,7 +215,7 @@ function ElevationPrompt({
 
   return (
     <Modal show onHide={cancel} centered backdrop="static" {...stacked}>
-      <Modal.Header closeButton className="py-2">
+      <Modal.Header closeButton={!busy} className="py-2">
         <Modal.Title className="h6 d-flex align-items-center gap-2 mb-0">
           {blocked ? (
             <ShieldAlert className="icon-sm" aria-hidden="true" />
@@ -211,6 +238,12 @@ function ElevationPrompt({
             {ELEVATION_LABELS[elevation.kind]}
           </div>
         </div>
+
+        {error && (
+          <Alert variant="danger" className="small py-2 mb-0 text-prewrap">
+            {error}
+          </Alert>
+        )}
 
         {(blocked || request.destructive) && (
           <Alert
@@ -283,6 +316,7 @@ function ElevationPrompt({
                   size="sm"
                   variant="link"
                   className="p-0 ms-auto text-decoration-none small"
+                  disabled={busy}
                   onClick={() => {
                     if (keptSudo) {
                       void api.forgetSudoPassword(request.hostId).catch(() => undefined);
@@ -307,8 +341,9 @@ function ElevationPrompt({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && canGrant) grant();
+                  if (event.key === "Enter") void grant();
                 }}
+                disabled={busy}
                 autoComplete="off"
                 autoFocus
               />
@@ -346,13 +381,14 @@ function ElevationPrompt({
       </Modal.Body>
 
       <Modal.Footer className="py-2">
-        <Button variant="outline-secondary" onClick={cancel}>
+        <Button variant="outline-secondary" onClick={cancel} disabled={busy}>
           {blocked ? "Close" : "Cancel"}
         </Button>
         {!blocked && request.unprivilegedLabel && (
           <Button
             variant="outline-primary"
             onClick={() => onSettle({ outcome: "unprivileged" })}
+            disabled={busy}
           >
             {request.unprivilegedLabel}
           </Button>
@@ -360,10 +396,13 @@ function ElevationPrompt({
         {!blocked && (
           <Button
             variant={request.destructive ? "danger" : "primary"}
-            onClick={grant}
+            onClick={() => void grant()}
             disabled={!canGrant}
           >
-            Elevate and run
+            {busy && (
+              <Spinner animation="border" size="sm" className="me-1" aria-hidden="true" />
+            )}
+            {busy ? "Checking password…" : "Elevate and run"}
           </Button>
         )}
       </Modal.Footer>

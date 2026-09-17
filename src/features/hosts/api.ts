@@ -272,6 +272,10 @@ export const readFirewall = (
 ) => invoke<FirewallReport>("read_firewall", { hostId, elevate, password });
 
 /** Whether the session holds an accepted sudo password a prompt can reuse. */
+/** Check a typed sudo password; once accepted the session keeps it. */
+export const verifySudoPassword = (hostId: string, password: string) =>
+  invoke<void>("verify_sudo_password", { hostId, password });
+
 export const hasKeptSudoPassword = (hostId: string) =>
   invoke<boolean>("has_kept_sudo_password", { hostId });
 

@@ -122,6 +122,7 @@ pub fn run() {
             remote::commands::list_listening_ports,
             remote::commands::read_firewall,
             remote::commands::list_logged_in_users,
+            remote::commands::verify_sudo_password,
             remote::commands::has_kept_sudo_password,
             remote::commands::forget_sudo_password,
             // Tasks

@@ -129,8 +129,8 @@ export function ConnectDialog({
   const canSubmit = !busy && !checkingKey && !isFidoKey && (!needsPassword || password.length > 0);
 
   return (
-    <Modal show onHide={onClose} centered backdrop="static">
-      <Modal.Header closeButton>
+    <Modal show onHide={() => !busy && onClose()} centered backdrop="static">
+      <Modal.Header closeButton={!busy}>
         <Modal.Title className="d-flex align-items-center gap-2">
           <Plug aria-hidden="true" />
           Connect to {host.label}
@@ -170,6 +170,7 @@ export function ConnectDialog({
                   void attempt(Boolean(unknownKey));
                 }
               }}
+              disabled={busy}
               autoFocus
               autoComplete="off"
             />
@@ -217,6 +218,7 @@ export function ConnectDialog({
                   void attempt(Boolean(unknownKey));
                 }
               }}
+              disabled={busy}
               autoFocus
               autoComplete="off"
             />
@@ -255,6 +257,7 @@ export function ConnectDialog({
               id="remember-password"
               label="Remember this password until I quit"
               checked={remember}
+              disabled={busy}
               onChange={(event) => setRemember(event.target.checked)}
             />
             {remember && (

@@ -863,6 +863,20 @@ async fn security_stdin(
     Ok(Some(Zeroizing::new(format!("{}\n", password.as_str()).into_bytes())))
 }
 
+/// Check a typed sudo password and keep it on the session, so the prompt can
+/// report a refusal before it closes.
+#[tauri::command]
+pub async fn verify_sudo_password(
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    password: String,
+) -> SshResult<()> {
+    let live = registry.require(&host_id)?;
+    resolve_sudo_password(&live, &vault, &host_id, Some(password)).await?;
+    Ok(())
+}
+
 /// Whether this session holds a sudo password a prompt can reuse.
 #[tauri::command]
 pub fn has_kept_sudo_password(registry: State<'_, SessionRegistry>, host_id: String) -> bool {

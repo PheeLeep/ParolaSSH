@@ -1,45 +1,44 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { Alert, Card, ProgressBar, Spinner } from "react-bootstrap";
-import { Clock, Cpu, Gauge, MemoryStick } from "lucide-react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Alert, Badge, Card, Spinner } from "react-bootstrap";
+import { ArrowDown, ArrowUp, Clock, Cpu, Gauge, MemoryStick } from "lucide-react";
 import { Segmented } from "../../../components/Segmented";
+import { useStoreSubscription } from "../../../lib/useStoreSubscription";
 import * as api from "../api";
 import { errorMessage } from "../api";
-import type { HostMetrics } from "../types";
+import * as metricsCache from "../metricsCache";
+import type { IntervalChoice } from "../metricsCache";
+import type { NetworkRate } from "../types";
 
 /** Offered cadences. The pane polls only while mounted and visible either
  *  way - deliberately not the 30-second heartbeat, which answers "is it
  *  up?" and is uselessly coarse for watching a load spike. */
-const INTERVALS = [
+const INTERVALS: { value: IntervalChoice; label: string }[] = [
   { value: "1", label: "1 s" },
   { value: "2", label: "2 s" },
   { value: "5", label: "5 s" },
   { value: "10", label: "10 s" },
   { value: "30", label: "30 s" },
-] as const;
-
-type IntervalChoice = (typeof INTERVALS)[number]["value"];
-
-const DEFAULT_INTERVAL: IntervalChoice = "1";
-
-/** How many samples the sparklines keep. */
-const HISTORY_LIMIT = 60;
+];
 
 /** Where the CPU trace turns red. Sustained load above this is the point at
  *  which the box has nothing left to give, so it should read as a warning
  *  without anyone having to look at the number. */
 const CPU_HOT_PERCENT = 80;
 
-export function PerformancePane({ hostId }: { hostId: string }) {
-  const [metrics, setMetrics] = useState<HostMetrics | null>(null);
-  const [history, setHistory] = useState<HostMetrics[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState<IntervalChoice>(DEFAULT_INTERVAL);
+/** Memory past this is swapping territory on most hosts. */
+const MEMORY_HOT_PERCENT = 90;
 
-  // History resets with the host: samples from one machine say nothing
-  // about another.
+/** A disk turns red with a quarter of its space left. */
+const DISK_HOT_PERCENT = 75;
+
+export function PerformancePane({ hostId }: { hostId: string }) {
+  useStoreSubscription(metricsCache.subscribe);
+  const history = metricsCache.history(hostId);
+  const interval = metricsCache.interval(hostId);
+  const metrics = history.length > 0 ? history[history.length - 1] : null;
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    setMetrics(null);
-    setHistory([]);
     setError(null);
   }, [hostId]);
 
@@ -54,8 +53,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
       try {
         const sample = await api.sampleMetrics(hostId);
         if (cancelled) return;
-        setMetrics(sample);
-        setHistory((previous) => [...previous, sample].slice(-HISTORY_LIMIT));
+        metricsCache.push(hostId, sample);
         setError(null);
       } catch (caught) {
         if (!cancelled) setError(errorMessage(caught));
@@ -94,114 +92,184 @@ export function PerformancePane({ hostId }: { hostId: string }) {
   const cpuHistory = history
     .map((sample) => sample.cpuPercent)
     .filter((value): value is number => value !== null);
+  const memoryHistory = history
+    .map((sample) => sample.memory?.usedPercent)
+    .filter((value): value is number => value !== undefined);
+  const netHistory = history
+    .map((sample) => sample.network)
+    .filter((value): value is NetworkRate => value !== null);
+  const rxHistory = netHistory.map((rate) => rate.rxBytesPerSec);
+  const txHistory = netHistory.map((rate) => rate.txBytesPerSec);
+  // One scale for both directions, so a quiet uplink reads as quiet.
+  const netMax = Math.max(1, ...rxHistory, ...txHistory);
+  const interfaces = metrics.network?.interfaces ?? [];
 
   return (
     <div className="d-flex flex-column gap-3">
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-body-secondary small me-auto">
-          Sampled while this pane is open.
-        </span>
+      <div className="d-flex align-items-center justify-content-end gap-2">
+        <span className="text-body-secondary small">Interval</span>
         <Segmented
           value={interval}
-          options={[...INTERVALS]}
-          onChange={setInterval}
+          options={INTERVALS}
+          onChange={(choice) => metricsCache.setInterval(hostId, choice)}
           label="Sampling interval"
         />
       </div>
 
       {error && <Alert variant="warning" className="text-prewrap mb-0">{error}</Alert>}
 
-      <div className="stat-grid">
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <Cpu className="stat-tile__glyph" aria-hidden="true" />
-            CPU
-          </div>
-          <div className="stat-tile__value">
-            {metrics.cpuPercent !== null ? `${Math.round(metrics.cpuPercent)} %` : "-"}
-          </div>
-          <div className="stat-tile__sub">
-            {cpuHistory.length > 1 ? (
+      <Section title="CPU & memory">
+        <div className="stat-grid">
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <Cpu className="stat-tile__glyph" aria-hidden="true" />
+              CPU
+            </div>
+            <div className="stat-tile__value">
+              {metrics.cpuPercent !== null ? `${Math.round(metrics.cpuPercent)} %` : "-"}
+            </div>
+            <div className="stat-tile__sub">
               <Sparkline
                 values={cpuHistory}
                 max={100}
                 hot={cpuHistory[cpuHistory.length - 1] >= CPU_HOT_PERCENT}
+                label="CPU history"
               />
-            ) : (
-              `sampled every ${interval} s`
+            </div>
+          </div>
+
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <MemoryStick className="stat-tile__glyph" aria-hidden="true" />
+              Memory
+            </div>
+            <div className="stat-tile__value">
+              {metrics.memory ? `${Math.round(metrics.memory.usedPercent)} %` : "-"}
+            </div>
+            {metrics.memory && (
+              <div className="stat-tile__sub">
+                {formatKb(metrics.memory.totalKb - metrics.memory.availableKb)} of{" "}
+                {formatKb(metrics.memory.totalKb)}
+                <Sparkline
+                  values={memoryHistory}
+                  max={100}
+                  hot={metrics.memory.usedPercent >= MEMORY_HOT_PERCENT}
+                  label="Memory history"
+                />
+              </div>
             )}
           </div>
-        </div>
 
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <MemoryStick className="stat-tile__glyph" aria-hidden="true" />
-            Memory
-          </div>
-          <div className="stat-tile__value">
-            {metrics.memory ? `${Math.round(metrics.memory.usedPercent)} %` : "-"}
-          </div>
-          {metrics.memory && (
-            <div className="stat-tile__sub">
-              {formatKb(metrics.memory.totalKb - metrics.memory.availableKb)} of{" "}
-              {formatKb(metrics.memory.totalKb)}
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <Gauge className="stat-tile__glyph" aria-hidden="true" />
+              Load
             </div>
-          )}
+            <div className="stat-tile__value font-monospace">
+              {metrics.load ? metrics.load.map((v) => v.toFixed(2)).join(" ") : "-"}
+            </div>
+            <div className="stat-tile__sub">1 / 5 / 15 minutes</div>
+          </div>
+
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <Clock className="stat-tile__glyph" aria-hidden="true" />
+              Uptime
+            </div>
+            <div className="stat-tile__value">
+              {metrics.uptimeSeconds !== null ? formatUptime(metrics.uptimeSeconds) : "-"}
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Network">
+        <div className="stat-grid">
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <ArrowDown className="stat-tile__glyph" aria-hidden="true" />
+              Downlink
+            </div>
+            <div className="stat-tile__value">
+              {metrics.network ? formatBitRate(metrics.network.rxBytesPerSec) : "-"}
+            </div>
+            <div className="stat-tile__sub">
+              <Sparkline values={rxHistory} max={netMax} label="Downlink history" />
+            </div>
+          </div>
+
+          <div className="stat-tile">
+            <div className="stat-tile__label">
+              <ArrowUp className="stat-tile__glyph" aria-hidden="true" />
+              Uplink
+            </div>
+            <div className="stat-tile__value">
+              {metrics.network ? formatBitRate(metrics.network.txBytesPerSec) : "-"}
+            </div>
+            <div className="stat-tile__sub">
+              <Sparkline values={txHistory} max={netMax} label="Uplink history" />
+            </div>
+          </div>
         </div>
 
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <Gauge className="stat-tile__glyph" aria-hidden="true" />
-            Load
+        {/* One physical interface is already the totals above. */}
+        {(interfaces.length > 1 || interfaces.some((entry) => entry.isVirtual)) && (
+          <div className="net-ifaces mt-3">
+            {interfaces.map((entry) => (
+              <div key={entry.name} className="net-ifaces__row">
+                <code className="text-truncate">{entry.name}</code>
+                {entry.isVirtual && (
+                  <Badge
+                    bg="secondary"
+                    className="fw-normal"
+                    title="Relays traffic a physical interface also carries, so it is left out of the totals"
+                  >
+                    Virtual
+                  </Badge>
+                )}
+                <span className="net-ifaces__rate ms-auto">
+                  <ArrowDown className="icon-sm" aria-label="Down" />
+                  {formatBitRate(entry.rxBytesPerSec)}
+                </span>
+                <span className="net-ifaces__rate">
+                  <ArrowUp className="icon-sm" aria-label="Up" />
+                  {formatBitRate(entry.txBytesPerSec)}
+                </span>
+              </div>
+            ))}
           </div>
-          <div className="stat-tile__value font-monospace">
-            {metrics.load ? metrics.load.map((v) => v.toFixed(2)).join(" ") : "-"}
-          </div>
-          <div className="stat-tile__sub">1 / 5 / 15 minutes</div>
-        </div>
-
-        <div className="stat-tile">
-          <div className="stat-tile__label">
-            <Clock className="stat-tile__glyph" aria-hidden="true" />
-            Uptime
-          </div>
-          <div className="stat-tile__value">
-            {metrics.uptimeSeconds !== null ? formatUptime(metrics.uptimeSeconds) : "-"}
-          </div>
-        </div>
-      </div>
+        )}
+      </Section>
 
       {metrics.disks.length > 0 && (
-        <Card>
-          <Card.Body>
-            <h2 className="h6 mb-3">Disks</h2>
-            <div className="d-flex flex-column gap-3">
-              {metrics.disks.map((disk) => (
-                <div key={disk.mount}>
-                  <div className="d-flex justify-content-between small mb-1">
-                    <code>{disk.mount}</code>
-                    <span className="text-body-secondary">
-                      {formatKb(disk.usedKb)} of {formatKb(disk.totalKb)} ·{" "}
-                      {disk.usedPercent.toFixed(0)} %
-                    </span>
-                  </div>
-                  <ProgressBar
-                    now={disk.usedPercent}
-                    variant={
-                      disk.usedPercent >= 90
-                        ? "danger"
-                        : disk.usedPercent >= 75
-                          ? "warning"
-                          : undefined
-                    }
-                    style={{ height: "0.375rem" }}
-                    aria-label={`${disk.mount} usage`}
+        <Section title="Disks">
+          <div className="d-flex flex-column gap-3">
+            {metrics.disks.map((disk) => (
+              <div key={disk.mount}>
+                <div className="d-flex justify-content-between small mb-1">
+                  <code>{disk.mount}</code>
+                  <span className="text-body-secondary">
+                    {formatKb(disk.usedKb)} of {formatKb(disk.totalKb)} ·{" "}
+                    {disk.usedPercent.toFixed(0)} %
+                  </span>
+                </div>
+                <div
+                  className={`usage-bar${disk.usedPercent >= DISK_HOT_PERCENT ? " is-hot" : ""}`}
+                  role="progressbar"
+                  aria-label={`${disk.mount} usage`}
+                  aria-valuenow={Math.round(disk.usedPercent)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                >
+                  <div
+                    className="usage-bar__fill"
+                    style={{ width: `${clamp(disk.usedPercent, 0, 100)}%` }}
                   />
                 </div>
-              ))}
-            </div>
-          </Card.Body>
-        </Card>
+              </div>
+            ))}
+          </div>
+        </Section>
       )}
 
       {metrics.notes.length > 0 && (
@@ -215,7 +283,18 @@ export function PerformancePane({ hostId }: { hostId: string }) {
   );
 }
 
-/** A tiny inline history line - no chart library for four data series. The
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Card>
+      <Card.Body>
+        <h2 className="h6 mb-3">{title}</h2>
+        {children}
+      </Card.Body>
+    </Card>
+  );
+}
+
+/** A tiny inline history line - no chart library for a handful of series. The
  *  box is stretched to the tile width, so the drawing runs in fixed viewBox
  *  units and the stroke opts out of the scaling. */
 const SPARK_WIDTH = 120;
@@ -228,27 +307,35 @@ type Point = { x: number; y: number };
 function Sparkline({
   values,
   max,
-  hot,
+  hot = false,
+  label,
 }: {
   values: number[];
   max: number;
-  hot: boolean;
+  hot?: boolean;
+  label: string;
 }) {
   // Colons out of React's id: this goes in a `url(#…)` reference.
   const gradientId = `spark-${useId().replace(/:/g, "")}`;
 
-  const step = SPARK_WIDTH / (values.length - 1);
+  // The chart shows from the start: empty until a reading, flat for one.
+  const series = values.length === 1 ? [values[0], values[0]] : values;
+  const step = SPARK_WIDTH / (series.length - 1);
   const span = SPARK_HEIGHT - SPARK_PAD * 2;
-  const points: Point[] = values.map((value, index) => ({
+  const points: Point[] = series.map((value, index) => ({
     x: index * step,
     y: SPARK_PAD + (1 - clamp(value, 0, max) / max) * span,
   }));
 
-  const line = smoothPath(points);
-  const last = points[points.length - 1];
-  const area = `${line} L ${last.x.toFixed(1)},${SPARK_HEIGHT} L ${points[0].x.toFixed(
-    1,
-  )},${SPARK_HEIGHT} Z`;
+  let line = "";
+  let area = "";
+  if (points.length > 1) {
+    line = smoothPath(points);
+    const last = points[points.length - 1];
+    area = `${line} L ${last.x.toFixed(1)},${SPARK_HEIGHT} L ${points[0].x.toFixed(
+      1,
+    )},${SPARK_HEIGHT} Z`;
+  }
 
   return (
     <svg
@@ -256,7 +343,7 @@ function Sparkline({
       viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
       preserveAspectRatio="none"
       role="img"
-      aria-label={`CPU history, last ${values.length} samples`}
+      aria-label={`${label}, last ${values.length} samples`}
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -264,8 +351,12 @@ function Sparkline({
           <stop className="sparkline__stop--bottom" offset="100%" />
         </linearGradient>
       </defs>
-      <path className="sparkline__area" d={area} fill={`url(#${gradientId})`} />
-      <path className="sparkline__line" d={line} />
+      {line && (
+        <>
+          <path className="sparkline__area" d={area} fill={`url(#${gradientId})`} />
+          <path className="sparkline__line" d={line} />
+        </>
+      )}
     </svg>
   );
 }
@@ -310,6 +401,15 @@ function formatKb(kb: number): string {
   const gib = mib / 1024;
   if (gib < 1024) return `${gib.toFixed(1)} GiB`;
   return `${(gib / 1024).toFixed(2)} TiB`;
+}
+
+/** Link speeds are quoted in bits, so the meter is too. */
+function formatBitRate(bytesPerSec: number): string {
+  const bits = bytesPerSec * 8;
+  if (bits < 1_000) return `${bits.toFixed(0)} bps`;
+  if (bits < 1_000_000) return `${(bits / 1_000).toFixed(1)} kbps`;
+  if (bits < 1_000_000_000) return `${(bits / 1_000_000).toFixed(1)} Mbps`;
+  return `${(bits / 1_000_000_000).toFixed(2)} Gbps`;
 }
 
 function formatUptime(seconds: number): string {

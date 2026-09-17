@@ -29,9 +29,8 @@ export function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={option.value === value}
-          className={`segmented__option${
-            option.value === value ? " is-active" : ""
-          }`}
+          className={`segmented__option${option.value === value ? " is-active" : ""
+            }`}
           onClick={() => onChange(option.value)}
         >
           {option.Icon && <option.Icon className="icon-sm" aria-hidden="true" />}

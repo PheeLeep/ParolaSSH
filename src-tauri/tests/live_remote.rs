@@ -222,7 +222,8 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
         assert!(output.succeeded(), "{}", output.failure_text());
 
         // Uptime is `now - LastBootUpTime`, so a real clock is required.
-        let sample = metrics::parse_windows(&output.stdout, now_ms());
+        let (sample, _) =
+            metrics::parse_windows(&output.stdout, &metrics::Readings::default(), now_ms());
         println!(
             "windows: cpu={:?} disks={} uptime={:?}s memory={:?}",
             sample.cpu_percent,
@@ -247,7 +248,8 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
     }
 
     let first = session.exec(command, None).await.unwrap();
-    let (sample, previous) = metrics::parse_linux(&first.stdout, None, 0);
+    let (sample, previous) =
+        metrics::parse_linux(&first.stdout, &metrics::Readings::default(), now_ms());
     assert!(sample.cpu_percent.is_none(), "the first sample has no delta yet");
     assert!(sample.memory.is_some(), "meminfo should parse");
     assert!(!sample.disks.is_empty(), "df should report at least the root disk");
@@ -255,9 +257,13 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
     tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
     let second = session.exec(command, None).await.unwrap();
-    let (sample, _) = metrics::parse_linux(&second.stdout, previous, 0);
-    println!("cpu={:?} load={:?} uptime={:?}", sample.cpu_percent, sample.load, sample.uptime_seconds);
+    let (sample, _) = metrics::parse_linux(&second.stdout, &previous, now_ms());
+    println!(
+        "cpu={:?} load={:?} uptime={:?} network={:?}",
+        sample.cpu_percent, sample.load, sample.uptime_seconds, sample.network
+    );
     assert!(sample.cpu_percent.is_some(), "the second sample should carry a CPU figure");
+    assert!(sample.network.is_some(), "the second sample should carry network rates");
 
     session.close().await;
 }

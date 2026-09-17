@@ -11,6 +11,7 @@ import {
 import * as api from "./api";
 import { errorMessage } from "./api";
 import * as auditCache from "./auditCache";
+import * as metricsCache from "./metricsCache";
 import { readAutoAudit } from "../settings/preferences";
 import * as terminals from "./terminalStore";
 import * as tasks from "./taskStore";
@@ -142,6 +143,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
           await terminals.closeHost(id).catch(() => undefined);
           await tasks.closeHost(id).catch(() => undefined);
           auditCache.forget(id);
+          metricsCache.forget(id);
           await api.disconnectHost(id).catch(() => undefined);
         }
         // Tasks pinned to this host go with it: the file must not
@@ -193,6 +195,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
           void terminals.closeHost(hostId);
           void tasks.closeHost(hostId);
           auditCache.forget(hostId);
+          metricsCache.forget(hostId);
           if (byId.get(hostId)?.reachable && !leaving.current.has(hostId)) {
             void reconnectRef.current(hostId, titles);
           }
@@ -271,6 +274,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
       await terminals.closeHost(id);
       await tasks.closeHost(id);
       auditCache.forget(id);
+      metricsCache.forget(id);
       await api.disconnectHost(id);
       setConnections(({ [id]: _removed, ...rest }) => rest);
     } finally {
@@ -311,6 +315,7 @@ export function HostsProvider({ children }: { children: ReactNode }) {
           void terminals.closeHost(id);
           void tasks.closeHost(id);
           auditCache.forget(id);
+          metricsCache.forget(id);
           setConnections(({ [id]: _removed, ...rest }) => rest);
           setHealth((previous) => ({
             ...previous,

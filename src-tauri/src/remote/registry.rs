@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 use super::client::{NegotiatedCrypto, Session};
-use super::metrics::CpuTimes;
+use super::metrics::Readings;
 use super::power::Elevation;
 use super::sftp::BrowseSession;
 use super::shell::ShellHandle;
@@ -58,9 +58,9 @@ pub struct LiveSession {
     /// A typed sudo password that sudo accepted, reused by every later elevated
     /// action so key-based sessions are not asked again. Dropped with the session.
     sudo_password: Mutex<Option<Zeroizing<String>>>,
-    /// The last `/proc/stat` reading, so CPU percentage is a delta between
-    /// polls. Written only after an exec completes, never across an await.
-    prev_cpu: Mutex<Option<CpuTimes>>,
+    /// The last CPU and network counters, so percentages and rates are deltas
+    /// between polls. Written only after an exec completes, never across an await.
+    prev_readings: Mutex<Readings>,
     /// Active port-forwarding tunnels, keyed by tunnel id.
     tunnels: Mutex<HashMap<u64, TunnelHandle>>,
     /// Remote forward targets - the dispatcher reads this to route incoming
@@ -101,7 +101,7 @@ impl LiveSession {
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
             sudo_password: Mutex::new(None),
-            prev_cpu: Mutex::new(None),
+            prev_readings: Mutex::new(Readings::default()),
             tunnels: Mutex::new(HashMap::new()),
             remote_targets: tunnel::new_remote_forward_map(),
             remote_dispatch: AtomicBool::new(false),
@@ -146,14 +146,14 @@ impl LiveSession {
         }
     }
 
-    /// The CPU reading from the previous metrics sample, if any.
-    pub fn prev_cpu(&self) -> Option<CpuTimes> {
-        self.prev_cpu.lock().ok().and_then(|slot| *slot)
+    /// The counters from the previous metrics sample.
+    pub fn prev_readings(&self) -> Readings {
+        self.prev_readings.lock().map(|slot| slot.clone()).unwrap_or_default()
     }
 
-    pub fn set_prev_cpu(&self, times: CpuTimes) {
-        if let Ok(mut slot) = self.prev_cpu.lock() {
-            *slot = Some(times);
+    pub fn set_prev_readings(&self, readings: Readings) {
+        if let Ok(mut slot) = self.prev_readings.lock() {
+            *slot = readings;
         }
     }
 

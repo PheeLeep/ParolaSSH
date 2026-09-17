@@ -313,6 +313,21 @@ export interface DiskInfo {
   usedPercent: number;
 }
 
+export interface InterfaceRate {
+  name: string;
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+  /** Bridges and tunnels: listed, but left out of the totals. */
+  isVirtual: boolean;
+}
+
+export interface NetworkRate {
+  /** Physical interfaces only. */
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+  interfaces: InterfaceRate[];
+}
+
 export interface HostMetrics {
   sampledAtMs: number;
   cpuPercent: number | null;
@@ -320,6 +335,7 @@ export interface HostMetrics {
   load: [number, number, number] | null;
   uptimeSeconds: number | null;
   disks: DiskInfo[];
+  network: NetworkRate | null;
   notes: string[];
 }
 

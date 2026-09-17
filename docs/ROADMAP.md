@@ -630,7 +630,17 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 | Rust unit | `cargo test --lib` | 301 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 19, all `#[ignore]`d · green on Linux **and** Windows |
-| Frontend | `npx tsc --noEmit` | typecheck only |
+| Frontend unit + component | `npm test` | 43 |
+| Frontend types | `npx tsc --noEmit` | - |
+
+Frontend tests run on Vitest in jsdom. The backend is never real: Tauri's
+`mockIPC` answers commands and, with `shouldMockEvents`, lets a test `emit` the
+events a store or pane listens for. Module singletons (`transferStore`, the
+caches, `preferences`) are re-imported per test with `vi.resetModules()` so no
+state leaks between cases. Covered so far: the status dot, relative dates,
+preferences (malformed and throwing storage included), the transfer store's
+announcements and speed smoothing, the audit and metrics caches, and the
+Tunnels pane end to end against mocked commands.
 
 The new feature modules follow the `power.rs` testing shape: command
 construction is pure and asserted as exact strings per OS (including the

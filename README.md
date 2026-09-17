@@ -107,6 +107,7 @@ cd src-tauri
 cargo test --lib                       # unit
 cargo test --test audit_fixtures       # parser fixtures
 npx tsc --noEmit                       # frontend typecheck (from repo root)
+npm test                               # frontend unit + component (from repo root)
 ```
 
 No test runs a real CLI or touches a real machine. The live suite is `#[ignore]`d

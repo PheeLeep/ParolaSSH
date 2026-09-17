@@ -536,6 +536,8 @@ export interface TunnelInfo {
   remoteHost: string;
   remotePort: number;
   activeConnections: number;
+  /** Why the most recent connection failed; null once one succeeds. */
+  lastError: string | null;
 }
 
 export interface TunnelEvent {

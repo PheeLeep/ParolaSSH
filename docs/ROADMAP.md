@@ -461,9 +461,9 @@ is disabled.
 Full in-process FIDO auth is deferred - see the memory record for the
 cross-platform breakdown (libfido2/Linux, IOKit/macOS, WebAuthn/Windows).
 
-## Local port forwarding
+## Port forwarding 👀
 
-`ssh -L` as a UI feature. A tunnel listens on a local TCP port and, for each
+`ssh -L` and `ssh -R` as a UI feature. Local: A tunnel listens on a local TCP port and, for each
 incoming connection, opens a `direct-tcpip` channel through the SSH session
 to a remote target, then relays bytes bidirectionally.
 
@@ -475,7 +475,13 @@ to a remote target, then relays bytes bidirectionally.
 | Each connection gets its own `direct-tcpip` channel | Parallel connections are independent, and a slow one cannot block another |
 | Tunnels are stopped on disconnect | `stop_all_tunnels` runs before shells and streams are drained, so the accept loop exits before the session closes |
 | Active connection count is tracked | The pane shows how many connections are flowing through each tunnel |
-| No remote forwarding yet | `tcpip_forward` and `server_channel_open_forwarded_tcpip` exist in russh but require wiring the Handler trait callback. Local forwarding covers the most common use case |
+| Remote forwarding routes on `(bind address, port)` | Incoming `forwarded-tcpip` channels go to the matching local target; if the server reports a different address, a port only one forward uses still matches |
+| A fixed server port is recorded as requested | russh answers a fixed-port `tcpip-forward` with port 0. Taken literally, every tunnel was stored under port 0, no connection ever matched, and closing cancelled the wrong port |
+| Remote bind defaults to 127.0.0.1 | Private to the server. `0.0.0.0` is allowed but only reaches the network with `GatewayPorts` on |
+| Every connection gets its own task | A slow channel open or an unreachable local target no longer holds up the next connection |
+| Closing a tunnel ends its live connections | Not just the listener - the pane's "stops forwarding immediately" is now true for both directions |
+| EOF is a half-close | Passed on to the other side rather than tearing the relay down, so request/response protocols finish |
+| The last failure is shown on the row | A remote tunnel pointing at a local service that is not running used to fail silently |
 
 The Tunnels tab appears in the host feature nav beside Files. The form asks for
 a local port (optional), remote host and remote port, and each running tunnel
@@ -621,9 +627,9 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 281 |
+| Rust unit | `cargo test --lib` | 301 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs a VM) | see below | 11, all `#[ignore]`d · green on Linux **and** Windows |
+| Rust live (needs a VM) | see below | 19, all `#[ignore]`d · green on Linux **and** Windows |
 | Frontend | `npx tsc --noEmit` | typecheck only |
 
 The new feature modules follow the `power.rs` testing shape: command

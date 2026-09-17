@@ -10,7 +10,7 @@
 //! await and is a `tokio::sync::Mutex`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use zeroize::Zeroizing;
@@ -66,8 +66,6 @@ pub struct LiveSession {
     /// Remote forward targets - the dispatcher reads this to route incoming
     /// `forwarded-tcpip` channels to local addresses.
     remote_targets: RemoteForwardMap,
-    /// Whether the remote-forward dispatcher task has been spawned.
-    remote_dispatch: AtomicBool,
     /// Consecutive heartbeats whose liveness check timed out on a transport
     /// that is still open, so one slow round trip does not reap the session.
     missed_beats: AtomicU8,
@@ -104,7 +102,6 @@ impl LiveSession {
             prev_readings: Mutex::new(Readings::default()),
             tunnels: Mutex::new(HashMap::new()),
             remote_targets: tunnel::new_remote_forward_map(),
-            remote_dispatch: AtomicBool::new(false),
             missed_beats: AtomicU8::new(0),
             browse: BrowseSession::default(),
         }
@@ -259,14 +256,6 @@ impl LiveSession {
 
     pub fn remote_targets(&self) -> RemoteForwardMap {
         Arc::clone(&self.remote_targets)
-    }
-
-    pub fn remote_dispatch_started(&self) -> bool {
-        self.remote_dispatch.load(Ordering::Relaxed)
-    }
-
-    pub fn mark_remote_dispatch_started(&self) {
-        self.remote_dispatch.store(true, Ordering::Relaxed);
     }
 
     /// Count one missed heartbeat and return the running total.

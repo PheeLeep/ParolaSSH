@@ -497,9 +497,9 @@ impl Session {
     /// Ask the server to listen on `address:port` and forward connections back.
     pub async fn tcpip_forward(&self, address: &str, port: u16) -> SshResult<u16> {
         self.handle
-            .tcpip_forward(address, port as u32)
+            .tcpip_forward(address, u32::from(port))
             .await
-            .map(|p| p as u16)
+            .map(|replied| bound_port(port, replied))
             .map_err(|error| {
                 SshError::invalid(format!(
                     "The server refused to listen on {address}:{port} - {error}. \
@@ -554,6 +554,16 @@ impl Session {
         if let Some(jump) = &self.jump {
             Box::pin(jump.close()).await;
         }
+    }
+}
+
+/// The server only names a port when it chose one; for a fixed port russh
+/// reports 0, which means "the one you asked for".
+fn bound_port(requested: u16, replied: u32) -> u16 {
+    if replied == 0 {
+        requested
+    } else {
+        u16::try_from(replied).unwrap_or(requested)
     }
 }
 
@@ -735,5 +745,20 @@ fn auth_failure_message(credentials: &Credentials, target: &Target) -> String {
              already knows you, as with Tailscale SSH.",
             target.hostname, target.username
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bound_port;
+
+    #[test]
+    fn a_fixed_port_keeps_the_requested_number() {
+        assert_eq!(bound_port(8080, 0), 8080);
+    }
+
+    #[test]
+    fn a_server_chosen_port_is_taken_from_the_reply() {
+        assert_eq!(bound_port(0, 40123), 40123);
     }
 }

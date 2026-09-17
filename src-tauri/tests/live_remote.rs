@@ -26,7 +26,7 @@
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
-use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, OsFamily};
+use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, tunnel, OsFamily};
 use zeroize::Zeroizing;
 
 struct LiveConfig {
@@ -1010,5 +1010,68 @@ async fn a_server_side_copy_duplicates_a_tree() {
     assert!(sftp.try_exists(format!("{root}/src/inner/f.txt")).await.unwrap());
 
     let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    session.close().await;
+}
+
+/// `ssh -R` end to end: the server dials its forwarded port, the channel lands
+/// here, and bytes cross both ways. Asks for a fixed port on purpose - russh
+/// reports those as port 0, which once left every connection unrouted.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn a_remote_forward_carries_bytes_both_ways() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let config = config();
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+
+    // Let the server pick a free port, then release it and ask for it by number.
+    let free = session.tcpip_forward("127.0.0.1", 0).await.unwrap();
+    assert_ne!(free, 0, "a server-chosen port should be reported");
+    session.cancel_tcpip_forward("127.0.0.1", free).await.unwrap();
+    let port = session.tcpip_forward("127.0.0.1", free).await.unwrap();
+    assert_eq!(port, free, "a fixed port should come back as the one requested");
+
+    // The local side: answer "ping" with "pong" + what was sent, then hang up.
+    let echo = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let echo_addr = echo.local_addr().unwrap();
+    tokio::spawn(async move {
+        let (mut stream, _) = echo.accept().await.unwrap();
+        let mut buf = [0u8; 4];
+        stream.read_exact(&mut buf).await.unwrap();
+        stream.write_all(b"pong").await.unwrap();
+        stream.write_all(&buf).await.unwrap();
+    });
+
+    let mut rx = session.take_forwarded_rx().await.expect("receiver already taken");
+    let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let dispatch = tokio::spawn(async move {
+        let fwd = rx.recv().await.expect("no forwarded channel arrived");
+        assert_eq!(fwd.connected_port, u32::from(port));
+        let stream = tokio::net::TcpStream::connect(echo_addr).await.unwrap();
+        tunnel::relay(stream, fwd.channel, stop_rx).await;
+    });
+
+    let command = if report.os == OsFamily::Windows {
+        format!(
+            "powershell -NoProfile -Command \"$c=New-Object Net.Sockets.TcpClient('127.0.0.1',{port});\
+             $s=$c.GetStream();$s.Write([byte[]][char[]]'ping',0,4);$r=New-Object byte[] 8;$n=0;\
+             while($n -lt 8){{$k=$s.Read($r,$n,8-$n);if($k -le 0){{break}};$n+=$k}};\
+             [Text.Encoding]::ASCII.GetString($r,0,$n)\""
+        )
+    } else {
+        format!(
+            "bash -c 'exec 3<>/dev/tcp/127.0.0.1/{port}; printf ping >&3; timeout 10 cat <&3'"
+        )
+    };
+    let output = session.exec(&command, None).await.unwrap();
+    assert_eq!(output.stdout.trim(), "pongping", "stderr: {}", output.stderr);
+
+    tokio::time::timeout(std::time::Duration::from_secs(10), dispatch)
+        .await
+        .expect("the relay should end once the local side hangs up")
+        .unwrap();
+
+    session.cancel_tcpip_forward("127.0.0.1", port).await.unwrap();
     session.close().await;
 }

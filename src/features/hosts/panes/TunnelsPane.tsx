@@ -152,6 +152,11 @@ function TunnelRow({
           </code>
         </>
       )}
+      {tunnel.lastError && (
+        <span className="small text-danger text-truncate" title={tunnel.lastError}>
+          {tunnel.lastError}
+        </span>
+      )}
       {tunnel.activeConnections > 0 && (
         <Badge bg="info" className="fw-normal">
           {tunnel.activeConnections} active
@@ -186,15 +191,22 @@ function NewTunnelForm({
   const [localHost, setLocalHost] = useState("127.0.0.1");
   const [remoteHost, setRemoteHost] = useState("127.0.0.1");
   const [remotePort, setRemotePort] = useState("");
+  const [bindHost, setBindHost] = useState("127.0.0.1");
   const [busy, setBusy] = useState(false);
 
   const isLocal = direction === "local";
 
+  const validPort = (value: string, allowAuto: boolean) => {
+    if (value.trim() === "") return allowAuto;
+    const n = Number(value);
+    return Number.isInteger(n) && n >= (allowAuto ? 0 : 1) && n <= 65535;
+  };
+
   const canSubmit =
     !busy &&
-    remotePort.trim() !== "" &&
-    !isNaN(Number(remotePort)) &&
-    (isLocal || (localPort.trim() !== "" && !isNaN(Number(localPort))));
+    (isLocal
+      ? validPort(localPort, true) && validPort(remotePort, false) && remotePort.trim() !== ""
+      : validPort(remotePort, true) && validPort(localPort, false) && localPort.trim() !== "");
 
   const submit = async () => {
     setBusy(true);
@@ -209,8 +221,8 @@ function NewTunnelForm({
       } else {
         await api.openRemoteTunnel(
           hostId,
-          Number(remotePort),
-          remoteHost.trim() || "0.0.0.0",
+          remotePort.trim() === "" ? 0 : Number(remotePort),
+          bindHost.trim() || "127.0.0.1",
           localHost.trim() || "127.0.0.1",
           Number(localPort),
         );
@@ -293,15 +305,26 @@ function NewTunnelForm({
           ) : (
             <>
               <Form.Group>
+                <Form.Label className="small mb-1">Server bind address</Form.Label>
+                <Form.Control
+                  size="sm"
+                  value={bindHost}
+                  onChange={(e) => setBindHost(e.target.value)}
+                  placeholder="127.0.0.1"
+                  style={{ width: 140 }}
+                />
+              </Form.Group>
+
+              <Form.Group>
                 <Form.Label className="small mb-1">Server port</Form.Label>
                 <Form.Control
                   size="sm"
                   type="number"
-                  min={1}
+                  min={0}
                   max={65535}
                   value={remotePort}
                   onChange={(e) => setRemotePort(e.target.value)}
-                  placeholder="e.g. 8080"
+                  placeholder="auto"
                   autoFocus
                   style={{ width: 100 }}
                 />
@@ -353,7 +376,7 @@ function NewTunnelForm({
         <Form.Text className="text-body-secondary">
           {isLocal
             ? "Leave local port blank to pick one automatically. Remote host is relative to the server - 127.0.0.1 means the server itself."
-            : "The server listens on the server port and forwards connections to the local address on this machine."}
+            : "Leave server port blank to let the server pick one. 127.0.0.1 keeps the port private to the server; 0.0.0.0 exposes it to the network and needs GatewayPorts enabled in sshd."}
         </Form.Text>
       </Card.Body>
     </Card>

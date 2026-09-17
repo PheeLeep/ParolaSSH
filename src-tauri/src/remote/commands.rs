@@ -1724,27 +1724,12 @@ pub async fn open_remote_tunnel(
 
 #[tauri::command]
 pub async fn close_tunnel(
+    app: AppHandle,
     registry: State<'_, SessionRegistry>,
     host_id: String,
     tunnel_id: u64,
 ) -> SshResult<()> {
-    let live = registry.require(&host_id)?;
-    match live.remove_tunnel(tunnel_id) {
-        Some(handle) => {
-            if handle.direction == super::tunnel::TunnelDirection::Remote {
-                let _ = live
-                    .session
-                    .cancel_tcpip_forward(&handle.remote_host, handle.remote_port)
-                    .await;
-                let key = (handle.remote_host.clone(), handle.remote_port as u32);
-                live.remote_targets().lock().await.remove(&key);
-            } else {
-                handle.stop();
-            }
-            Ok(())
-        }
-        None => Err(SshError::invalid("That tunnel is not running.")),
-    }
+    super::tunnel::close(&app, &registry, &host_id, tunnel_id).await
 }
 
 #[tauri::command]

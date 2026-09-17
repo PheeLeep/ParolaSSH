@@ -4,7 +4,6 @@ import {
   FolderOpen,
   Gauge,
   ListChecks,
-  Package,
   Server,
   ShieldCheck,
   SquareTerminal,
@@ -17,7 +16,6 @@ export type HostFeature =
   | "services"
   | "performance"
   | "tasks"
-  | "updates"
   | "audit"
   | "files"
   | "tunnels";
@@ -37,7 +35,6 @@ export const HOST_FEATURES: FeatureDef[] = [
   { id: "services", label: "Services", Icon: Boxes, ready: true, needsSession: true },
   { id: "performance", label: "Performance", Icon: Gauge, ready: true, needsSession: true },
   { id: "tasks", label: "Tasks", Icon: ListChecks, ready: true, needsSession: true },
-  { id: "updates", label: "Updates", Icon: Package, ready: true, needsSession: true },
   { id: "audit", label: "Audit", Icon: ShieldCheck, ready: true, needsSession: true },
   { id: "files", label: "Files", Icon: FolderOpen, ready: true, needsSession: true },
   { id: "tunnels", label: "Tunnels", Icon: Cable, ready: true, needsSession: true },

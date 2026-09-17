@@ -50,7 +50,6 @@ Dokploy-style horizontal nav inside the host view. Left sidebar picks the
 | Terminal | ✅ | Multi-shell tabs, cap 8 per host; reviewed, cap stays at 8 |
 | Services | ✅ | List, start/stop/restart with the sudo/UAC route, journal + follow / SCM events |
 | Performance | ✅ | CPU, memory, load, uptime, disks; pane-scoped sampling, user-set 1–30 s |
-| Updates | ✅ | apt/dnf pending list; Windows shows hotfix history when PSWindowsUpdate is absent |
 | Audit | ✅ | Tiers 0–2 built, tier 2 opt-in behind its own consent; details below |
 | Files | ✅ | SFTP browse, transfer, rename/move/copy, delete; symlinks listed but never followed |
 
@@ -204,8 +203,7 @@ keeps its deliberate 30-second ceiling; `journalctl -f` runs on a new
 (`emit_to`) events, because a followed log contains whatever the machine
 writes to it. Streams live in the registry beside shells (cap 4 per host)
 and are drained at the same four moments, so a followed journal cannot
-outlive its session. The one slow-but-bounded exception is
-`Get-WindowsUpdate`, which gets `exec_with_timeout(120 s)`.
+outlive its session.
 
 **Performance samples on a pane-scoped timer, not the heartbeat.** The
 earlier plan said "sample on the heartbeat", but 30 s is uselessly coarse
@@ -217,13 +215,6 @@ with the previous reading held on the Rust session - the first sample
 honestly shows "-" rather than sleeping a second inside the command. The
 figure is the whole-machine aggregate across all cores (a process pegging
 one core of four reads as 25%), shown as a whole number.
-
-**Windows updates are reported honestly.** Querying *pending* updates from
-the CLI needs the PSWindowsUpdate module, which most machines lack. Absent
-module, the pane says so and lists recent installed hotfixes instead - and
-never installs the module to improve its own answer. Nothing on any
-platform is ever installed from the Updates pane; it reports, the operator
-decides in a terminal.
 
 ---
 

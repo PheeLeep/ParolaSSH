@@ -11,7 +11,6 @@ import { PerformancePane } from "./panes/PerformancePane";
 import { ServicesPane } from "./panes/ServicesPane";
 import { TasksPane } from "./panes/TasksPane";
 import { TunnelsPane } from "./panes/TunnelsPane";
-import { UpdatesPane } from "./panes/UpdatesPane";
 import { useHostActions } from "./useHostActions";
 import { FilesPane } from "../transfers/FilesPane";
 import { VpnGlyph } from "../vpn/VpnGlyph";
@@ -159,8 +158,6 @@ export function HostDetail({
             <PerformancePane hostId={hostId} />
           ) : feature === "tasks" ? (
             <TasksPane hostId={hostId} />
-          ) : feature === "updates" ? (
-            <UpdatesPane hostId={hostId} />
           ) : feature === "audit" ? (
             <AuditPane hostId={hostId} />
           ) : feature === "files" ? (

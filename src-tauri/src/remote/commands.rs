@@ -715,42 +715,6 @@ pub async fn sample_metrics(
     super::metrics::sample(&live).await
 }
 
-/// What updates a host is waiting on. Read-only - there is no install verb.
-#[tauri::command]
-pub async fn check_updates(
-    registry: State<'_, SessionRegistry>,
-    host_id: String,
-) -> SshResult<super::updates::UpdateReport> {
-    use super::updates;
-
-    let live = registry.require(&host_id)?;
-    let command = updates::check_command(live.os)?;
-    let output = live.session.exec(command, None).await?;
-
-    match live.os {
-        OsFamily::Windows => {
-            let (module_present, history) = updates::parse_windows_first_round(&output);
-            if !module_present {
-                return Ok(updates::UpdateReport::ModuleMissing {
-                    detail: updates::module_missing_detail(),
-                    installed_history: history,
-                });
-            }
-            // Slow: this round trip goes out to Microsoft's servers.
-            let pending = live
-                .session
-                .exec_with_timeout(
-                    updates::windows_pending_command(),
-                    None,
-                    updates::WINDOWS_PENDING_TIMEOUT,
-                )
-                .await?;
-            Ok(updates::parse_windows_pending(&pending))
-        }
-        _ => Ok(updates::parse_linux(&output)),
-    }
-}
-
 /// Audit a connected host: tier 0 from the handshake, tier 1 from read-only
 /// commands.
 ///

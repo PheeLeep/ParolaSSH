@@ -26,7 +26,7 @@
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
-use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, updates, OsFamily};
+use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, OsFamily};
 use zeroize::Zeroizing;
 
 struct LiveConfig {
@@ -258,76 +258,6 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
     let (sample, _) = metrics::parse_linux(&second.stdout, previous, 0);
     println!("cpu={:?} load={:?} uptime={:?}", sample.cpu_percent, sample.load, sample.uptime_seconds);
     assert!(sample.cpu_percent.is_some(), "the second sample should carry a CPU figure");
-
-    session.close().await;
-}
-
-#[tokio::test]
-#[ignore = "needs a live host: see the module docs"]
-async fn checks_updates_without_installing_anything() {
-    let config = config();
-
-    let session = connect(&config).await;
-    let report = power::check_privileges(&session).await.unwrap();
-
-    // Windows answers in two rounds: detect PSWindowsUpdate and read hotfix
-    // history, then query pending updates only if the module was there. The
-    // point of the assertion is that the module is never installed to improve
-    // the answer.
-    if report.os == OsFamily::Windows {
-        let output = session
-            .exec(updates::check_command(report.os).unwrap(), None)
-            .await
-            .unwrap();
-        assert!(output.succeeded(), "{}", output.failure_text());
-
-        let (module_present, hotfixes) = updates::parse_windows_first_round(&output);
-        println!("module={module_present} hotfixes={}", hotfixes.len());
-
-        if module_present {
-            let pending = session
-                .exec_with_timeout(
-                    updates::windows_pending_command(),
-                    None,
-                    updates::WINDOWS_PENDING_TIMEOUT,
-                )
-                .await
-                .unwrap();
-            println!("pending: {:?}", updates::parse_windows_pending(&pending));
-        } else {
-            // The documented fallback: say so, and show history instead.
-            assert!(
-                !updates::module_missing_detail().is_empty(),
-                "the absent module must be explained, not hidden"
-            );
-        }
-
-        session.close().await;
-        return;
-    }
-
-    if report.os != OsFamily::Linux {
-        skip("apt/dnf assertions below; this host is neither Linux nor Windows");
-        session.close().await;
-        return;
-    }
-
-    let output = session
-        .exec(updates::check_command(report.os).unwrap(), None)
-        .await
-        .unwrap();
-    let parsed = updates::parse_linux(&output);
-    println!("updates: {parsed:?}");
-
-    // Any of the honest outcomes is fine; a crash or a lie is not.
-    match parsed {
-        updates::UpdateReport::List { updates, .. } => assert!(!updates.is_empty()),
-        updates::UpdateReport::UpToDate { .. }
-        | updates::UpdateReport::ManagerMissing { .. } => {}
-        updates::UpdateReport::ModuleMissing { .. } => {
-            panic!("a Linux host cannot be missing a PowerShell module")
-        }
-    }
 
     session.close().await;
 }

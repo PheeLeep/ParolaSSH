@@ -22,7 +22,7 @@
 
 <!-- Screenshots go here -->
 
-Routine work - services, updates, load, power, files - lives in panes, while the
+Routine work - services, tasks, load, power, files - lives in panes, while the
 real terminal stays one click away. It **reports and acts on your command**: it never
 installs packages, never changes a server's configuration on its own, and never
 sends a credential you did not choose.
@@ -43,7 +43,6 @@ sends a credential you did not choose.
 | Terminal | Real PTY, multi-shell tabs (max 8), renameable, persistent scrollback |
 | Services | `systemctl` / `sc query` - start, stop, restart, plus journal or SCM events with live follow |
 | Performance | CPU, memory, load, disks; user-set 1–30 s sampling |
-| Updates | Pending apt/dnf packages; Windows hotfix history |
 | Audit | Handshake crypto, `sshd -T` posture, key permissions - with per-host dismissals |
 | Files | SFTP browser - upload, download (files *and* folders), rename, move, copy, delete; symlinks shown but never followed |
 
@@ -123,7 +122,7 @@ PAROLASSH_LIVE_HOST=… PAROLASSH_LIVE_USER=… PAROLASSH_LIVE_PASSWORD=… \
 ```
 src/features/…      hosts, keys, sessions, transfers, vpn, settings (React)
 src-tauri/src/ssh/    local key store, audit, known_hosts
-src-tauri/src/remote/ sessions, shells, services, metrics, updates, sftp, transfers
+src-tauri/src/remote/ sessions, shells, services, metrics, sftp, transfers
 src-tauri/src/vpn/    per-provider status detection
 docs/ROADMAP.md       what's shipped, what's decided, and why
 ```

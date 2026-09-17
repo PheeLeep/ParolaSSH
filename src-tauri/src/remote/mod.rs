@@ -15,7 +15,6 @@
 //!   * `transfers`- the app-wide upload/download queue, shared by every host.
 //!   * `services` - list, act on, and read logs of system services.
 //!   * `metrics`  - one-round-trip performance sampling.
-//!   * `updates`  - read-only pending-update queries per package manager.
 //!   * `audit`    - remote security posture, tiered by cost.
 //!   * `probe`    - is the port even open, before we try anything else.
 
@@ -35,7 +34,6 @@ pub mod stream;
 pub mod transfer_task;
 pub mod transfers;
 pub mod tunnel;
-pub mod updates;
 
 use serde::{Deserialize, Serialize};
 

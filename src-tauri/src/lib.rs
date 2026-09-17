@@ -114,8 +114,6 @@ pub fn run() {
             remote::commands::follow_service_log,
             // Performance
             remote::commands::sample_metrics,
-            // Updates
-            remote::commands::check_updates,
             // Remote audit
             remote::commands::remote_audit,
             remote::commands::set_remote_finding_suppressed,

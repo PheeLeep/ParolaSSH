@@ -323,28 +323,6 @@ export interface HostMetrics {
   notes: string[];
 }
 
-/* ── Updates ───────────────────────────────────────────────────────────── */
-
-export interface UpdateItem {
-  name: string;
-  current: string | null;
-  available: string;
-  source: string;
-  security: boolean;
-}
-
-export interface HotfixItem {
-  id: string;
-  description: string;
-  installedOn: string | null;
-}
-
-export type UpdateReport =
-  | { kind: "list"; manager: string; updates: UpdateItem[]; securityCount: number | null }
-  | { kind: "upToDate"; manager: string }
-  | { kind: "managerMissing"; detail: string }
-  | { kind: "moduleMissing"; detail: string; installedHistory: HotfixItem[] };
-
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 
 export type RemoteSeverity = "info" | "low" | "medium" | "high" | "critical";

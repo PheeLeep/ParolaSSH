@@ -41,7 +41,6 @@ import type {
   TunnelEvent,
   TunnelInfo,
   TreeListing,
-  UpdateReport,
 } from "./types";
 
 /* ── Saved connections ─────────────────────────────────────────────────── */
@@ -249,12 +248,6 @@ export function onStreamClosed(
 /** One sample. The pane polls this only while it is visible. */
 export const sampleMetrics = (hostId: string) =>
   invoke<HostMetrics>("sample_metrics", { hostId });
-
-/* ── Updates ───────────────────────────────────────────────────────────── */
-
-/** Read-only, always - there is no install command to call. */
-export const checkUpdates = (hostId: string) =>
-  invoke<UpdateReport>("check_updates", { hostId });
 
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 

@@ -293,6 +293,8 @@ export type ConflictPrompt = {
   destination: string;
   /** How many clashes are left including this one, for the apply-to-all copy. */
   remaining: number;
+  /** False where the destination can never be replaced - a server-side paste. */
+  allowOverwrite: boolean;
 };
 
 /** Ask what to do about a name that is already taken.
@@ -333,9 +335,13 @@ export function ConflictDialog({
           <span className="font-monospace">{prompt.destination}</span>.
         </p>
         <p className="text-body-secondary small mb-3">
-          <b>Keep both</b> saves the incoming copy as
+          <b>Keep both</b> saves the incoming copy under a numbered name, like
           {" "}<span className="font-monospace">{suffixed(prompt.name)}</span>.
-          {" "}<b>Overwrite</b> cannot be undone.
+          {prompt.allowOverwrite ? (
+            <>{" "}<b>Overwrite</b> cannot be undone.</>
+          ) : (
+            <>{" "}Pasting never replaces what is already on the server.</>
+          )}
         </p>
 
         {prompt.remaining > 1 && (
@@ -355,9 +361,11 @@ export function ConflictDialog({
         <Button variant="outline-primary" onClick={() => onResolve("keepBoth", applyToAll)}>
           Keep both
         </Button>
-        <Button variant="danger" onClick={() => onResolve("overwrite", applyToAll)}>
-          Overwrite
-        </Button>
+        {prompt.allowOverwrite && (
+          <Button variant="danger" onClick={() => onResolve("overwrite", applyToAll)}>
+            Overwrite
+          </Button>
+        )}
       </Modal.Footer>
     </Modal>
   );

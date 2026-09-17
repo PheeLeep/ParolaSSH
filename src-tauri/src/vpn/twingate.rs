@@ -11,6 +11,8 @@
 
 use std::net::Ipv4Addr;
 
+use serde::{Deserialize, Serialize};
+
 use super::{VpnKind, VpnStatus};
 
 #[cfg(target_os = "linux")]
@@ -121,7 +123,8 @@ fn presence_only(running: bool) -> VpnStatus {
 }
 
 /// One entry of `twingate resources`: an address block the client owns.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TwingateResource {
     pub name: String,
     /// A single IP, a CIDR range, or a `*.domain` wildcard.
@@ -171,26 +174,28 @@ impl TwingateResource {
     }
 }
 
-/// The addresses Twingate owns on this machine. Only the Linux client can
-/// answer, and only while its service runs; everywhere else this is empty and
-/// the caller falls back to heuristics.
+/// The addresses Twingate owns on this machine, or `None` when the client
+/// could not say - not installed, wedged, or its service stopped. Only the
+/// Linux client can answer at all.
 #[cfg(target_os = "linux")]
-pub async fn resources() -> Vec<TwingateResource> {
+pub async fn resources() -> Option<Vec<TwingateResource>> {
     use super::{run_cli, CliOutcome};
 
     for candidate in ["twingate", "/usr/bin/twingate"] {
         // `-d` strips the ANSI colouring the table carries on a terminal.
-        if let CliOutcome::Ran { stdout, .. } = run_cli(candidate, &["resources", "-d"]).await {
-            return parse_resources(&stdout);
+        match run_cli(candidate, &["resources", "-d"]).await {
+            CliOutcome::Missing => continue,
+            CliOutcome::Ran { success: true, stdout } => return Some(parse_resources(&stdout)),
+            _ => return None,
         }
     }
 
-    Vec::new()
+    None
 }
 
 #[cfg(not(target_os = "linux"))]
-pub async fn resources() -> Vec<TwingateResource> {
-    Vec::new()
+pub async fn resources() -> Option<Vec<TwingateResource>> {
+    None
 }
 
 /// Read the table `twingate resources` prints: tab-separated name, address,

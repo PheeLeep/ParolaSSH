@@ -139,3 +139,14 @@ describe("auto audit", () => {
     expect(prefs.readAutoAudit()).toBe(true);
   });
 });
+
+describe("connect details", () => {
+  it("is off unless turned on", async () => {
+    const prefs = await load();
+    expect(prefs.readConnectDetails()).toBe(false);
+    prefs.writeConnectDetails(true);
+    expect(prefs.readConnectDetails()).toBe(true);
+    prefs.writeConnectDetails(false);
+    expect(prefs.readConnectDetails()).toBe(false);
+  });
+});

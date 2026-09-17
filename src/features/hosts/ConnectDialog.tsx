@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
 import { KeyRound, Plug, ShieldQuestion, TriangleAlert, Usb } from "lucide-react";
 import * as api from "./api";
 import { errorMessage, hostKeyFingerprint, isUnknownHostKey } from "./api";
 import { useHosts } from "./HostsProvider";
 import type { HostRow } from "./HostsProvider";
-import type { ConnectionInfo, PassphraseNeed } from "./types";
+import { describeStage } from "./connectStages";
+import { readConnectDetails } from "../settings/preferences";
+import type { ConnectionInfo, ConnectStage, PassphraseNeed } from "./types";
 
 /**
  * Collects whatever the chosen auth method needs, then connects.
@@ -19,6 +21,9 @@ import type { ConnectionInfo, PassphraseNeed } from "./types";
  *  3. A key connection asks the Rust side whether the key is really locked
  *     before showing a passphrase box, so an unencrypted key connects as
  *     directly as agent auth.
+ *
+ * While connecting it says only "Connecting…", unless the detailed-status
+ * setting is on - then that same line names the step the backend is on.
  */
 export function ConnectDialog({
   host,
@@ -39,6 +44,12 @@ export function ConnectDialog({
   const [unknownKey, setUnknownKey] = useState<string | null>(null);
   /** What the key on disk needs, once the Rust side has looked at it. */
   const [need, setNeed] = useState<PassphraseNeed | null>(null);
+  /** Read per opening, so flipping the setting applies to the next dialog. */
+  const [detailed, setDetailed] = useState(false);
+  const [stages, setStages] = useState<ConnectStage[]>([]);
+  /** Resolves once the step listener is registered, so an attempt that starts
+   *  immediately does not miss its first step. */
+  const listening = useRef<Promise<unknown>>(Promise.resolve());
 
   // The tray blinks from the moment we start asking, not from the submit:
   // the attempt began when this opened. Cleanup covers cancel, close, and
@@ -48,6 +59,26 @@ export function ConnectDialog({
     void api.setConnectPending(host.id, true);
     return () => {
       void api.setConnectPending(host.id, false);
+    };
+  }, [host]);
+
+  useEffect(() => {
+    const showSteps = Boolean(host) && readConnectDetails();
+    setDetailed(showSteps);
+    setStages([]);
+    if (!host || !showSteps) {
+      listening.current = Promise.resolve();
+      return;
+    }
+
+    let active = true;
+    const registered = api.onConnectProgress(({ hostId, ...stage }) => {
+      if (active && hostId === host.id) setStages((previous) => [...previous, stage as ConnectStage]);
+    });
+    listening.current = registered;
+    return () => {
+      active = false;
+      void registered.then((unlisten) => unlisten());
     };
   }, [host]);
 
@@ -62,8 +93,8 @@ export function ConnectDialog({
       return;
     }
 
-    // Agent auth needs nothing from the user, so try straight away.
-    if (host.authMethod === "agent") {
+    // Agent and none need nothing from the user, so try straight away.
+    if (host.authMethod === "agent" || host.authMethod === "none") {
       void attempt(false);
       return;
     }
@@ -104,7 +135,9 @@ export function ConnectDialog({
   const attempt = async (trustUnknown: boolean) => {
     setBusy(true);
     setError(null);
+    setStages([]);
     try {
+      await listening.current;
       const info = await connect(host.id, {
         password: password || null,
         remember: remember && needsPassword,
@@ -127,6 +160,11 @@ export function ConnectDialog({
   };
 
   const canSubmit = !busy && !checkingKey && !isFidoKey && (!needsPassword || password.length > 0);
+  /** Methods that connect as soon as the dialog opens. */
+  const needsNothing =
+    host.authMethod === "agent" ||
+    host.authMethod === "none" ||
+    (host.authMethod === "publickey" && need?.kind === "notNeeded");
 
   return (
     <Modal show onHide={() => !busy && onClose()} centered backdrop="static">
@@ -159,7 +197,7 @@ export function ConnectDialog({
         )}
 
         {needsPassword && (
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId="connect-password">
             <Form.Label>Password for {host.username}</Form.Label>
             <Form.Control
               type="password"
@@ -177,12 +215,6 @@ export function ConnectDialog({
           </Form.Group>
         )}
 
-        {checkingKey && !error && (
-          <p className="text-body-secondary mb-0">
-            Checking whether <code>{host.keyPath ?? "the key"}</code> is
-            locked…
-          </p>
-        )}
 
         {isFidoKey && need?.kind === "hardware" && (
           <Alert variant="info" className="d-flex gap-2">
@@ -204,7 +236,7 @@ export function ConnectDialog({
         )}
 
         {needsPassphrase && need && (
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId="connect-passphrase">
             <Form.Label className="d-flex align-items-center gap-2">
               <KeyRound className="icon-sm" aria-hidden="true" />
               Key passphrase
@@ -236,19 +268,15 @@ export function ConnectDialog({
           </Form.Group>
         )}
 
-        {(host.authMethod === "agent" ||
-          host.authMethod === "none" ||
-          (host.authMethod === "publickey" && need?.kind === "notNeeded")) &&
-          !error &&
-          !unknownKey && (
-            <p className="text-body-secondary mb-0">
-              {host.authMethod === "agent"
-                ? "Offering the keys held by your SSH agent…"
-                : host.authMethod === "none"
-                  ? "Sending no credential - this host identifies you before SSH begins…"
-                  : "The key is not encrypted, so there is nothing to unlock - connecting…"}
-            </p>
-          )}
+        {!error && !unknownKey && (busy || checkingKey || needsNothing) && (
+          <ConnectStatus
+            detailed={detailed}
+            stages={stages}
+            checkingKey={checkingKey ? (host.keyPath ?? "the key") : null}
+            // With a field on screen the button already says "Connecting…".
+            plain={!needsPassword && !needsPassphrase}
+          />
+        )}
 
         {needsPassword && (
           <>
@@ -289,5 +317,39 @@ export function ConnectDialog({
         </Button>
       </Modal.Footer>
     </Modal>
+  );
+}
+
+/** One status line: "Connecting…", or with the detailed setting on, the step
+ *  under way right now. */
+function ConnectStatus({
+  detailed,
+  stages,
+  checkingKey,
+  plain,
+}: {
+  detailed: boolean;
+  stages: ConnectStage[];
+  /** The key being inspected before the attempt, if that is still under way. */
+  checkingKey: string | null;
+  /** Whether plain mode shows a line at all. */
+  plain: boolean;
+}) {
+  if (!detailed && !plain) return null;
+
+  const latest = stages[stages.length - 1];
+  const label = !detailed
+    ? "Connecting"
+    : latest
+      ? describeStage(latest)
+      : checkingKey
+        ? `Checking whether ${checkingKey} is locked`
+        : "Connecting";
+
+  return (
+    <p className="text-body-secondary mb-0 d-flex align-items-center gap-2" role="status">
+      <Spinner animation="border" size="sm" className="flex-shrink-0" aria-hidden="true" />
+      <span className="text-break">{label}…</span>
+    </p>
   );
 }

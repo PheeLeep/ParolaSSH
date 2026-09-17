@@ -273,3 +273,25 @@ export function writeAutoAudit(enabled: boolean): void {
     // non-fatal: the preference just won't survive a restart
   }
 }
+
+/* ── Connecting ────────────────────────────────────────────────────────── */
+
+export const CONNECT_DETAILS_STORAGE_KEY = "parolassh:connect-details";
+
+/** Whether the connect dialog lists each step instead of a plain "Connecting…". */
+export function readConnectDetails(): boolean {
+  try {
+    return localStorage.getItem(CONNECT_DETAILS_STORAGE_KEY) === "on";
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+    return false;
+  }
+}
+
+export function writeConnectDetails(enabled: boolean): void {
+  try {
+    localStorage.setItem(CONNECT_DETAILS_STORAGE_KEY, enabled ? "on" : "off");
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+}

@@ -59,6 +59,40 @@ pub enum Credentials {
     None,
 }
 
+impl Credentials {
+    /// How the status line names this method. Never includes the secret.
+    pub fn method_name(&self) -> &'static str {
+        match self {
+            Credentials::Password(_) => "password",
+            Credentials::Key { .. } => "key",
+            Credentials::Agent => "agent",
+            Credentials::None => "none",
+        }
+    }
+}
+
+/// One step of a connection attempt, for the optional detailed status. Carries
+/// nothing secret: hostnames, a public key's fingerprint, algorithm names.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "stage", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConnectStage {
+    /// About to reach a saved jump host on the way to the target.
+    Jump { label: String },
+    /// Opening the transport, directly or as a tunnel through a jump host.
+    Dialing { host: String, port: u16, via_jump: bool },
+    /// The server's key was accepted; `known` is false when it was just trusted.
+    HostKey { fingerprint: String, algorithm: String, known: bool },
+    /// The key exchange finished.
+    Encrypted { kex: String, cipher: String },
+    Authenticating { method: String },
+    Authenticated,
+    /// Asking the account how it elevates.
+    CheckingAccount,
+}
+
+/// Receives each `ConnectStage` as it happens.
+pub type Progress = Arc<dyn Fn(ConnectStage) + Send + Sync>;
+
 /// Why a host key was rejected, so the UI can offer the right next step.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,6 +146,15 @@ struct Handler {
     /// Filled by `kex_done`, read by `connect` - same shape as `verdict`.
     crypto: Arc<Mutex<Option<NegotiatedCrypto>>>,
     forwarded_tx: mpsc::UnboundedSender<ForwardedChannel>,
+    progress: Option<Progress>,
+}
+
+impl Handler {
+    fn report(&self, stage: ConnectStage) {
+        if let Some(progress) = &self.progress {
+            progress(stage);
+        }
+    }
 }
 
 impl client::Handler for Handler {
@@ -132,6 +175,7 @@ impl client::Handler for Handler {
             server_public_key,
             &self.known_hosts,
         );
+        let was_known = matches!(known, Ok(true));
 
         let problem = match known {
             // Recorded and matching.
@@ -177,6 +221,13 @@ impl client::Handler for Handler {
         };
 
         let accepted = problem.is_none();
+        if accepted {
+            self.report(ConnectStage::HostKey {
+                fingerprint: fingerprint.clone(),
+                algorithm: server_public_key.algorithm().to_string(),
+                known: was_known,
+            });
+        }
         if let Ok(mut verdict) = self.verdict.lock() {
             verdict.problem = problem;
             if accepted {
@@ -256,7 +307,19 @@ impl Session {
         credentials: &Credentials,
         trust_unknown: bool,
     ) -> SshResult<Self> {
-        Self::connect_inner(target, credentials, trust_unknown, None).await
+        Self::connect_inner(target, credentials, trust_unknown, None, None).await
+    }
+
+    /// `connect` or `connect_via`, reporting each step to `progress`.
+    pub async fn connect_reporting(
+        target: &Target,
+        credentials: &Credentials,
+        trust_unknown: bool,
+        jump: Option<Session>,
+        progress: Progress,
+    ) -> SshResult<Self> {
+        Self::connect_inner(target, credentials, trust_unknown, jump.map(Box::new), Some(progress))
+            .await
     }
 
     /// Same, reached through an already-authenticated session rather than a
@@ -271,7 +334,7 @@ impl Session {
         trust_unknown: bool,
         jump: Session,
     ) -> SshResult<Self> {
-        Self::connect_inner(target, credentials, trust_unknown, Some(Box::new(jump))).await
+        Self::connect_inner(target, credentials, trust_unknown, Some(Box::new(jump)), None).await
     }
 
     async fn connect_inner(
@@ -279,7 +342,19 @@ impl Session {
         credentials: &Credentials,
         trust_unknown: bool,
         jump: Option<Box<Session>>,
+        progress: Option<Progress>,
     ) -> SshResult<Self> {
+        let report = |stage: ConnectStage| {
+            if let Some(progress) = &progress {
+                progress(stage);
+            }
+        };
+        report(ConnectStage::Dialing {
+            host: target.hostname.clone(),
+            port: target.port,
+            via_jump: jump.is_some(),
+        });
+
         let known_hosts = SshPaths::discover()?.known_hosts();
         let verdict = Arc::new(Mutex::new(KeyVerdict::default()));
         let crypto = Arc::new(Mutex::new(None));
@@ -293,6 +368,7 @@ impl Session {
             verdict: Arc::clone(&verdict),
             crypto: Arc::clone(&crypto),
             forwarded_tx,
+            progress: progress.clone(),
         };
 
         let config = Arc::new(client::Config {
@@ -363,16 +439,22 @@ impl Session {
             }
         };
 
+        let negotiated = crypto.lock().ok().and_then(|slot| slot.clone());
+        if let Some(crypto) = &negotiated {
+            report(ConnectStage::Encrypted { kex: crypto.kex.clone(), cipher: crypto.cipher.clone() });
+        }
+
+        report(ConnectStage::Authenticating { method: credentials.method_name().to_string() });
         let authenticated = authenticate(&mut handle, target, credentials).await?;
         if !authenticated {
             return Err(SshError::invalid(auth_failure_message(credentials, target)));
         }
+        report(ConnectStage::Authenticated);
 
         let fingerprint = verdict
             .lock()
             .ok()
             .and_then(|verdict| verdict.accepted_fingerprint.clone());
-        let negotiated = crypto.lock().ok().and_then(|slot| slot.clone());
 
         let forwarded_rx = Arc::new(tokio::sync::Mutex::new(Some(forwarded_rx)));
         Ok(Self { handle, fingerprint, negotiated, jump, forwarded_rx })
@@ -750,7 +832,32 @@ fn auth_failure_message(credentials: &Credentials, target: &Target) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::bound_port;
+    use super::{bound_port, ConnectStage, Credentials};
+    use zeroize::Zeroizing;
+
+    #[test]
+    fn a_stage_serializes_with_its_tag_and_camel_case_fields() {
+        let json = serde_json::to_value(ConnectStage::Dialing {
+            host: "10.0.0.5".into(),
+            port: 22,
+            via_jump: true,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "stage": "dialing", "host": "10.0.0.5", "port": 22, "viaJump": true })
+        );
+
+        let json = serde_json::to_value(ConnectStage::CheckingAccount).unwrap();
+        assert_eq!(json, serde_json::json!({ "stage": "checkingAccount" }));
+    }
+
+    #[test]
+    fn the_method_name_never_carries_the_secret() {
+        let password = Credentials::Password(Zeroizing::new("hunter2".into()));
+        assert_eq!(password.method_name(), "password");
+        assert_eq!(Credentials::Agent.method_name(), "agent");
+    }
 
     #[test]
     fn a_fixed_port_keeps_the_requested_number() {

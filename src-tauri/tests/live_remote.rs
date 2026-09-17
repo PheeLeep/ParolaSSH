@@ -154,6 +154,53 @@ async fn authenticates_and_reports_how_it_would_elevate() {
     session.close().await;
 }
 
+/// The detailed status reports each step in order, and never the password.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn connecting_reports_each_step_in_order() {
+    use parolassh_lib::remote::client::ConnectStage;
+    use std::sync::{Arc, Mutex};
+
+    let config = config();
+    let target = Target {
+        hostname: config.hostname.clone(),
+        port: config.port,
+        username: config.username.clone(),
+    };
+    let credentials = Credentials::Password(Zeroizing::new(config.password.clone()));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen);
+
+    let session = Session::connect_reporting(
+        &target,
+        &credentials,
+        true,
+        None,
+        Arc::new(move |stage| sink.lock().unwrap().push(stage)),
+    )
+    .await
+    .expect("connection failed");
+
+    let stages = seen.lock().unwrap().clone();
+    let names: Vec<&str> = stages
+        .iter()
+        .map(|stage| match stage {
+            ConnectStage::Dialing { .. } => "dialing",
+            ConnectStage::HostKey { .. } => "hostKey",
+            ConnectStage::Encrypted { .. } => "encrypted",
+            ConnectStage::Authenticating { .. } => "authenticating",
+            ConnectStage::Authenticated => "authenticated",
+            other => panic!("unexpected stage {other:?}"),
+        })
+        .collect();
+    assert_eq!(names, ["dialing", "hostKey", "encrypted", "authenticating", "authenticated"]);
+
+    let json = serde_json::to_string(&stages).unwrap();
+    assert!(!json.contains(&config.password), "a stage leaked the password");
+
+    session.close().await;
+}
+
 #[tokio::test]
 #[ignore = "needs a live host: see the module docs"]
 async fn runs_a_command_and_captures_both_streams() {

@@ -41,8 +41,10 @@ export interface VpnResource {
 export interface VpnOverview {
   statuses: VpnStatus[];
   bindings: VpnBinding[];
-  /** Empty off Linux or while the Twingate service is stopped. */
+  /** Empty off Linux. While Twingate cannot answer, the last list it gave. */
   twingateResources: VpnResource[];
+  /** ISO 8601 of when that list was last seen live; null while it is live. */
+  twingateResourcesSeenAt: string | null;
 }
 
 /** One machine on the tailnet, as `tailscale status --json` reports it. */

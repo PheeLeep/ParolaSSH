@@ -7,6 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   ConnectionInfo,
+  ConnectProgress,
   DangerAssessment,
   DirListing,
   HostTasks,
@@ -93,6 +94,14 @@ export const connectHost = (
  *  is being asked for a credential. Rust cannot see a dialog by itself. */
 export const setConnectPending = (hostId: string, active: boolean) =>
   invoke<void>("set_connect_pending", { hostId, active });
+
+/** Each step of a connection attempt, as it happens. Sent for every attempt;
+ *  whether to show it is the detailed-status setting's call. */
+export function onConnectProgress(
+  handler: (event: ConnectProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<ConnectProgress>("connect://progress", ({ payload }) => handler(payload));
+}
 
 /** Forget every open dialog - a reload leaves none of them on screen. */
 export const clearConnectPending = () => invoke<void>("clear_connect_pending");

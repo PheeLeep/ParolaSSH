@@ -10,6 +10,7 @@
 mod cache;
 pub mod commands;
 mod netbird;
+mod remembered;
 mod tailscale;
 mod twingate;
 mod wireguard;
@@ -32,8 +33,8 @@ const CLI_TIMEOUT: Duration = Duration::from_secs(3);
 /// every probe explanation. See `cache` for why this exists.
 static STATUS_CACHE: TtlCache<Vec<VpnStatus>> = TtlCache::new(cache::STATUS_TTL);
 
-/// The last `twingate resources` listing, on a much longer TTL.
-static RESOURCE_CACHE: TtlCache<Vec<twingate::TwingateResource>> =
+/// The last `twingate resources` answer, on a much longer TTL.
+static RESOURCE_CACHE: TtlCache<Option<Vec<twingate::TwingateResource>>> =
     TtlCache::new(cache::RESOURCE_TTL);
 
 /// Every VPN's condition, from the cache unless the caller insists otherwise.
@@ -42,9 +43,20 @@ pub async fn statuses(freshness: Freshness) -> Vec<VpnStatus> {
     STATUS_CACHE.get(freshness, detect_all).await
 }
 
-/// The Twingate resource list, from the cache unless the caller insists.
-pub async fn resources(freshness: Freshness) -> Vec<twingate::TwingateResource> {
-    RESOURCE_CACHE.get(freshness, twingate::resources).await
+/// The Twingate resource list, from the cache unless the caller insists. Falls
+/// back to the last list seen when the client cannot answer - see `remembered`.
+pub async fn resources(freshness: Freshness) -> remembered::KnownResources {
+    let (live, statuses) = tokio::join!(
+        RESOURCE_CACHE.get(freshness, twingate::resources),
+        statuses(freshness)
+    );
+    let online = statuses.iter().any(|s| s.kind == VpnKind::Twingate && s.up);
+    remembered::resolve(live, online)
+}
+
+/// Where remembered VPN state is kept on disk. Called once at startup.
+pub fn init(config_dir: std::path::PathBuf) {
+    remembered::init(config_dir);
 }
 
 /// The VPNs this module knows how to recognise.
@@ -224,7 +236,7 @@ pub fn bind(
 pub async fn explain_unreachable(hostname: &str) -> Option<String> {
     // Resources are often plain LAN addresses no heuristic could attribute, so
     // the list outranks the lexical hints.
-    let resources = resources(Freshness::Cached).await;
+    let resources = resources(Freshness::Cached).await.resources;
     let statuses = statuses(Freshness::Cached).await;
 
     if let Some(resource) = resources.iter().find(|r| r.matches(hostname)) {

@@ -145,7 +145,7 @@ export function HostFormDialog({
       <Modal.Body>
         {error && <Alert variant="danger">{error}</Alert>}
 
-        <Form.Group className="mb-3">
+        <Form.Group className="mb-3" controlId="host-label">
           <Form.Label>Name</Form.Label>
           <Form.Control
             value={draft.label}
@@ -161,7 +161,7 @@ export function HostFormDialog({
 
         <Row className="g-3 mb-3">
           <Col sm={8}>
-            <Form.Group>
+            <Form.Group controlId="host-hostname">
               <Form.Label>Hostname or IP</Form.Label>
               <Form.Control
                 value={draft.hostname}
@@ -174,7 +174,7 @@ export function HostFormDialog({
             </Form.Group>
           </Col>
           <Col sm={4}>
-            <Form.Group>
+            <Form.Group controlId="host-port">
               <Form.Label>Port</Form.Label>
               <Form.Control
                 type="number"
@@ -258,7 +258,7 @@ export function HostFormDialog({
 
         <Row className="g-3 mb-3">
           <Col sm={6}>
-            <Form.Group>
+            <Form.Group controlId="host-username">
               <Form.Label>Username</Form.Label>
               <Form.Control
                 value={draft.username}
@@ -271,7 +271,7 @@ export function HostFormDialog({
             </Form.Group>
           </Col>
           <Col sm={6}>
-            <Form.Group>
+            <Form.Group controlId="host-auth">
               <Form.Label>Authentication</Form.Label>
               <Form.Select
                 value={draft.authMethod}
@@ -290,7 +290,7 @@ export function HostFormDialog({
         </Row>
 
         {draft.authMethod === "publickey" && (
-          <Form.Group className="mb-3">
+          <Form.Group className="mb-3" controlId="host-key">
             <Form.Label>Private key</Form.Label>
             <Form.Select
               value={draft.keyPath ?? ""}
@@ -374,7 +374,7 @@ export function HostFormDialog({
           </Col>
         </Row>
 
-        <Form.Group className="mb-3">
+        <Form.Group className="mb-3" controlId="host-jump">
           <Form.Label>Jump host</Form.Label>
           <Form.Select
             value={draft.proxyJump ?? ""}
@@ -396,7 +396,7 @@ export function HostFormDialog({
           </Form.Text>
         </Form.Group>
 
-        <Form.Group>
+        <Form.Group controlId="host-notes">
           <Form.Label>Notes</Form.Label>
           <Form.Control
             as="textarea"

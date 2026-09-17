@@ -13,9 +13,11 @@ pub struct VpnOverview {
     pub statuses: Vec<VpnStatus>,
     /// Only the hostnames that could be tied to a VPN appear here.
     pub bindings: Vec<VpnBinding>,
-    /// What `twingate resources` reported - empty off Linux or with the
-    /// service stopped.
+    /// What `twingate resources` reported, or the last list it reported while
+    /// it cannot answer. Empty off Linux.
     pub twingate_resources: Vec<ResourceInfo>,
+    /// When the list above was last seen live; `None` while it is live.
+    pub twingate_resources_seen_at: Option<String>,
 }
 
 /// One Twingate resource, shaped for display.
@@ -48,10 +50,11 @@ pub async fn vpn_overview(hostnames: Vec<String>, force: bool) -> VpnOverview {
         Freshness::Cached
     };
 
-    let (statuses, resources) = tokio::join!(
+    let (statuses, known) = tokio::join!(
         super::statuses(freshness),
         super::resources(freshness)
     );
+    let resources = known.resources;
 
     let bindings = hostnames
         .iter()
@@ -73,6 +76,7 @@ pub async fn vpn_overview(hostnames: Vec<String>, force: bool) -> VpnOverview {
         statuses,
         bindings,
         twingate_resources,
+        twingate_resources_seen_at: known.remembered_from,
     }
 }
 

@@ -85,6 +85,14 @@ A destination that is already taken prompts for overwrite / keep both / skip,
 with an apply-to-all for recursive transfers. This was not always so: uploads
 opened with `CREATE|TRUNCATE` and silently replaced whatever was there.
 
+Three paste bugs, found writing the pane's tests (2026-09-17):
+
+| Bug | Fix |
+|---|---|
+| Paste offered **Overwrite**, which always failed with "already exists" - rename and the server copy both refuse an existing target, by design | The conflict dialog hides Overwrite for a paste and says pasting never replaces anything. Downloads keep it |
+| **Keep both** picked `a (1).txt` even when that name was taken, because it only checked the clashing names | The free name is chosen against every name in the folder on screen |
+| A partial delete or paste showed its error, then the folder reload wiped it | The reload runs before the error is set; the toast was the only trace before |
+
 ### Transfers - one queue for every host ✅
 
 Rationed globally rather than per host, because what fills up is the local
@@ -347,6 +355,24 @@ its own, then finds the entry fresh. The wait is bounded by the existing 3 s
 Six cache tests, all against a call-counting loader - no VPN client anywhere
 near them, as the rest of the module's tests already require.
 
+### The last Twingate resource list is remembered ✅
+
+`twingate resources` only answers while the service runs (stopped, it exits 1
+with "Twingate must be connected"), so the list used to be empty exactly when a
+dead resource address most needed explaining. `vpn/remembered.rs` keeps the last
+good list in memory and in `twingate-resources.json` beside `hosts.json`,
+owner-only through `private_file`.
+
+| Decision | Why |
+|---|---|
+| The listing returns `Option` - `None` for missing, timed out or a failed exit | An empty table and "could not ask" are different answers, and only one may replace the memory |
+| A non-empty answer always replaces it; an empty one only while Twingate reports `online` | Online and empty is the administrator removing access. Offline and empty is the service being down |
+| Persisted, not just held in memory | Starting the app with Twingate already stopped is the common case, and memory alone would know nothing |
+| Rewritten only when the list changes | A 5-minute TTL would otherwise rewrite the file all day |
+| The VPN page labels a remembered list and hides its re-auth advice | Auth status is as old as the list; telling someone to run `twingate auth` from a week-old answer would be a guess |
+
+Eight tests on the pure `reconcile` step; no Twingate client involved.
+
 ---
 
 ## Tailscale peer import ✅
@@ -486,6 +512,27 @@ to a remote target, then relays bytes bidirectionally.
 The Tunnels tab appears in the host feature nav beside Files. The form asks for
 a local port (optional), remote host and remote port, and each running tunnel
 shows its endpoints with a close button and active connection count.
+
+## Connection status ✅
+
+The connect dialog used to narrate each auth method ("Sending no credential -
+this host identifies you before SSH begins…"). It now says only **Connecting…**,
+and **Settings › Connections › Detailed connection status** (off by default)
+makes that same line name the step under way - one line that changes, not a
+growing list.
+
+| Decision | Why |
+|---|---|
+| Steps come from the backend as `connect://progress`, not guessed in the UI | Where a connection stalls is only known where it runs: jump hop, dial, host key, key exchange, sign-in, account check |
+| Always emitted; the setting only decides what is shown | No command-shape change, and flipping it needs no reconnect |
+| `Session::connect_reporting` beside `connect`/`connect_via` | The live tests and every other caller keep the plain signature |
+| A stage carries hostnames, the public key fingerprint and algorithm names only | Asserted by a live test that searches the serialized steps for the password |
+| The listener is registered before an automatic attempt starts | Agent and none connect the moment the dialog opens, and would otherwise lose their first step |
+| Auth method `none` now connects on open, like the agent | Nothing to type, and "Connecting…" should be true |
+| With a password or passphrase field on screen, plain mode adds no body line | The button already reads "Connecting…" |
+
+Verified against the Linux VM: dialing → host key → encrypted → authenticating
+→ authenticated, in that order.
 
 ## Open questions
 
@@ -627,10 +674,10 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 301 |
+| Rust unit | `cargo test --lib` | 311 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs a VM) | see below | 19, all `#[ignore]`d · green on Linux **and** Windows |
-| Frontend unit + component | `npm test` | 43 |
+| Rust live (needs a VM) | see below | 20, all `#[ignore]`d · green on Linux **and** Windows |
+| Frontend unit + component | `npm test` | 95 |
 | Frontend types | `npx tsc --noEmit` | - |
 
 Frontend tests run on Vitest in jsdom. The backend is never real: Tauri's
@@ -640,7 +687,14 @@ caches, `preferences`) are re-imported per test with `vi.resetModules()` so no
 state leaks between cases. Covered so far: the status dot, relative dates,
 preferences (malformed and throwing storage included), the transfer store's
 announcements and speed smoothing, the audit and metrics caches, and the
-Tunnels pane end to end against mocked commands.
+Tunnels pane end to end against mocked commands. The second batch added the
+connect dialog (host key trust, remember, key passphrase, FIDO refusal), the
+host form (validation, probe warning, jump-host loops, tags), the Files pane
+against a fake filesystem that refuses to overwrite as the server does, the
+terminal tabs with xterm replaced by a stub, and the VPN page.
+
+Writing them also linked the connect dialog's and host form's labels to their
+inputs - screen readers were announcing unnamed fields.
 
 The new feature modules follow the `power.rs` testing shape: command
 construction is pure and asserted as exact strings per OS (including the

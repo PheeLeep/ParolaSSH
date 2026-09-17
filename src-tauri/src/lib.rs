@@ -44,6 +44,10 @@ pub fn run() {
             logging::init(app.handle());
             logging::info("app", concat!("ParolaSSH ", env!("CARGO_PKG_VERSION"), " started"));
 
+            if let Ok(dir) = app_paths::config_dir(app.handle()) {
+                vpn::init(dir);
+            }
+
             #[cfg(desktop)]
             tray::init(app)?;
             #[cfg(not(desktop))]

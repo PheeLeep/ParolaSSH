@@ -7,10 +7,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::{AppHandle, State};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, State};
 use zeroize::Zeroizing;
 
-use super::client::{Credentials, Session, Target};
+use super::client::{ConnectStage, Credentials, Progress, Session, Target};
 use super::power::{self, Elevation, PowerOutcome, PowerRequest, PowerPlan, PrivilegeReport};
 use super::jump;
 use super::probe::{self, ProbeResult};
@@ -84,6 +85,29 @@ pub async fn probe_host(
     Ok(result)
 }
 
+pub const CONNECT_PROGRESS_EVENT: &str = "connect://progress";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectProgress {
+    host_id: String,
+    #[serde(flatten)]
+    stage: ConnectStage,
+}
+
+/// Emits each step of connecting to `host_id`. Always sent; the UI decides
+/// whether to show it.
+fn progress_emitter(app: &AppHandle, host_id: &str) -> Progress {
+    let app = app.clone();
+    let host_id = host_id.to_string();
+    Arc::new(move |stage| {
+        let _ = app.emit(
+            CONNECT_PROGRESS_EVENT,
+            ConnectProgress { host_id: host_id.clone(), stage },
+        );
+    })
+}
+
 /// Connect, authenticate, and work out how this account elevates.
 ///
 /// `password` is required for password auth unless one is already remembered.
@@ -121,13 +145,13 @@ pub async fn connect_host(
         username: host.username.clone(),
     };
 
-    // Dialled outermost first; each hop tunnels through the one before it.
-    let via = open_jump_chain(&saved, &host_id, &vault).await?;
+    let progress = progress_emitter(&app, &host_id);
 
-    let attempt = match via {
-        None => Session::connect(&target, &credentials, trust_unknown).await,
-        Some(jump) => Session::connect_via(&target, &credentials, trust_unknown, jump).await,
-    };
+    // Dialled outermost first; each hop tunnels through the one before it.
+    let via = open_jump_chain(&saved, &host_id, &vault, &progress).await?;
+
+    let attempt =
+        Session::connect_reporting(&target, &credentials, trust_unknown, via, progress.clone()).await;
 
     let session = match attempt {
         Ok(session) => session,
@@ -175,6 +199,7 @@ pub async fn connect_host(
     );
 
     // Read once at connect time: neither can change under a live session.
+    progress(ConnectStage::CheckingAccount);
     let report = power::check_privileges(&session).await?;
 
     let connected_at = now_iso8601();
@@ -1000,6 +1025,7 @@ async fn open_jump_chain(
     saved: &[HostRecord],
     host_id: &str,
     vault: &SecretVault,
+    progress: &Progress,
 ) -> SshResult<Option<Session>> {
     let chain = jump::resolve(saved, host_id)?;
     let mut via: Option<Session> = None;
@@ -1018,12 +1044,12 @@ async fn open_jump_chain(
             username: hop.username.clone(),
         };
 
+        progress(ConnectStage::Jump { label: hop.label.clone() });
+
         // `trust_unknown` is false at every hop, whatever was answered for the
         // target: that consent was about a different machine's key.
-        let opened = match via {
-            None => Session::connect(&target, &credentials, false).await,
-            Some(previous) => Session::connect_via(&target, &credentials, false, previous).await,
-        };
+        let opened =
+            Session::connect_reporting(&target, &credentials, false, via, progress.clone()).await;
 
         via = Some(opened.map_err(|error| {
             logging::warn(

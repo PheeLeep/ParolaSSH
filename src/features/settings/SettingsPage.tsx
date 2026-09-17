@@ -12,6 +12,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  Plug,
   Plus,
   Power,
   Server,
@@ -38,12 +39,14 @@ import {
   TERMINAL_FONT_FAMILIES,
   clampConcurrency,
   readAutoAudit,
+  readConnectDetails,
   readDefaultTransferPriority,
   readMaxConcurrentTransfers,
   readNavLayout,
   readStartupView,
   readTerminalFont,
   writeAutoAudit,
+  writeConnectDetails,
   writeDefaultTransferPriority,
   writeMaxConcurrentTransfers,
   writeNavLayout,
@@ -60,6 +63,7 @@ import type { Navigate } from "../../navigation";
 type SettingsTab =
   | "appearance"
   | "startup"
+  | "connections"
   | "transfers"
   | "terminal"
   | "files"
@@ -68,6 +72,7 @@ type SettingsTab =
 const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
   { id: "appearance", label: "Appearance", Icon: Palette },
   { id: "startup", label: "Startup", Icon: Power },
+  { id: "connections", label: "Connections", Icon: Plug },
   { id: "transfers", label: "Transfers", Icon: ArrowUpDown },
   { id: "terminal", label: "Terminal", Icon: SquareTerminal },
   { id: "files", label: "Files", Icon: FolderOpen },
@@ -92,6 +97,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const [navLayout, setNavLayout] = useState<NavLayout>(readNavLayout);
   const [startup, setStartup] = useState<StartupView>(readStartupView);
   const [autoAudit, setAutoAudit] = useState<boolean>(readAutoAudit);
+  const [connectDetails, setConnectDetails] = useState<boolean>(readConnectDetails);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
   const [defaultPriority, setDefaultPriority] = useState<TransferPriority>(
@@ -123,6 +129,11 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeAutoAudit = (next: boolean) => {
     setAutoAudit(next);
     writeAutoAudit(next);
+  };
+
+  const changeConnectDetails = (next: boolean) => {
+    setConnectDetails(next);
+    writeConnectDetails(next);
   };
 
   const changeStartup = (next: StartupView) => {
@@ -265,6 +276,28 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
               aria-label="Check posture on connect"
               checked={autoAudit}
               onChange={(event) => changeAutoAudit(event.target.checked)}
+            />
+          </SettingRow>
+        </Card.Body>
+      </Card>
+      )}
+
+      {tab === "connections" && (
+      <Card className="mb-3">
+        <Card.Body>
+          <h2 className="section-title mb-3">Connections</h2>
+
+          <SettingRow
+            title="Detailed connection status"
+            hint="List each step while connecting - jump hosts, the host key, encryption, signing in - instead of a plain “Connecting…”. Useful when a connection stalls and you want to see where."
+            last
+          >
+            <Form.Check
+              type="switch"
+              id="connect-details"
+              aria-label="Detailed connection status"
+              checked={connectDetails}
+              onChange={(event) => changeConnectDetails(event.target.checked)}
             />
           </SettingRow>
         </Card.Body>

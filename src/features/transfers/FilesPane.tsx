@@ -101,6 +101,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
     nameOf: (item: T) => string,
     taken: Set<string>,
     destination: string,
+    allowOverwrite: boolean,
   ): Promise<{ item: T; onConflict: "overwrite" | "keepBoth" }[] | null> => {
     const clashes = items.filter((item) => taken.has(nameOf(item)));
     let blanket: ConflictChoice | null = null;
@@ -112,6 +113,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
         name: nameOf(item),
         destination,
         remaining: clashes.length - index,
+        allowOverwrite,
       });
       if (!answer) return null;
       if (answer.applyToAll) blanket = answer.choice;
@@ -251,6 +253,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
         (item) => item.relative,
         taken,
         dir,
+        true,
       );
       if (!plan) return; // Cancelled at the conflict dialog.
       if (plan.length === 0) {
@@ -367,6 +370,8 @@ export function FilesPane({ hostId }: { hostId: string }) {
       return;
     }
 
+    // Reload first: `load` clears the pane's error, which would hide this one.
+    if (path) await load(path);
     const deleted = targets.length - failed.length;
     if (failed.length > 0) {
       running.fail(
@@ -380,7 +385,6 @@ export function FilesPane({ hostId }: { hostId: string }) {
 
     setPendingDelete([]);
     setSelected(new Set());
-    if (path) void load(path);
   };
 
   const needle = filter.trim().toLowerCase();
@@ -450,15 +454,24 @@ export function FilesPane({ hostId }: { hostId: string }) {
       const taken = new Set(
         await api.remoteConflicts(hostId, path, entries.map((entry) => entry.name)),
       );
+      // Rename and the server's copy both refuse an existing target, so a
+      // paste can skip or keep both, never overwrite.
       const plan = await planAgainstConflicts(
         entries,
         (entry) => entry.name,
         taken,
         path,
+        false,
       );
       if (!plan) {
         running.dismiss();
         return;
+      }
+
+      // Every name on screen, not just the clashes: "a (1).txt" may exist too.
+      const occupied = new Set(taken);
+      if (listing?.path === path) {
+        for (const entry of listing.entries) occupied.add(entry.name);
       }
 
       const failed: string[] = [];
@@ -467,18 +480,20 @@ export function FilesPane({ hostId }: { hostId: string }) {
         // disambiguate, so it is resolved here before asking for either.
         const name =
           onConflict === "keepBoth" && taken.has(item.name)
-            ? freeName(item.name, taken)
+            ? freeName(item.name, occupied)
             : item.name;
         const target = `${path}/${name}`.replace("//", "/");
         try {
           if (mode === "copy") await api.copyRemoteEntry(hostId, item.path, target);
           else await api.renameRemoteEntry(hostId, item.path, target);
-          taken.add(name);
+          occupied.add(name);
         } catch (caught) {
           failed.push(`${item.name}: ${errorMessage(caught)}`);
         }
       }
 
+      // Reload first: `load` clears the pane's error, which would hide this one.
+      await load(path);
       const done = plan.length - failed.length;
       if (failed.length > 0) {
         running.fail(
@@ -495,7 +510,6 @@ export function FilesPane({ hostId }: { hostId: string }) {
       // A cut is spent once pasted; a copy can be pasted again elsewhere.
       if (mode === "cut") setClipboard(null);
       setSelected(new Set());
-      void load(path);
     } catch (caught) {
       const message = errorMessage(caught);
       setError(message);

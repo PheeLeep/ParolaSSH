@@ -18,8 +18,10 @@ const POLL_INTERVAL_MS = 30_000;
 type VpnContextValue = {
   /** Every VPN the backend recognises, installed or not. */
   statuses: VpnStatus[];
-  /** What `twingate resources` reported, when it could. */
+  /** What `twingate resources` reported, or the last list it reported. */
   resources: VpnResource[];
+  /** When a remembered list was last seen live; null while it is live. */
+  resourcesSeenAt: string | null;
   /** The VPN a saved address is reached through, if any is known. */
   bindingFor: (hostname: string) => VpnBinding | undefined;
   /** ISO 8601 of the last completed check, or null before the first. */
@@ -34,6 +36,7 @@ export function VpnProvider({ children }: { children: ReactNode }) {
   const { hosts } = useHosts();
   const [statuses, setStatuses] = useState<VpnStatus[]>([]);
   const [resources, setResources] = useState<VpnResource[]>([]);
+  const [resourcesSeenAt, setResourcesSeenAt] = useState<string | null>(null);
   const [bindings, setBindings] = useState<Record<string, VpnBinding>>({});
   const [lastChecked, setLastChecked] = useState<string | null>(null);
 
@@ -54,6 +57,7 @@ export function VpnProvider({ children }: { children: ReactNode }) {
         const overview = await api.vpnOverview(hostnames, force);
         setStatuses(overview.statuses);
         setResources(overview.twingateResources);
+        setResourcesSeenAt(overview.twingateResourcesSeenAt);
         setBindings(
           Object.fromEntries(
             overview.bindings.map((binding) => [binding.hostname, binding]),
@@ -87,11 +91,12 @@ export function VpnProvider({ children }: { children: ReactNode }) {
     () => ({
       statuses,
       resources,
+      resourcesSeenAt,
       bindingFor: (hostname) => bindings[hostname],
       lastChecked,
       refresh: () => poll(true),
     }),
-    [statuses, resources, bindings, lastChecked, poll],
+    [statuses, resources, resourcesSeenAt, bindings, lastChecked, poll],
   );
 
   return <VpnContext.Provider value={value}>{children}</VpnContext.Provider>;

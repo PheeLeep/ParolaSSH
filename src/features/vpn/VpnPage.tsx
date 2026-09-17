@@ -30,7 +30,7 @@ type BoundHost = { host: HostRow; binding: VpnBinding };
  * the VPN's own UI.
  */
 export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
-  const { statuses, resources, bindingFor, lastChecked, refresh } = useVpn();
+  const { statuses, resources, resourcesSeenAt, bindingFor, lastChecked, refresh } = useVpn();
   const { hosts } = useHosts();
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<VpnTab>("overview");
@@ -152,6 +152,7 @@ export function VpnPage({ onNavigate }: { onNavigate: Navigate }) {
               <ClientPane
                 status={selected}
                 resources={selected.kind === "twingate" ? resources : []}
+                resourcesSeenAt={selected.kind === "twingate" ? resourcesSeenAt : null}
                 bound={boundVia(selected.kind)}
                 onNavigate={onNavigate}
                 onImport={
@@ -239,18 +240,24 @@ function OverviewPane({
 function ClientPane({
   status,
   resources,
+  resourcesSeenAt,
   bound,
   onNavigate,
   onImport,
 }: {
   status: VpnStatus;
   resources: VpnResource[];
+  /** Set when `resources` is the remembered list rather than a live one. */
+  resourcesSeenAt: string | null;
   bound: BoundHost[];
   onNavigate: Navigate;
   /** Only Tailscale can enumerate its peers, so only it offers importing. */
   onImport?: () => void;
 }) {
-  const needingAuth = resources.filter((resource) => resource.needsAuth);
+  // A remembered auth status is as old as the list; do not advise acting on it.
+  const needingAuth = resourcesSeenAt
+    ? []
+    : resources.filter((resource) => resource.needsAuth);
 
   return (
     <>
@@ -279,6 +286,13 @@ function ClientPane({
       {resources.length > 0 && (
         <Card className="mb-4">
           <Card.Header className="fw-semibold">Resources</Card.Header>
+          {resourcesSeenAt && (
+            <Alert variant="secondary" className="rounded-0 border-0 border-bottom mb-0 py-2 small">
+              Twingate is not answering, so this is the list it last reported (
+              {formatRelative(resourcesSeenAt)}). It still ties saved hosts to
+              Twingate; the auth column is from then too.
+            </Alert>
+          )}
           <Table size="sm" responsive className="mb-0 align-middle">
             <thead>
               <tr>

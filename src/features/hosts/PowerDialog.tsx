@@ -120,8 +120,9 @@ export function PowerDialog({
         </Modal.Header>
         <Modal.Body>
           <Alert variant="warning" className="mb-0">
-            Connect to this host first. The power options depend on what the
-            remote machine is and how this account can elevate.
+            Connection to {host.label} was interrupted. It might be caused
+            by intentional shutdown/reboot, or unexpected events like
+            power interruption or system crash.
           </Alert>
         </Modal.Body>
         <Modal.Footer>

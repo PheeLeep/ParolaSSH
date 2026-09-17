@@ -45,6 +45,18 @@ export interface HostDraft {
 
 /** What connecting must ask for before a private key can be loaded.
  *  `notNeeded` matters most: an unencrypted key must not raise a prompt. */
+/** One step of a connection attempt, for the detailed status. */
+export type ConnectStage =
+  | { stage: "jump"; label: string }
+  | { stage: "dialing"; host: string; port: number; viaJump: boolean }
+  | { stage: "hostKey"; fingerprint: string; algorithm: string; known: boolean }
+  | { stage: "encrypted"; kex: string; cipher: string }
+  | { stage: "authenticating"; method: "password" | "key" | "agent" | "none" }
+  | { stage: "authenticated" }
+  | { stage: "checkingAccount" };
+
+export type ConnectProgress = ConnectStage & { hostId: string };
+
 export type PassphraseNeed =
   | { kind: "notNeeded" }
   | { kind: "required" }

@@ -5,9 +5,9 @@ import { useHosts } from "./HostsProvider";
 import { HostFeatureNav, HOST_FEATURES, type HostFeature } from "./HostFeatureNav";
 import { StatusBadge } from "./StatusIndicator";
 import { TerminalTabs } from "./TerminalTabs";
-import { AuditPane } from "./panes/AuditPane";
 import { OsBadge, OverviewPane } from "./panes/OverviewPane";
 import { PerformancePane } from "./panes/PerformancePane";
+import { SecurityPane } from "./panes/SecurityPane";
 import { ServicesPane } from "./panes/ServicesPane";
 import { TasksPane } from "./panes/TasksPane";
 import { TunnelsPane } from "./panes/TunnelsPane";
@@ -158,8 +158,8 @@ export function HostDetail({
             <PerformancePane hostId={hostId} />
           ) : feature === "tasks" ? (
             <TasksPane hostId={hostId} />
-          ) : feature === "audit" ? (
-            <AuditPane hostId={hostId} />
+          ) : feature === "security" ? (
+            <SecurityPane hostId={hostId} />
           ) : feature === "files" ? (
             <FilesPane hostId={hostId} />
           ) : (

@@ -10,7 +10,7 @@
 //! await and is a `tokio::sync::Mutex`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use zeroize::Zeroizing;
@@ -55,6 +55,9 @@ pub struct LiveSession {
     /// it. Scoped to the session - disconnecting drops it, a narrower lifetime
     /// than the "remember me" vault.
     login_password: Mutex<Option<Zeroizing<String>>>,
+    /// A typed sudo password that sudo accepted, reused by every later elevated
+    /// action so key-based sessions are not asked again. Dropped with the session.
+    sudo_password: Mutex<Option<Zeroizing<String>>>,
     /// The last `/proc/stat` reading, so CPU percentage is a delta between
     /// polls. Written only after an exec completes, never across an await.
     prev_cpu: Mutex<Option<CpuTimes>>,
@@ -65,6 +68,9 @@ pub struct LiveSession {
     remote_targets: RemoteForwardMap,
     /// Whether the remote-forward dispatcher task has been spawned.
     remote_dispatch: AtomicBool,
+    /// Consecutive heartbeats whose liveness check timed out on a transport
+    /// that is still open, so one slow round trip does not reap the session.
+    missed_beats: AtomicU8,
     /// The SFTP channel the file browser listens on, opened on first use.
     /// Transfers deliberately do not share it - see `sftp::BrowseSession`.
     pub browse: BrowseSession,
@@ -94,10 +100,12 @@ impl LiveSession {
             streams: Mutex::new(HashMap::new()),
             shell_open: tokio::sync::Mutex::new(()),
             login_password: Mutex::new(None),
+            sudo_password: Mutex::new(None),
             prev_cpu: Mutex::new(None),
             tunnels: Mutex::new(HashMap::new()),
             remote_targets: tunnel::new_remote_forward_map(),
             remote_dispatch: AtomicBool::new(false),
+            missed_beats: AtomicU8::new(0),
             browse: BrowseSession::default(),
         }
     }
@@ -118,6 +126,24 @@ impl LiveSession {
             .lock()
             .map(|slot| slot.is_some())
             .unwrap_or(false)
+    }
+
+    /// Keep a sudo password that sudo has just accepted.
+    pub fn keep_sudo_password(&self, password: Zeroizing<String>) {
+        if let Ok(mut slot) = self.sudo_password.lock() {
+            *slot = Some(password);
+        }
+    }
+
+    pub fn kept_sudo_password(&self) -> Option<Zeroizing<String>> {
+        self.sudo_password.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    /// Wipe the kept sudo password. `Zeroizing` clears it on drop.
+    pub fn forget_sudo_password(&self) {
+        if let Ok(mut slot) = self.sudo_password.lock() {
+            slot.take();
+        }
     }
 
     /// The CPU reading from the previous metrics sample, if any.
@@ -241,6 +267,18 @@ impl LiveSession {
 
     pub fn mark_remote_dispatch_started(&self) {
         self.remote_dispatch.store(true, Ordering::Relaxed);
+    }
+
+    /// Count one missed heartbeat and return the running total.
+    pub fn note_missed_beat(&self) -> u8 {
+        self.missed_beats
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_add(1)))
+            .map(|previous| previous.saturating_add(1))
+            .unwrap_or(u8::MAX)
+    }
+
+    pub fn clear_missed_beats(&self) {
+        self.missed_beats.store(0, Ordering::Relaxed);
     }
 
     pub fn stop_all_tunnels(&self) {

@@ -457,6 +457,56 @@ export const ELEVATION_LABELS: Record<Elevation["kind"], string> = {
   unavailable: "Cannot elevate",
 };
 
+/* ── Security views ───────────────────────────────────────────────────── */
+
+export type SecurityView = "ports" | "firewall";
+
+export interface ListeningPort {
+  proto: "tcp" | "udp";
+  address: string;
+  port: number;
+  pid: number | null;
+  process: string | null;
+}
+
+export interface PortsReport {
+  ports: ListeningPort[];
+  tool: string;
+  command: string;
+  elevated: boolean;
+  note: string | null;
+}
+
+export type FirewallState = "active" | "inactive" | "unknown";
+
+export interface FirewallBackend {
+  name: string;
+  state: FirewallState;
+  summary: string | null;
+  output: string;
+}
+
+export interface FirewallReport {
+  backends: FirewallBackend[];
+  command: string;
+  elevated: boolean;
+  note: string | null;
+}
+
+export interface LoggedInUser {
+  user: string;
+  terminal: string | null;
+  from: string | null;
+  loginTime: string | null;
+  state: string | null;
+  idle: string | null;
+}
+
+export interface UsersReport {
+  users: LoggedInUser[];
+  note: string | null;
+}
+
 /* ── Tunnels (port forwarding) ────────────────────────────────────────── */
 
 export type TunnelDirection = "local" | "remote";

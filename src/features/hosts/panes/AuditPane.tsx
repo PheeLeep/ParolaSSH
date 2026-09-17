@@ -38,7 +38,7 @@ const SEVERITY_RANK: Record<RemoteSeverity, number> = {
  *  it for display would make the prompt describe something other than what
  *  runs, which is the whole thing this app refuses to do. */
 const PRIVILEGED_COMMAND =
-  `sudo -S -p '' sh -c 'sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; ` +
+  `sudo -S -p '' sh -c 'exec </dev/null; sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; ` +
   `echo ---PAROLA:shadow---; awk -F: "(\\$2==\\"\\")" /etc/shadow | cut -d: -f1'`;
 
 export function AuditPane({ hostId }: { hostId: string }) {

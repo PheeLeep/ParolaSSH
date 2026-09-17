@@ -16,6 +16,7 @@ use super::jump;
 use super::probe::{self, ProbeResult};
 use super::registry::{LiveSession, SessionRegistry};
 use super::secrets::SecretVault;
+use super::security;
 use super::services::{
     self, ServiceActionRequest, ServiceEntry, ServiceLog, ServiceOutcome, ServicePlan,
 };
@@ -306,12 +307,7 @@ pub async fn power_host(
 ) -> SshResult<PowerOutcome> {
     let live = registry.require(&host_id)?;
 
-    // Precedence: the dialog's password, the session's login password, then the
-    // remembered one.
-    let sudo_password: Option<Zeroizing<String>> = password
-        .map(Zeroizing::new)
-        .or_else(|| live.login_password())
-        .or_else(|| vault.recall(&host_id));
+    let sudo_password = resolve_sudo_password(&live, &vault, &host_id, password).await?;
 
     let outcome = power::execute(
         &live.session,
@@ -360,6 +356,9 @@ pub struct HostHealth {
 /// must not hold up the rest.
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// Consecutive failed liveness checks before a still-open session is reaped.
+const MAX_MISSED_BEATS: u8 = 2;
+
 /// Check every saved host: are they up, and are our sessions still good?
 ///
 /// Connected hosts get a round trip on the existing session, everything else a
@@ -378,11 +377,23 @@ pub async fn heartbeat(
             if let Some(live) = live {
                 let started = std::time::Instant::now();
                 if live.session.is_alive().await {
+                    live.clear_missed_beats();
                     return HostHealth {
                         host_id: host.id,
                         connected: true,
                         reachable: true,
                         latency_ms: Some(started.elapsed().as_millis() as u64),
+                    };
+                }
+
+                // A slow reply on an open transport gets another beat; a closed
+                // one is already gone. Keepalives close a truly dead link.
+                if !live.session.is_closed() && live.note_missed_beat() < MAX_MISSED_BEATS {
+                    return HostHealth {
+                        host_id: host.id,
+                        connected: true,
+                        reachable: true,
+                        latency_ms: None,
                     };
                 }
 
@@ -618,11 +629,7 @@ pub async fn service_action(
     let live = registry.require(&host_id)?;
     let plan = services::plan_action(live.os, &live.elevation, &request)?;
 
-    // Same precedence as power.
-    let sudo_password: Option<Zeroizing<String>> = password
-        .map(Zeroizing::new)
-        .or_else(|| live.login_password())
-        .or_else(|| vault.recall(&host_id));
+    let sudo_password = resolve_sudo_password(&live, &vault, &host_id, password).await?;
 
     let stdin = if plan.needs_password {
         let password = sudo_password.ok_or_else(|| {
@@ -742,10 +749,7 @@ pub async fn remote_audit(
             && may_elevate
             && !matches!(live.elevation, Elevation::WindowsAdminToken)
         {
-            let sudo_password: Option<Zeroizing<String>> = password
-                .map(Zeroizing::new)
-                .or_else(|| live.login_password())
-                .or_else(|| vault.recall(&host_id));
+            let sudo_password = resolve_sudo_password(&live, &vault, &host_id, password).await?;
 
             let stdin = match &live.elevation {
                 // No password to offer: skip the retry, let the note explain.
@@ -810,6 +814,141 @@ pub async fn remote_audit(
     }
 
     Ok(report)
+}
+
+/// The sudo password for an elevated action. A newly typed one is checked
+/// with `sudo -k -v` first and, once accepted, kept on the session so no later
+/// prompt has to ask again. Otherwise: kept, then login, then the vault's.
+pub(crate) async fn resolve_sudo_password(
+    live: &LiveSession,
+    vault: &SecretVault,
+    host_id: &str,
+    typed: Option<String>,
+) -> SshResult<Option<Zeroizing<String>>> {
+    let typed = typed.map(Zeroizing::new);
+    if let (Some(candidate), Elevation::SudoPassword) = (&typed, &live.elevation) {
+        let stdin = Zeroizing::new(format!("{}\n", candidate.as_str()).into_bytes());
+        let check = live.session.exec(power::SUDO_VALIDATE_COMMAND, Some(&stdin)).await?;
+        if !check.succeeded() {
+            logging::info("sudo", format!("Host {host_id}: typed sudo password refused"));
+            return Err(SshError::invalid(format!(
+                "sudo did not accept that password: {}",
+                check.failure_text()
+            )));
+        }
+        live.keep_sudo_password(candidate.clone());
+    }
+    Ok(power::pick_sudo_password(
+        typed,
+        live.kept_sudo_password(),
+        live.login_password(),
+        vault.recall(host_id),
+    ))
+}
+
+/// stdin for a security view: the password line when sudo wants one.
+async fn security_stdin(
+    live: &LiveSession,
+    vault: &SecretVault,
+    host_id: &str,
+    typed: Option<String>,
+    elevate: bool,
+) -> SshResult<Option<Zeroizing<Vec<u8>>>> {
+    if !elevate || !live.elevation.needs_password() {
+        return Ok(None);
+    }
+    let password = resolve_sudo_password(live, vault, host_id, typed)
+        .await?
+        .ok_or_else(|| SshError::invalid("This host needs your account password for sudo."))?;
+    Ok(Some(Zeroizing::new(format!("{}\n", password.as_str()).into_bytes())))
+}
+
+/// Whether this session holds a sudo password a prompt can reuse.
+#[tauri::command]
+pub fn has_kept_sudo_password(registry: State<'_, SessionRegistry>, host_id: String) -> bool {
+    registry
+        .get(&host_id)
+        .is_some_and(|live| live.kept_sudo_password().is_some())
+}
+
+/// Wipe the session's kept sudo password. A no-op once disconnected.
+#[tauri::command]
+pub fn forget_sudo_password(registry: State<'_, SessionRegistry>, host_id: String) {
+    if let Some(live) = registry.get(&host_id) {
+        live.forget_sudo_password();
+    }
+}
+
+/// The literal elevated command for a security view, for the consent prompt.
+#[tauri::command]
+pub fn preview_security_command(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+    view: security::SecurityView,
+) -> SshResult<String> {
+    let live = registry.require(&host_id)?;
+    security::preview(live.os, &live.elevation, view)
+}
+
+/// Listening TCP and UDP sockets.
+#[tauri::command]
+pub async fn list_listening_ports(
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    elevate: bool,
+    password: Option<String>,
+) -> SshResult<security::PortsReport> {
+    let live = registry.require(&host_id)?;
+    let command = security::ports_command(live.os, &live.elevation, elevate)?;
+    let stdin = security_stdin(&live, &vault, &host_id, password, elevate).await?;
+    let output = live
+        .session
+        .exec(&command, stdin.as_deref().map(Vec::as_slice))
+        .await?;
+    security::parse_ports(
+        live.os,
+        &output,
+        command,
+        security::uses_sudo(&live.elevation, elevate),
+    )
+}
+
+/// Firewall state and rules for every backend found on the host.
+#[tauri::command]
+pub async fn read_firewall(
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    elevate: bool,
+    password: Option<String>,
+) -> SshResult<security::FirewallReport> {
+    let live = registry.require(&host_id)?;
+    let command = security::firewall_command(live.os, &live.elevation, elevate)?;
+    let stdin = security_stdin(&live, &vault, &host_id, password, elevate).await?;
+    // Enumerating Windows firewall rules can take well over the default timeout.
+    let output = live
+        .session
+        .exec_with_timeout(&command, stdin.as_deref().map(Vec::as_slice), Duration::from_secs(90))
+        .await?;
+    security::parse_firewall(
+        live.os,
+        &output,
+        command,
+        security::uses_sudo(&live.elevation, elevate),
+    )
+}
+
+/// Accounts currently logged in to the host.
+#[tauri::command]
+pub async fn list_logged_in_users(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<security::UsersReport> {
+    let live = registry.require(&host_id)?;
+    let command = security::users_command(live.os)?;
+    let output = live.session.exec(command, None).await?;
+    security::parse_users(live.os, &output)
 }
 
 /// Dismiss or restore one remote finding, per host.

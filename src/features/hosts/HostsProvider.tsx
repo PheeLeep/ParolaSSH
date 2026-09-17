@@ -14,6 +14,7 @@ import * as auditCache from "./auditCache";
 import { readAutoAudit } from "../settings/preferences";
 import * as terminals from "./terminalStore";
 import * as tasks from "./taskStore";
+import * as toast from "../../lib/toast";
 import type {
   ConnectionInfo,
   HostDraft,
@@ -120,6 +121,14 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const hostsRef = useRef(hosts);
+  useEffect(() => {
+    hostsRef.current = hosts;
+  }, [hosts]);
+
+  // Hosts being disconnected on purpose, so the heartbeat never revives them.
+  const leaving = useRef(new Set<string>());
+
   const connectionsRef = useRef(connections);
   useEffect(() => {
     connectionsRef.current = connections;
@@ -127,17 +136,22 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
   const remove = useCallback(
     async (id: string) => {
-      if (connectionsRef.current[id]) {
-        await terminals.closeHost(id).catch(() => undefined);
-        await tasks.closeHost(id).catch(() => undefined);
-        auditCache.forget(id);
-        await api.disconnectHost(id).catch(() => undefined);
+      leaving.current.add(id);
+      try {
+        if (connectionsRef.current[id]) {
+          await terminals.closeHost(id).catch(() => undefined);
+          await tasks.closeHost(id).catch(() => undefined);
+          auditCache.forget(id);
+          await api.disconnectHost(id).catch(() => undefined);
+        }
+        // Tasks pinned to this host go with it: the file must not
+        // accumulate commands aimed at a machine that is gone.
+        await api.forgetHostTasks(id).catch(() => undefined);
+        await api.deleteHost(id);
+        setConnections(({ [id]: _removed, ...rest }) => rest);
+      } finally {
+        leaving.current.delete(id);
       }
-      // Tasks pinned to this host go with it: the file must not
-      // accumulate commands aimed at a machine that is gone.
-      await api.forgetHostTasks(id).catch(() => undefined);
-      await api.deleteHost(id);
-      setConnections(({ [id]: _removed, ...rest }) => rest);
       await refresh();
     },
     [refresh],
@@ -161,23 +175,28 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
         setHealth(Object.fromEntries(results.map((entry) => [entry.hostId, entry])));
 
-        const stillConnected = new Set(
-          results.filter((entry) => entry.connected).map((entry) => entry.hostId),
+        const byId = new Map(results.map((entry) => [entry.hostId, entry]));
+        const dropped = Object.keys(connectionsRef.current).filter(
+          (hostId) => !byId.get(hostId)?.connected,
         );
+        if (dropped.length === 0) return;
+
         setConnections((previous) => {
-          const next: Record<string, ConnectionInfo> = {};
-          for (const [hostId, info] of Object.entries(previous)) {
-            if (stillConnected.has(hostId)) next[hostId] = info;
-            else {
-              void terminals.closeHost(hostId);
-              void tasks.closeHost(hostId);
-              auditCache.forget(hostId);
-            }
-          }
-          return Object.keys(next).length === Object.keys(previous).length
-            ? previous
-            : next;
+          const next = { ...previous };
+          for (const hostId of dropped) delete next[hostId];
+          return next;
         });
+
+        for (const hostId of dropped) {
+          // Titles first: closing the terminals forgets them.
+          const titles = terminals.forHost(hostId).map((entry) => entry.title);
+          void terminals.closeHost(hostId);
+          void tasks.closeHost(hostId);
+          auditCache.forget(hostId);
+          if (byId.get(hostId)?.reachable && !leaving.current.has(hostId)) {
+            void reconnectRef.current(hostId, titles);
+          }
+        }
       } catch {
 
       }
@@ -213,12 +232,50 @@ export function HostsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Silent only: a dropped session never raises a password or passphrase prompt.
+  const reconnecting = useRef(new Set<string>());
+  const reconnect = useCallback(
+    async (id: string, titles: string[]) => {
+      const host = hostsRef.current.find((entry) => entry.id === id);
+      if (!host || reconnecting.current.has(id)) return;
+      reconnecting.current.add(id);
+      try {
+        if (!(await canReconnectSilently(host))) {
+          toast.error(`Connection to ${host.label} dropped`, "Connect again to continue.");
+          return;
+        }
+        await connect(id);
+        const theme =
+          document.documentElement.getAttribute("data-bs-theme") === "dark" ? "dark" : "light";
+        for (const title of titles) {
+          await terminals.open(id, theme, title).catch(() => undefined);
+        }
+        toast.success(`Reconnected to ${host.label}`);
+      } catch (caught) {
+        toast.error(`Could not reconnect to ${host.label}`, errorMessage(caught));
+      } finally {
+        reconnecting.current.delete(id);
+      }
+    },
+    [connect],
+  );
+
+  const reconnectRef = useRef(reconnect);
+  useEffect(() => {
+    reconnectRef.current = reconnect;
+  }, [reconnect]);
+
   const disconnect = useCallback(async (id: string) => {
-    await terminals.closeHost(id);
-    await tasks.closeHost(id);
-    auditCache.forget(id);
-    await api.disconnectHost(id);
-    setConnections(({ [id]: _removed, ...rest }) => rest);
+    leaving.current.add(id);
+    try {
+      await terminals.closeHost(id);
+      await tasks.closeHost(id);
+      auditCache.forget(id);
+      await api.disconnectHost(id);
+      setConnections(({ [id]: _removed, ...rest }) => rest);
+    } finally {
+      leaving.current.delete(id);
+    }
 
     // The mirror of the note in `statusFor`: dropping the connection is not
     // enough, because the last heartbeat still says `connected` and that is
@@ -244,22 +301,27 @@ export function HostsProvider({ children }: { children: ReactNode }) {
 
   const power = useCallback(
     async (id: string, request: PowerRequest, password?: string | null) => {
-      const outcome = await api.powerHost(id, request, password);
+      leaving.current.add(id);
+      try {
+        const outcome = await api.powerHost(id, request, password);
 
-      const terminal =
-        outcome.succeeded && request.action !== "cancel" && request.delayMinutes === 0;
-      if (terminal) {
-        void terminals.closeHost(id);
-        void tasks.closeHost(id);
-        auditCache.forget(id);
-        setConnections(({ [id]: _removed, ...rest }) => rest);
-        setHealth((previous) => ({
-          ...previous,
-          [id]: { hostId: id, connected: false, reachable: false, latencyMs: null },
-        }));
+        const terminal =
+          outcome.succeeded && request.action !== "cancel" && request.delayMinutes === 0;
+        if (terminal) {
+          void terminals.closeHost(id);
+          void tasks.closeHost(id);
+          auditCache.forget(id);
+          setConnections(({ [id]: _removed, ...rest }) => rest);
+          setHealth((previous) => ({
+            ...previous,
+            [id]: { hostId: id, connected: false, reachable: false, latencyMs: null },
+          }));
+        }
+
+        return outcome;
+      } finally {
+        leaving.current.delete(id);
       }
-
-      return outcome;
     },
     [],
   );
@@ -348,6 +410,26 @@ async function autoAudit(hostId: string): Promise<void> {
     auditCache.set(hostId, await api.remoteAudit(hostId, null, false));
   } catch {
     // Silent: see above.
+  }
+}
+
+/** Whether connecting needs nothing typed: agent, none, an unlocked key, or a
+ *  password still held in the vault. */
+async function canReconnectSilently(host: SshHost): Promise<boolean> {
+  try {
+    switch (host.authMethod) {
+      case "agent":
+      case "none":
+        return true;
+      case "password":
+        return await api.hasRememberedPassword(host.id);
+      case "publickey":
+        return (await api.hostKeyPassphraseNeed(host.id)).kind === "notNeeded";
+      default:
+        return false;
+    }
+  } catch {
+    return false;
   }
 }
 

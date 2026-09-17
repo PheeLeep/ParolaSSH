@@ -31,6 +31,11 @@ type ConnectFuture =
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long a one-shot command may run before we give up on it.
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+/// How often an idle session pings the server, well under typical NAT and
+/// firewall idle timeouts.
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+/// Unanswered keepalives before the session is declared dead.
+const KEEPALIVE_MAX: usize = 3;
 
 /// Where to connect.
 #[derive(Debug, Clone)]
@@ -291,7 +296,11 @@ impl Session {
         };
 
         let config = Arc::new(client::Config {
-            inactivity_timeout: Some(Duration::from_secs(3600)),
+            // No idle cutoff: an idle terminal is normal use. Keepalives both
+            // hold NAT state open and detect a dead peer instead.
+            inactivity_timeout: None,
+            keepalive_interval: Some(KEEPALIVE_INTERVAL),
+            keepalive_max: KEEPALIVE_MAX,
             // russh's 2 MiB default clamps a pipelined download: the server may
             // send only that much before waiting on a window adjust. Worth ~10%
             // on a 1 GiB fetch. Credit, not an allocation.
@@ -451,6 +460,10 @@ impl Session {
     /// rather than running a command: one round trip, no remote process, and
     /// nothing in the auth log.
     pub async fn is_alive(&self) -> bool {
+        if self.is_closed() {
+            return false;
+        }
+
         let check = async {
             match self.handle.channel_open_session().await {
                 Ok(channel) => {
@@ -464,6 +477,12 @@ impl Session {
         tokio::time::timeout(Duration::from_secs(5), check)
             .await
             .unwrap_or(false)
+    }
+
+    /// Whether the transport has ended - keepalive timeout, server disconnect,
+    /// or a dropped socket. Costs no round trip.
+    pub fn is_closed(&self) -> bool {
+        self.handle.is_closed()
     }
 
     /// Open a bare session channel for a caller that drives it itself, so

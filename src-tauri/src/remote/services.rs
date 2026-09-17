@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::power::{double_quote, single_quote, Elevation};
+use super::power::{double_quote, single_quote, sudo_sh, Elevation};
 use super::{CommandOutput, OsFamily};
 use crate::ssh::{SshError, SshResult};
 
@@ -270,17 +270,15 @@ pub fn plan_action(
     }
 
     let unit = validate_unit(os, &request.unit)?;
+    let systemctl_verb = match request.action {
+        ServiceAction::Start => "start",
+        ServiceAction::Stop => "stop",
+        ServiceAction::Restart => "restart",
+    };
 
     let command = match os {
-        OsFamily::Linux => {
-            let verb = match request.action {
-                ServiceAction::Start => "start",
-                ServiceAction::Stop => "stop",
-                ServiceAction::Restart => "restart",
-            };
-            // `--` so a name starting with `-` reads as a name, not a flag.
-            format!("systemctl {verb} -- {}", single_quote(unit))
-        }
+        // `--` so a name starting with `-` reads as a name, not a flag.
+        OsFamily::Linux => format!("systemctl {systemctl_verb} -- {}", single_quote(unit)),
         OsFamily::Windows => {
             // `net` waits for the transition, so its exit status means
             // something; `sc start` returns before the service does.
@@ -298,7 +296,13 @@ pub fn plan_action(
     let command = if os != OsFamily::Windows
         && matches!(elevation, Elevation::SudoPassword | Elevation::SudoNoPassword)
     {
-        format!("sudo -S -p '' {command}")
+        // The unit rides in as `$1` so it is quoted once, not nested inside
+        // the script's own quotes.
+        format!(
+            "{} sh {}",
+            sudo_sh(&format!("systemctl {systemctl_verb} -- \"$1\"")),
+            single_quote(unit)
+        )
     } else {
         command
     };
@@ -492,7 +496,10 @@ mod tests {
             &request(ServiceAction::Restart, "cron.service"),
         )
         .unwrap();
-        assert_eq!(plan.command, "sudo -S -p '' systemctl restart -- 'cron.service'");
+        assert_eq!(
+            plan.command,
+            "sudo -S -p '' sh -c 'exec </dev/null; systemctl restart -- \"$1\"' sh 'cron.service'"
+        );
         assert!(plan.needs_password);
 
         // NOPASSWD keeps the prefix but drops the prompt.
@@ -502,7 +509,10 @@ mod tests {
             &request(ServiceAction::Stop, "nginx.service"),
         )
         .unwrap();
-        assert_eq!(quiet.command, "sudo -S -p '' systemctl stop -- 'nginx.service'");
+        assert_eq!(
+            quiet.command,
+            "sudo -S -p '' sh -c 'exec </dev/null; systemctl stop -- \"$1\"' sh 'nginx.service'"
+        );
         assert!(!quiet.needs_password);
 
         // Root runs it bare.

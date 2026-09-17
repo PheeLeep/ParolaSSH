@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::remote::power::{single_quote, Elevation};
+use crate::remote::power::{sudo_sh, Elevation};
 use crate::remote::OsFamily;
 use crate::ssh::{SshError, SshResult};
 
@@ -239,7 +239,7 @@ pub fn plan(
             // `sh -c` so a task with pipes, redirects or several statements
             // elevates as a whole rather than only its first word. `-p ''`
             // suppresses the prompt, which nothing is there to read.
-            format!("sudo -S -p '' sh -c {}", single_quote(inner))
+            sudo_sh(inner)
         }
     };
 
@@ -290,7 +290,7 @@ mod tests {
 
         assert_eq!(
             plan.command,
-            "sudo -S -p '' sh -c 'systemctl restart sshd && systemctl status sshd'"
+            "sudo -S -p '' sh -c 'exec </dev/null; systemctl restart sshd && systemctl status sshd'"
         );
         assert!(plan.needs_password);
         // The readable form survives for display.
@@ -309,7 +309,7 @@ mod tests {
 
         // Every apostrophe is closed and reopened, so the payload stays one
         // argument to `sh -c`.
-        assert!(plan.command.starts_with("sudo -S -p '' sh -c '"));
+        assert!(plan.command.starts_with("sudo -S -p '' sh -c 'exec </dev/null; "));
         assert!(plan.command.ends_with('\''));
         assert!(!plan.needs_password, "NOPASSWD needs no password");
     }

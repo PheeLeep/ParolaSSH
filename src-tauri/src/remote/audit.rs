@@ -168,7 +168,7 @@ pub const TIER1_COMMAND: &str = "sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; \
 /// The privileged retry, run only when the unprivileged `sshd -T` failed and a
 /// sudo route exists: the daemon config again, plus the empty-password check
 /// that `/etc/shadow` gates.
-pub const TIER1_PRIVILEGED_COMMAND: &str = r#"sudo -S -p '' sh -c 'sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; echo ---PAROLA:shadow---; awk -F: "(\$2==\"\")" /etc/shadow | cut -d: -f1'"#;
+pub const TIER1_PRIVILEGED_COMMAND: &str = r#"sudo -S -p '' sh -c 'exec </dev/null; sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; echo ---PAROLA:shadow---; awk -F: "(\$2==\"\")" /etc/shadow | cut -d: -f1'"#;
 
 /// Split marker-separated output into (first section, named sections). Pure.
 pub fn parse_sections(stdout: &str) -> (String, BTreeMap<String, String>) {
@@ -530,6 +530,11 @@ fn score(findings: &[RemoteFinding]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn privileged_command_closes_stdin_after_sudo() {
+        assert!(TIER1_PRIVILEGED_COMMAND.starts_with("sudo -S -p '' sh -c 'exec </dev/null; "));
+    }
 
     fn modern_crypto() -> NegotiatedCrypto {
         NegotiatedCrypto {

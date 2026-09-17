@@ -117,6 +117,13 @@ pub fn run() {
             // Remote audit
             remote::commands::remote_audit,
             remote::commands::set_remote_finding_suppressed,
+            // Security views
+            remote::commands::preview_security_command,
+            remote::commands::list_listening_ports,
+            remote::commands::read_firewall,
+            remote::commands::list_logged_in_users,
+            remote::commands::has_kept_sudo_password,
+            remote::commands::forget_sudo_password,
             // Tasks
             tasks::commands::list_host_tasks,
             tasks::commands::list_all_tasks,

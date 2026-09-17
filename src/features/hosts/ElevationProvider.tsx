@@ -7,7 +7,16 @@ import {
   useState,
 } from "react";
 import { Alert, Button, Form, Modal } from "react-bootstrap";
-import { ShieldAlert, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
+import * as api from "./api";
 import { useHosts } from "./HostsProvider";
 import { ELEVATION_LABELS } from "./types";
 
@@ -95,16 +104,36 @@ function ElevationPrompt({
   request: ElevationRequest | null;
   onSettle: (grant: ElevationGrant) => void;
 }) {
-  const { getConnection } = useHosts();
+  const { getConnection, getHost } = useHosts();
   const connection = request ? getConnection(request.hostId) : undefined;
+  const host = request ? getHost(request.hostId) : undefined;
 
   const [password, setPassword] = useState("");
   /** Reuse the password this session logged in with, rather than retyping. */
   const [reuseLogin, setReuseLogin] = useState(true);
+  const [commandExpanded, setCommandExpanded] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  /** A sudo password typed earlier this session and accepted by sudo. */
+  const [keptSudo, setKeptSudo] = useState(false);
 
   useEffect(() => {
     setPassword("");
     setReuseLogin(true);
+    setCommandExpanded(false);
+    setShowDetails(false);
+    setKeptSudo(false);
+    if (!request) return;
+
+    let cancelled = false;
+    api
+      .hasKeptSudoPassword(request.hostId)
+      .then((kept) => {
+        if (!cancelled) setKeptSudo(kept);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [request]);
 
   if (!request) return null;
@@ -138,7 +167,7 @@ function ElevationPrompt({
   const { elevation, elevationExplanation, user } = connection;
   const blocked = elevation.kind === "unavailable";
   const needsPassword = elevation.kind === "sudoPassword";
-  const canReuse = needsPassword && connection.hasLoginPassword;
+  const canReuse = needsPassword && (keptSudo || connection.hasLoginPassword);
   const usingLogin = canReuse && reuseLogin;
   const canGrant =
     !blocked && (!needsPassword || usingLogin || password.length > 0);
@@ -146,104 +175,181 @@ function ElevationPrompt({
   const grant = () =>
     onSettle({
       outcome: "granted",
-      // Null tells the Rust side to use the session's own login password.
+      // Null tells Rust to use the kept sudo password, else the login one.
+      // Neither travels through the webview.
       password: usingLogin ? null : password || null,
     });
 
+  const title = blocked
+    ? "Cannot elevate"
+    : elevation.kind === "windowsAdminToken"
+      ? "Allow administrator access?"
+      : "Allow root access?";
+
   return (
     <Modal show onHide={cancel} centered backdrop="static" {...stacked}>
-      <Modal.Header closeButton>
-        <Modal.Title className="d-flex align-items-center gap-2">
+      <Modal.Header closeButton className="py-2">
+        <Modal.Title className="h6 d-flex align-items-center gap-2 mb-0">
           {blocked ? (
-            <ShieldAlert aria-hidden="true" />
+            <ShieldAlert className="icon-sm" aria-hidden="true" />
           ) : (
-            <ShieldCheck aria-hidden="true" />
+            <ShieldCheck className="icon-sm" aria-hidden="true" />
           )}
-          Elevate - {request.summary}
+          {title}
         </Modal.Title>
       </Modal.Header>
 
-      <Modal.Body>
-        <Alert
-          variant={blocked ? "danger" : request.destructive ? "warning" : "secondary"}
-          className="d-flex gap-2"
-        >
-          <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
-          <div>
-            <div className="fw-semibold mb-1">
-              {blocked
-                ? "This account cannot elevate on this host."
-                : elevation.kind === "windowsAdminToken"
-                  ? "This runs with the full Administrator token."
-                  : elevation.kind === "notNeeded"
-                    ? `This runs as root - ${user} already is root.`
-                    : "This runs with root privileges."}
-            </div>
-            {elevation.kind === "unavailable" ? elevation.reason : elevationExplanation}
+      <Modal.Body className="d-flex flex-column gap-3">
+        {/* UAC-style: what runs and where, before anything else. */}
+        <div>
+          <div className="fs-5 fw-semibold lh-sm">{request.summary}</div>
+          <div className="small text-body-secondary mt-1">
+            <span className="font-monospace">
+              {user}@{host?.label ?? host?.hostname ?? request.hostId}
+            </span>
+            {" · "}
+            {ELEVATION_LABELS[elevation.kind]}
           </div>
-        </Alert>
+        </div>
 
-        <dl className="detail-grid mb-3">
-          <div>
-            <dt>Account</dt>
-            <dd className="font-monospace small">{user}</dd>
-          </div>
-          <div>
-            <dt>Elevation</dt>
-            <dd>{ELEVATION_LABELS[elevation.kind]}</dd>
-          </div>
-        </dl>
+        {(blocked || request.destructive) && (
+          <Alert
+            variant={blocked ? "danger" : "warning"}
+            className="d-flex gap-2 small py-2 mb-0"
+          >
+            <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+            <div>
+              {elevation.kind === "unavailable"
+                ? elevation.reason
+                : "This interrupts or changes the machine."}
+            </div>
+          </Alert>
+        )}
 
         {request.command && (
-          <>
-            <div className="detail-grid__label">Command that will run</div>
-            <div className="public-key-box user-select-auto">{request.command}</div>
-          </>
+          <div>
+            <div className="d-flex align-items-center mb-1">
+              <span className="detail-grid__label mb-0 me-auto">Command</span>
+              <Button
+                size="sm"
+                variant="link"
+                className="p-0 text-decoration-none text-body-secondary small"
+                onClick={() => setCommandExpanded((value) => !value)}
+                aria-expanded={commandExpanded}
+              >
+                {commandExpanded ? (
+                  <Minimize2 className="icon-sm" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="icon-sm" aria-hidden="true" />
+                )}
+                {commandExpanded ? "Collapse" : "Expand"}
+              </Button>
+            </div>
+            {commandExpanded ? (
+              <div className="public-key-box elevation-command is-expanded user-select-auto">
+                <span className="elevation-command__text">{request.command}</span>
+              </div>
+            ) : (
+              // Collapsed to two lines; a click opens the full command.
+              <div
+                role="button"
+                tabIndex={0}
+                className="public-key-box elevation-command"
+                title="Show the full command"
+                onClick={() => setCommandExpanded(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setCommandExpanded(true);
+                  }
+                }}
+              >
+                <span className="elevation-command__text">{request.command}</span>
+              </div>
+            )}
+          </div>
         )}
 
         {!blocked && needsPassword && (
-          <div className="mt-3">
-            {canReuse && (
-              <Form.Check
-                type="checkbox"
-                id="elevation-reuse-login"
-                className="mb-2"
-                label={`Use the password I logged in with as ${user}`}
-                checked={reuseLogin}
-                onChange={(event) => setReuseLogin(event.target.checked)}
-              />
+          <div>
+            {usingLogin && (
+              <div className="d-flex align-items-center gap-2 small">
+                <span className="text-body-secondary">
+                  {keptSudo
+                    ? "Using the sudo password entered earlier this session."
+                    : `Using the password you logged in with as ${user}.`}
+                </span>
+                <Button
+                  size="sm"
+                  variant="link"
+                  className="p-0 ms-auto text-decoration-none small"
+                  onClick={() => {
+                    if (keptSudo) {
+                      void api.forgetSudoPassword(request.hostId).catch(() => undefined);
+                      setKeptSudo(false);
+                      // The login password, if any, is still offered.
+                      if (!connection.hasLoginPassword) setReuseLogin(false);
+                    } else {
+                      setReuseLogin(false);
+                    }
+                  }}
+                >
+                  {keptSudo ? "Forget it" : "Use a different password"}
+                </Button>
+              </div>
             )}
 
             {!usingLogin && (
-              <Form.Group>
-                <Form.Label>sudo password for {user}</Form.Label>
-                <Form.Control
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && canGrant) grant();
-                  }}
-                  autoComplete="off"
-                  autoFocus
-                />
-              </Form.Group>
+              <Form.Control
+                type="password"
+                placeholder={`sudo password for ${user}`}
+                aria-label={`sudo password for ${user}`}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && canGrant) grant();
+                }}
+                autoComplete="off"
+                autoFocus
+              />
             )}
+          </div>
+        )}
 
-            <Form.Text className="text-body-secondary">
-              Sent to <code>sudo -S</code> over the existing encrypted channel,
-              never as part of the command line - so it stays out of the remote
-              process list, and it is not kept after this run.
-            </Form.Text>
+        {!blocked && (
+          <div>
+            <Button
+              size="sm"
+              variant="link"
+              className="p-0 text-decoration-none text-body-secondary small"
+              onClick={() => setShowDetails((value) => !value)}
+              aria-expanded={showDetails}
+            >
+              {showDetails ? (
+                <ChevronDown className="icon-sm" aria-hidden="true" />
+              ) : (
+                <ChevronRight className="icon-sm" aria-hidden="true" />
+              )}
+              {showDetails ? "Hide details" : "Show details"}
+            </Button>
+            {showDetails && (
+              <p className="small text-body-secondary mt-2 mb-0">
+                {/* The explanation already says how the password travels; only
+                    how long it lives is added here. */}
+                <WithInlineCode text={elevationExplanation} />
+                {needsPassword &&
+                  " A typed password is checked with sudo first; once accepted it is kept in memory for this session, so later prompts can reuse it, and wiped on disconnect."}
+              </p>
+            )}
           </div>
         )}
       </Modal.Body>
 
-      <Modal.Footer>
+      <Modal.Footer className="py-2">
         <Button variant="outline-secondary" onClick={cancel}>
-          Cancel
+          {blocked ? "Close" : "Cancel"}
         </Button>
-        {request.unprivilegedLabel && (
+        {!blocked && request.unprivilegedLabel && (
           <Button
             variant="outline-primary"
             onClick={() => onSettle({ outcome: "unprivileged" })}
@@ -251,14 +357,27 @@ function ElevationPrompt({
             {request.unprivilegedLabel}
           </Button>
         )}
-        <Button
-          variant={request.destructive ? "danger" : "primary"}
-          onClick={grant}
-          disabled={!canGrant}
-        >
-          Elevate and run
-        </Button>
+        {!blocked && (
+          <Button
+            variant={request.destructive ? "danger" : "primary"}
+            onClick={grant}
+            disabled={!canGrant}
+          >
+            Elevate and run
+          </Button>
+        )}
       </Modal.Footer>
     </Modal>
+  );
+}
+
+/** Renders `backticked` spans from host-side messages as code. */
+function WithInlineCode({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("`").map((part, index) =>
+        index % 2 === 1 ? <code key={index}>{part}</code> : part,
+      )}
+    </>
   );
 }

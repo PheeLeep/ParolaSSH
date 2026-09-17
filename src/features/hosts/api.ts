@@ -24,6 +24,10 @@ import type {
   PowerRequest,
   ProbeResult,
   RemoteAuditReport,
+  FirewallReport,
+  PortsReport,
+  SecurityView,
+  UsersReport,
   ServiceActionRequest,
   ServiceEntry,
   ServiceLog,
@@ -248,6 +252,35 @@ export function onStreamClosed(
 /** One sample. The pane polls this only while it is visible. */
 export const sampleMetrics = (hostId: string) =>
   invoke<HostMetrics>("sample_metrics", { hostId });
+
+/* ── Security views ───────────────────────────────────────────────────── */
+
+/** The literal elevated command for a view, shown before sudo runs. */
+export const previewSecurityCommand = (hostId: string, view: SecurityView) =>
+  invoke<string>("preview_security_command", { hostId, view });
+
+export const listListeningPorts = (
+  hostId: string,
+  elevate: boolean,
+  password: string | null = null,
+) => invoke<PortsReport>("list_listening_ports", { hostId, elevate, password });
+
+export const readFirewall = (
+  hostId: string,
+  elevate: boolean,
+  password: string | null = null,
+) => invoke<FirewallReport>("read_firewall", { hostId, elevate, password });
+
+/** Whether the session holds an accepted sudo password a prompt can reuse. */
+export const hasKeptSudoPassword = (hostId: string) =>
+  invoke<boolean>("has_kept_sudo_password", { hostId });
+
+/** Wipe the session's kept sudo password. */
+export const forgetSudoPassword = (hostId: string) =>
+  invoke<void>("forget_sudo_password", { hostId });
+
+export const listLoggedInUsers = (hostId: string) =>
+  invoke<UsersReport>("list_logged_in_users", { hostId });
 
 /* ── Remote audit ──────────────────────────────────────────────────────── */
 

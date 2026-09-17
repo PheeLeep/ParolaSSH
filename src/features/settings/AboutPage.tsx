@@ -17,7 +17,8 @@ const AUTHOR = "PheeLeep";
 const AUTHOR_URL = "https://github.com/PheeLeep";
 const REPO_URL = "https://github.com/PheeLeep/ParolaSSH";
 const ISSUES_URL = `${REPO_URL}/issues`;
-/** Redirects to avatars.githubusercontent.com; both hosts are in the CSP. */
+/** Redirects to avatars.githubusercontent.com. The CSP allows this exact path
+ *  and that host only, so changing it needs a matching CSP edit. */
 const AUTHOR_AVATAR = `${AUTHOR_URL}.png?size=160`;
 
 const BUILT_WITH = [

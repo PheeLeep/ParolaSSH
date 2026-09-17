@@ -184,11 +184,10 @@ pub async fn start_task(
     // `sudo -S` reads a line from stdin either way; a NOPASSWD rule ignores
     // it, so the empty line keeps one code path.
     let stdin: Option<Zeroizing<Vec<u8>>> = if plan.elevated && live.os.is_unix() {
-        let secret = password
-            .map(Zeroizing::new)
-            .or_else(|| live.login_password())
-            .or_else(|| vault.recall(&host_id))
-            .unwrap_or_else(|| Zeroizing::new(String::new()));
+        let secret =
+            crate::remote::commands::resolve_sudo_password(&live, &vault, &host_id, password)
+                .await?
+                .unwrap_or_else(|| Zeroizing::new(String::new()));
         Some(Zeroizing::new(format!("{}\n", secret.as_str()).into_bytes()))
     } else {
         None

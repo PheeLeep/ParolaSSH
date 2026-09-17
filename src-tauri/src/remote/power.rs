@@ -12,6 +12,7 @@
 //! cannot elevate over SSH at all.
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 use super::client::Session;
 use super::{CommandOutput, OsFamily};
@@ -320,9 +321,7 @@ pub fn plan(
 
     let needs_password = elevation.needs_password();
     let command = if needs_password || elevation == &Elevation::SudoNoPassword {
-        // `-S` reads the password from stdin; `-p ''` keeps the prompt out of
-        // the command's output.
-        format!("sudo -S -p '' {command}")
+        sudo_sh(&command)
     } else {
         command
     };
@@ -401,6 +400,33 @@ fn summarise(os: OsFamily, request: &PowerRequest) -> String {
 /// a message cannot break out. Shared with `services` for unit names.
 pub(crate) fn single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
+}
+
+/// `sh -c` with stdin closed before the script runs. Pure.
+pub(crate) fn sh_c(script: &str) -> String {
+    format!("sh -c {}", single_quote(&format!("exec </dev/null; {script}")))
+}
+
+/// `sudo -S` around a script. stdin is closed after sudo has read from it:
+/// with cached credentials sudo skips the password line, and no command may
+/// read it instead. `-p ''` keeps the prompt out of the output. Pure.
+pub(crate) fn sudo_sh(script: &str) -> String {
+    format!("sudo -S -p '' {}", sh_c(script))
+}
+
+/// Checks a typed sudo password without running anything: `-k` ignores cached
+/// credentials, so exit 0 means sudo accepted this password just now.
+pub(crate) const SUDO_VALIDATE_COMMAND: &str = "sudo -k -S -p '' -v";
+
+/// Which sudo password to send: the one just typed, then the one this session
+/// kept, then the login password, then the vault's. Pure.
+pub(crate) fn pick_sudo_password(
+    typed: Option<Zeroizing<String>>,
+    kept: Option<Zeroizing<String>>,
+    login: Option<Zeroizing<String>>,
+    remembered: Option<Zeroizing<String>>,
+) -> Option<Zeroizing<String>> {
+    typed.or(kept).or(login).or(remembered)
 }
 
 /// Wrap for cmd.exe, which has no escape for `"` inside a quoted string, so the
@@ -643,16 +669,39 @@ mod tests {
     }
 
     #[test]
+    fn sudo_password_precedence_prefers_typed_then_kept() {
+        let secret = |value: &str| Some(Zeroizing::new(value.to_string()));
+        let pick = |typed, kept, login, vault| {
+            pick_sudo_password(typed, kept, login, vault).map(|p| p.to_string())
+        };
+
+        assert_eq!(pick(secret("typed"), secret("kept"), secret("login"), secret("vault")).as_deref(), Some("typed"));
+        assert_eq!(pick(None, secret("kept"), secret("login"), secret("vault")).as_deref(), Some("kept"));
+        assert_eq!(pick(None, None, secret("login"), secret("vault")).as_deref(), Some("login"));
+        assert_eq!(pick(None, None, None, secret("vault")).as_deref(), Some("vault"));
+        assert_eq!(pick(None, None, None, None), None);
+    }
+
+    #[test]
+    fn sudo_sh_closes_stdin_and_keeps_the_script_one_argument() {
+        assert_eq!(sudo_sh("id"), "sudo -S -p '' sh -c 'exec </dev/null; id'");
+        assert_eq!(
+            sudo_sh("echo 'hi'"),
+            "sudo -S -p '' sh -c 'exec </dev/null; echo '\\''hi'\\'''"
+        );
+    }
+
+    #[test]
     fn sudo_wraps_only_when_elevation_calls_for_it() {
         let reboot = request(PowerAction::Reboot, 0);
 
         let with_password = plan(OsFamily::Linux, &Elevation::SudoPassword, &reboot).unwrap();
-        assert_eq!(with_password.command, "sudo -S -p '' shutdown -r now");
+        assert_eq!(with_password.command, "sudo -S -p '' sh -c 'exec </dev/null; shutdown -r now'");
         assert!(with_password.needs_password);
 
         // NOPASSWD still needs the sudo prefix - just not a password.
         let no_password = plan(OsFamily::Linux, &Elevation::SudoNoPassword, &reboot).unwrap();
-        assert_eq!(no_password.command, "sudo -S -p '' shutdown -r now");
+        assert_eq!(no_password.command, "sudo -S -p '' sh -c 'exec </dev/null; shutdown -r now'");
         assert!(!no_password.needs_password);
 
         let as_root = plan(OsFamily::Linux, &Elevation::NotNeeded, &reboot).unwrap();

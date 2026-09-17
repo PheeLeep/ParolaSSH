@@ -1385,6 +1385,32 @@ code,
   z-index: 1070;
 }
 
+/* The prompt's command: two lines until clicked, then the whole thing in a
+   capped scroll box so a long script cannot push the buttons off screen.
+   The clamp sits on the inner span: on the padded box, a third line would
+   show through the bottom padding. */
+.elevation-command {
+  cursor: zoom-in;
+}
+
+.elevation-command__text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.elevation-command.is-expanded {
+  max-height: 40vh;
+  overflow: auto;
+  cursor: auto;
+}
+
+.elevation-command.is-expanded .elevation-command__text {
+  display: inline;
+  -webkit-line-clamp: unset;
+}
+
 /* Remote command output, and any message that arrives with newlines in it. */
 .command-output {
   max-height: 14rem;
@@ -1396,6 +1422,10 @@ code,
   font-size: 0.8125rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.command-output--expanded {
+  max-height: none;
 }
 
 .text-prewrap {

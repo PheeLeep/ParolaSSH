@@ -16,6 +16,7 @@
 //!   * `services` - list, act on, and read logs of system services.
 //!   * `metrics`  - one-round-trip performance sampling.
 //!   * `audit`    - remote security posture, tiered by cost.
+//!   * `security` - listening ports, firewall state, logged-in users.
 //!   * `probe`    - is the port even open, before we try anything else.
 
 pub mod audit;
@@ -27,6 +28,7 @@ pub mod power;
 pub mod probe;
 pub mod registry;
 pub mod secrets;
+pub mod security;
 pub mod services;
 pub mod sftp;
 pub mod shell;

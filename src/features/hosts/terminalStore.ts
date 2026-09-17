@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "./api";
+import { bindTerminalClipboard } from "../../lib/terminalClipboard";
 import {
   clampFontSize,
   readTerminalFont,
@@ -124,6 +125,7 @@ export async function open(
 
   const fit = new FitAddon();
   terminal.loadAddon(fit);
+  bindTerminalClipboard(terminal);
 
   const node = document.createElement("div");
   node.className = "terminal-host";

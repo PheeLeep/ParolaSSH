@@ -35,6 +35,7 @@ futures-util = { version = "0.3.33", default-features = false, features = ["std"
 tauri-plugin-single-instance = "2.4.3"
 russh-sftp = "2.3.0"
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 dirs = "6.0.0"

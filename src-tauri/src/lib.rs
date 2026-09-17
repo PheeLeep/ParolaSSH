@@ -38,6 +38,7 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             // Before anything else that might want to record a failure.
             logging::init(app.handle());

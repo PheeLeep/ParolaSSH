@@ -15,6 +15,7 @@
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import { bindTerminalClipboard } from "../../lib/terminalClipboard";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "./api";
 import { THEMES } from "./terminalStore";
@@ -101,6 +102,7 @@ function makeTerminal(theme: "light" | "dark"): {
 
   const fit = new FitAddon();
   terminal.loadAddon(fit);
+  bindTerminalClipboard(terminal);
   terminal.open(node);
 
   return { terminal, fit, node };

@@ -302,31 +302,67 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
-    let command = metrics::sample_command(report.os).unwrap();
-
-    // Windows needs no delta: `LoadPercentage` is instantaneous, so one sample
-    // carries CPU. The opposite of the Linux invariant below.
+    // Windows goes through the app's own path: one PowerShell kept alive on
+    // the session and asked once a second, as the pane does at its 1 s setting.
     if report.os == OsFamily::Windows {
-        let output = session.exec(command, None).await.unwrap();
-        assert!(output.succeeded(), "{}", output.failure_text());
+        use parolassh_lib::remote::registry::LiveSession;
 
-        // Uptime is `now - LastBootUpTime`, so a real clock is required.
-        let (sample, _) =
-            metrics::parse_windows(&output.stdout, &metrics::Readings::default(), now_ms());
-        println!(
-            "windows: cpu={:?} disks={} uptime={:?}s memory={:?}",
-            sample.cpu_percent,
-            sample.disks.len(),
-            sample.uptime_seconds,
-            sample.memory
+        let platform = platform::detect(&session, report.os).await;
+        let live = LiveSession::new(
+            "live-test".into(),
+            session,
+            report.os,
+            report.os_detail.clone(),
+            report.elevation.clone(),
+            platform,
+            String::new(),
         );
 
-        assert!(sample.cpu_percent.is_some(), "LoadPercentage should parse");
-        assert!(sample.memory.is_some(), "Win32_OperatingSystem should parse");
-        assert!(!sample.disks.is_empty(), "a Windows host has at least C:");
-        assert!(sample.uptime_seconds.is_some(), "LastBootUpTime should parse");
+        let mut samples = Vec::new();
+        for _ in 0..5 {
+            let started = std::time::Instant::now();
+            let sample = metrics::sample(&live).await.unwrap();
+            let took = started.elapsed();
+            println!(
+                "windows sample in {took:?}: cpu={:?} net={:?} disks={} uptime={:?}s",
+                sample.cpu_percent,
+                sample.network.as_ref().map(|n| (n.rx_bytes_per_sec, n.tx_bytes_per_sec)),
+                sample.disks.len(),
+                sample.uptime_seconds
+            );
+            samples.push((took, sample));
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
 
-        session.close().await;
+        let (_, first) = &samples[0];
+        assert!(first.cpu_percent.is_none(), "one reading is not a rate yet");
+        assert!(first.memory.is_some(), "Win32_OperatingSystem should parse");
+        assert!(!first.disks.is_empty(), "a Windows host has at least C:");
+        assert!(first.uptime_seconds.is_some(), "LastBootUpTime should parse");
+
+        for (took, sample) in &samples[1..] {
+            assert!(sample.cpu_percent.is_some(), "CPU comes from the second sample on");
+            assert!(sample.network.is_some(), "network counters should produce a rate");
+            // The sampler stays warm; a fresh PowerShell per sample took ~5 s.
+            assert!(*took < std::time::Duration::from_secs(3), "a warm sample took {took:?}");
+        }
+        // The sampler must leave with the session, not linger on the host.
+        drop(live.windows_sampler.lock().await.take());
+        let count = || async {
+            let probe = connect(&config).await;
+            let out = probe
+                .exec("tasklist /FI \"IMAGENAME eq powershell.exe\" /NH", None)
+                .await
+                .unwrap();
+            probe.close().await;
+            out.stdout.matches("powershell.exe").count()
+        };
+        let before = count().await;
+        live.session.close().await;
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        let after = count().await;
+        println!("powershell processes: {before} with the sampler closed, {after} after disconnect");
+        assert!(after <= before, "a sampler outlived its session");
         return;
     }
 
@@ -335,8 +371,9 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
         session.close().await;
         return;
     }
+    let command = metrics::sample_command(report.os).unwrap();
 
-    let first = session.exec(command, None).await.unwrap();
+    let first = session.exec(&command, None).await.unwrap();
     let (sample, previous) =
         metrics::parse_linux(&first.stdout, &metrics::Readings::default(), now_ms());
     assert!(sample.cpu_percent.is_none(), "the first sample has no delta yet");
@@ -345,7 +382,7 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
 
     tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
 
-    let second = session.exec(command, None).await.unwrap();
+    let second = session.exec(&command, None).await.unwrap();
     let (sample, _) = metrics::parse_linux(&second.stdout, &previous, now_ms());
     println!(
         "cpu={:?} load={:?} uptime={:?} network={:?} disk_io={:?}",

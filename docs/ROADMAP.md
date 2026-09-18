@@ -557,6 +557,24 @@ Verified live against a Kali container: detected as Docker, SysV, PID 1 `sshd`;
 the full live suite passes, 21 of 21. runit, s6 and a process list for bare
 containers are not built.
 
+## Windows performance sampling ✅
+
+On a Windows 10 VM the Performance pane showed no network and a CPU pinned at
+100%. Two causes, both found live (2026-09-18):
+
+| Problem | Fix |
+|---|---|
+| Every sample started a fresh PowerShell, about 5 s on a 2-core VM, so at a 1 s interval the host ran PowerShell non-stop | One PowerShell per session, kept alive and asked for a sample per line on stdin. Warm samples take 0.2-0.5 s; it exits when the session closes (asserted by the live test) |
+| The sampler read `[Console]::In` and stalled after one or two requests | powershell.exe reads redirected stdin itself to feed `$input`, so the two raced. The loop is `foreach ($request in $input)` |
+| `LoadPercentage` costs about a second per query, since WMI measures over that second | CPU is a delta of per-core raw idle counters, like Linux's `/proc/stat` |
+| `Get-NetAdapterStatistics` returns nothing over SSH on this Windows 10 | `Win32_PerfRawData_Tcpip_NetworkInterface` byte counters |
+| Quoting differs between cmd and PowerShell as sshd's shell | The script goes as `-EncodedCommand` |
+
+A stalled or failed sampler is dropped and restarted on the next sample, so a
+late answer can never be read as the reply to a later request. The VM's
+remaining high CPU was real - Defender and .NET image compilation - and is
+reported as such.
+
 ## Open questions
 
 | Question | State |
@@ -697,7 +715,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 328 |
+| Rust unit | `cargo test --lib` | 334 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 21, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
 | Frontend unit + component | `npm test` | 101 |

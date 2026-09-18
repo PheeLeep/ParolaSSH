@@ -69,6 +69,9 @@ pub struct LiveSession {
     /// Remote forward targets - the dispatcher reads this to route incoming
     /// `forwarded-tcpip` channels to local addresses.
     remote_targets: RemoteForwardMap,
+    /// The Windows metrics sampler, a PowerShell kept alive between samples.
+    /// A tokio mutex because a sample is awaited while it is held.
+    pub windows_sampler: tokio::sync::Mutex<Option<super::metrics::WindowsSampler>>,
     /// Consecutive heartbeats whose liveness check timed out on a transport
     /// that is still open, so one slow round trip does not reap the session.
     missed_beats: AtomicU8,
@@ -107,6 +110,7 @@ impl LiveSession {
             prev_readings: Mutex::new(Readings::default()),
             tunnels: Mutex::new(HashMap::new()),
             remote_targets: tunnel::new_remote_forward_map(),
+            windows_sampler: tokio::sync::Mutex::new(None),
             missed_beats: AtomicU8::new(0),
             browse: BrowseSession::default(),
         }

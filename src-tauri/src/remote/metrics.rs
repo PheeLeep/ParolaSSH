@@ -9,12 +9,16 @@
 //! yet" rather than sleeping inside the command.
 //!
 //! macOS and BSD have no `/proc` and get a partial (load, disks, network) with
-//! a note. Windows reports through CIM as JSON; its `LoadPercentage` is already
-//! instantaneous and needs no delta.
+//! a note. Windows reports through CIM as JSON from one PowerShell kept alive
+//! per session: starting PowerShell costs seconds on a small VM, so a fresh
+//! process per sample kept the host busy with nothing but being watched.
 
+use russh::client::Msg;
+use russh::{Channel, ChannelMsg};
 use serde::Serialize;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use super::client::Session;
 use super::registry::LiveSession;
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
@@ -155,25 +159,36 @@ const UNIX_FALLBACK_COMMAND: &str = "uptime; echo ---PAROLA---; df -P -k; \
 
 /// One PowerShell invocation, JSON out, so parsing does not depend on the
 /// display locale. `LoadPercentage` is instantaneous - no delta needed.
-const WINDOWS_COMMAND: &str = "powershell -NoProfile -NonInteractive -Command \
-    \"@{ os = Get-CimInstance Win32_OperatingSystem | Select-Object \
-    TotalVisibleMemorySize,FreePhysicalMemory,LastBootUpTime; \
-    cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property \
-    LoadPercentage -Average).Average; \
-    disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | \
-    Select-Object DeviceID,Size,FreeSpace); \
-    net = @(Get-NetAdapterStatistics -ErrorAction SilentlyContinue | \
-    Select-Object Name,ReceivedBytes,SentBytes); \
-    diskio = @(Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk | \
-    Select-Object Name,DiskReadBytesPersec,DiskWriteBytesPersec) } | \
-    ConvertTo-Json -Depth 3\"";
+/// One Windows sample as a single line of JSON. Raw counters throughout:
+/// `LoadPercentage` takes a second per query and formatted counters read 0 in
+/// a fresh query, so CPU is a delta of per-core idle time like Linux's. Network
+/// comes from the TCP/IP performance counters, because `Get-NetAdapterStatistics`
+/// returns nothing over SSH on some Windows 10 hosts.
+const WINDOWS_SAMPLE: &str = "@{ \
+    os = Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory,LastBootUpTime; \
+    cpuraw = @(Get-CimInstance Win32_PerfRawData_PerfOS_Processor | Where-Object Name -ne '_Total' | Select-Object PercentProcessorTime,Timestamp_Sys100NS); \
+    disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Select-Object DeviceID,Size,FreeSpace); \
+    net = @(Get-CimInstance Win32_PerfRawData_Tcpip_NetworkInterface | Select-Object Name,@{n='ReceivedBytes';e={$_.BytesReceivedPersec}},@{n='SentBytes';e={$_.BytesSentPersec}}); \
+    diskio = @(Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk | Select-Object Name,DiskReadBytesPersec,DiskWriteBytesPersec) \
+    } | ConvertTo-Json -Depth 3 -Compress";
+
+/// Encoded, so neither cmd.exe nor PowerShell as sshd's shell touches the quoting.
+fn powershell(script: &str) -> String {
+    use base64::Engine;
+    let script = format!("$ProgressPreference = 'SilentlyContinue'; {script}");
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!(
+        "powershell -NoProfile -NonInteractive -EncodedCommand {}",
+        base64::engine::general_purpose::STANDARD.encode(utf16)
+    )
+}
 
 /// The command a sample runs on this OS. Pure.
-pub fn sample_command(os: OsFamily) -> SshResult<&'static str> {
+pub fn sample_command(os: OsFamily) -> SshResult<String> {
     match os {
-        OsFamily::Linux => Ok(LINUX_COMMAND),
-        OsFamily::Macos | OsFamily::Bsd => Ok(UNIX_FALLBACK_COMMAND),
-        OsFamily::Windows => Ok(WINDOWS_COMMAND),
+        OsFamily::Linux => Ok(LINUX_COMMAND.to_string()),
+        OsFamily::Macos | OsFamily::Bsd => Ok(UNIX_FALLBACK_COMMAND.to_string()),
+        OsFamily::Windows => Ok(powershell(WINDOWS_SAMPLE)),
         OsFamily::Unknown => Err(SshError::unsupported(
             "The remote operating system is unknown, so no metrics command can be \
              chosen safely.",
@@ -181,10 +196,95 @@ pub fn sample_command(os: OsFamily) -> SshResult<&'static str> {
     }
 }
 
+/// Answers one sample per line written to it, until its stdin closes. Reads
+/// `$input`: powershell.exe consumes redirected stdin itself to feed it, so a
+/// script reading `[Console]::In` races the host and stalls after a line or two.
+fn windows_sampler_command() -> String {
+    powershell(&format!(
+        "foreach ($request in $input) {{ \
+         [Console]::Out.WriteLine(({WINDOWS_SAMPLE})); [Console]::Out.Flush() }}"
+    ))
+}
+
+/// The first answer includes PowerShell's startup, which is the slow part.
+const WINDOWS_SAMPLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// A PowerShell kept running on the host, asked for one sample at a time.
+pub struct WindowsSampler {
+    channel: Channel<Msg>,
+    pending: Vec<u8>,
+}
+
+impl WindowsSampler {
+    async fn start(session: &Session) -> SshResult<Self> {
+        let channel = session.open_channel().await?;
+        channel
+            .exec(true, windows_sampler_command())
+            .await
+            .map_err(|error| SshError::Io(format!("Could not start the metrics sampler: {error}")))?;
+        Ok(Self { channel, pending: Vec::new() })
+    }
+
+    async fn next(&mut self) -> SshResult<String> {
+        self.channel
+            .data(&b"\n"[..])
+            .await
+            .map_err(|error| SshError::Io(format!("The metrics sampler stopped: {error}")))?;
+        loop {
+            if let Some(line) = take_line(&mut self.pending) {
+                return Ok(line);
+            }
+            match self.channel.wait().await {
+                Some(ChannelMsg::Data { data }) => self.pending.extend_from_slice(&data),
+                Some(ChannelMsg::Eof | ChannelMsg::Close | ChannelMsg::ExitStatus { .. }) | None => {
+                    return Err(SshError::Io("The metrics sampler on the host exited.".into()))
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The next non-blank line, if a whole one has arrived. Pure.
+fn take_line(pending: &mut Vec<u8>) -> Option<String> {
+    while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+        let line: Vec<u8> = pending.drain(..=end).collect();
+        let text = String::from_utf8_lossy(&line).trim().to_string();
+        if !text.is_empty() {
+            return Some(text);
+        }
+    }
+    None
+}
+
+/// One Windows sample from the session's sampler, starting it if needed. A
+/// sampler that errs or stalls is dropped, so a late answer can never be read
+/// as the reply to a later request.
+async fn windows_sample(live: &LiveSession) -> SshResult<String> {
+    let mut slot = live.windows_sampler.lock().await;
+    if slot.is_none() {
+        *slot = Some(WindowsSampler::start(&live.session).await?);
+    }
+    let Some(sampler) = slot.as_mut() else { unreachable!() };
+    match tokio::time::timeout(WINDOWS_SAMPLE_TIMEOUT, sampler.next()).await {
+        Ok(Ok(line)) => Ok(line),
+        Ok(Err(error)) => {
+            *slot = None;
+            Err(error)
+        }
+        Err(_) => {
+            *slot = None;
+            Err(SshError::Io("The Windows host took too long to answer a metrics sample.".into()))
+        }
+    }
+}
+
 /// Take one sample from a live session.
 pub async fn sample(live: &LiveSession) -> SshResult<HostMetrics> {
-    let command = sample_command(live.os)?;
-    let output = live.session.exec(command, None).await?;
+    let stdout = match live.os {
+        OsFamily::Windows => windows_sample(live).await?,
+        os => live.session.exec(&sample_command(os)?, None).await?.stdout,
+    };
 
     let sampled_at_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -194,9 +294,9 @@ pub async fn sample(live: &LiveSession) -> SshResult<HostMetrics> {
     // After the exec, so the lock is never held across an await.
     let previous = live.prev_readings();
     let (metrics, current) = match live.os {
-        OsFamily::Linux => parse_linux(&output.stdout, &previous, sampled_at_ms),
-        OsFamily::Windows => parse_windows(&output.stdout, &previous, sampled_at_ms),
-        _ => parse_unix_fallback(&output.stdout, &previous, sampled_at_ms),
+        OsFamily::Linux => parse_linux(&stdout, &previous, sampled_at_ms),
+        OsFamily::Windows => parse_windows(&stdout, &previous, sampled_at_ms),
+        _ => parse_unix_fallback(&stdout, &previous, sampled_at_ms),
     };
     // A failed read keeps the older reading: the next delta just spans longer.
     live.set_prev_readings(Readings {
@@ -716,7 +816,12 @@ pub fn parse_windows(
         return (metrics, Readings::default());
     };
 
-    let cpu_percent = value.get("cpu").and_then(|cpu| cpu.as_f64());
+    let cpu_now = windows_cpu(value.get("cpuraw"));
+    let cpu_percent = match (previous.cpu, cpu_now) {
+        (Some(previous), Some(current)) => cpu_percent(previous, current),
+        // An older one-shot document carried `LoadPercentage` directly.
+        _ => value.get("cpu").and_then(|cpu| cpu.as_f64()),
+    };
 
     let memory = value.get("os").and_then(|os| {
         let total_kb = os.get("TotalVisibleMemorySize")?.as_u64()?;
@@ -751,11 +856,16 @@ pub fn parse_windows(
     };
 
     if cpu_percent.is_none() {
-        notes.push("The host did not report a CPU load figure.".to_string());
+        notes.push(if cpu_now.is_some() {
+            "CPU and network rates need two readings; they appear from the second sample on."
+                .to_string()
+        } else {
+            "The host did not report a CPU load figure.".to_string()
+        });
     }
 
     let current = Readings {
-        cpu: None,
+        cpu: cpu_now,
         net: windows_net(value.get("net"), sampled_at_ms),
         disk: windows_disk_io(value.get("diskio"), sampled_at_ms),
     };
@@ -778,7 +888,28 @@ pub fn parse_windows(
     )
 }
 
-/// `Get-NetAdapterStatistics` rows. A lone row may be unwrapped from its array.
+/// Per-core raw processor counters, summed. Idle time and the timestamp are
+/// both in 100 ns units, so busy = elapsed - idle across every core.
+fn windows_cpu(value: Option<&serde_json::Value>) -> Option<CpuTimes> {
+    let rows: Vec<&serde_json::Value> = match value? {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        item @ serde_json::Value::Object(_) => vec![item],
+        _ => return None,
+    };
+    let count = |row: &serde_json::Value, key: &str| -> Option<u64> {
+        let value = row.get(key)?;
+        value.as_u64().or_else(|| value.as_str()?.parse().ok())
+    };
+    let (mut idle, mut total) = (0_u64, 0_u64);
+    for row in &rows {
+        idle = idle.checked_add(count(row, "PercentProcessorTime")?)?;
+        total = total.checked_add(count(row, "Timestamp_Sys100NS")?)?;
+    }
+    (!rows.is_empty() && total >= idle).then(|| CpuTimes { busy: total - idle, total })
+}
+
+/// Network counter rows (`Name`, `ReceivedBytes`, `SentBytes`). A lone row may
+/// be unwrapped from its array.
 fn windows_net(value: Option<&serde_json::Value>, at_ms: i64) -> Option<NetCounters> {
     let rows: Vec<&serde_json::Value> = match value? {
         serde_json::Value::Array(items) => items.iter().collect(),
@@ -1127,5 +1258,40 @@ Filesystem 1024-blocks Used Available Capacity Mounted on\n\
     #[test]
     fn an_unknown_os_is_refused_rather_than_guessed() {
         assert!(sample_command(OsFamily::Unknown).is_err());
+    }
+
+    #[test]
+    fn windows_cpu_is_the_idle_delta_across_every_core() {
+        let doc = |idle0: u64, idle1: u64, stamp: u64| {
+            format!(
+                r#"{{ "cpuraw": [
+                    {{ "PercentProcessorTime": {idle0}, "Timestamp_Sys100NS": {stamp} }},
+                    {{ "PercentProcessorTime": {idle1}, "Timestamp_Sys100NS": {stamp} }} ] }}"#
+            )
+        };
+        let (first, reading) = parse_windows(&doc(900, 900, 1_000), &Readings::default(), 0);
+        assert!(first.cpu_percent.is_none(), "one reading is not a rate");
+        assert!(first.notes[0].contains("second sample"));
+
+        // 2 cores x 1000 elapsed, 1500 of it idle: 25% busy.
+        let (second, _) = parse_windows(&doc(1_650, 1_650, 2_000), &reading, 1_000);
+        assert_eq!(second.cpu_percent, Some(25.0));
+    }
+
+    #[test]
+    fn a_line_arrives_whole_or_not_at_all() {
+        let mut pending = b"\r\n{\"a\":1}\r\n{\"b\"".to_vec();
+        assert_eq!(take_line(&mut pending).as_deref(), Some("{\"a\":1}"));
+        assert_eq!(take_line(&mut pending), None, "half a line waits for the rest");
+        pending.extend_from_slice(b":2}\r\n");
+        assert_eq!(take_line(&mut pending).as_deref(), Some("{\"b\":2}"));
+    }
+
+    #[test]
+    fn the_windows_commands_survive_any_shell() {
+        let command = sample_command(OsFamily::Windows).unwrap();
+        assert!(command.starts_with("powershell -NoProfile -NonInteractive -EncodedCommand "));
+        assert!(!command.contains('"') && !command.contains('\''), "{command}");
+        assert!(windows_sampler_command().contains("-EncodedCommand"));
     }
 }

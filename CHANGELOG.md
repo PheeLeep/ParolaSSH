@@ -30,7 +30,9 @@ the code has macOS branches, but no Mac has ever run them.
 - **Tasks** - built-in and your own one-click commands, with a danger check
   before anything destructive
 - **Security** - handshake crypto, `sshd -T` posture, listening ports,
-  firewall state and logged-in users
+  firewall state and logged-in users; on Windows, a read-only Microsoft
+  Defender view (protection switches, definition age, scans, detections, and
+  any third-party antivirus in charge)
 - **Files** - SFTP browse, upload, download (files and folders), rename, move,
   server-side copy, delete; symlinks listed but never followed
 - **Tunnels** - local (`-L`) and remote (`-R`) port forwarding

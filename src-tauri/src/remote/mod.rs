@@ -18,11 +18,13 @@
 //!   * `metrics`  - one-round-trip performance sampling.
 //!   * `audit`    - remote security posture, tiered by cost.
 //!   * `security` - listening ports, firewall state, logged-in users.
+//!   * `defender` - Microsoft Defender posture on Windows hosts.
 //!   * `probe`    - is the port even open, before we try anything else.
 
 pub mod audit;
 pub mod client;
 pub mod commands;
+pub mod defender;
 pub mod jump;
 pub mod metrics;
 pub mod platform;

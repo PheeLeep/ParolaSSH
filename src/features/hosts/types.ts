@@ -580,6 +580,34 @@ export interface FirewallReport {
   note: string | null;
 }
 
+export type DefenderVerdict = "protected" | "attention" | "atRisk" | "thirdParty" | "unavailable";
+export type DefenderCheckState = "good" | "warn" | "bad" | "info";
+
+export interface DefenderCheck {
+  label: string;
+  state: DefenderCheckState;
+  value: string;
+}
+
+export interface DefenderDetection {
+  name: string;
+  detected: string | null;
+  active: boolean;
+  resolved: boolean;
+}
+
+export interface DefenderReport {
+  verdict: DefenderVerdict;
+  summary: string;
+  checks: DefenderCheck[];
+  detections: DefenderDetection[];
+  recentDetections: number;
+  otherAntivirus: { name: string; enabled: boolean }[];
+  productVersion: string | null;
+  note: string | null;
+  command: string;
+}
+
 export interface LoggedInUser {
   user: string;
   terminal: string | null;

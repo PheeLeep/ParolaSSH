@@ -9,6 +9,7 @@ import {
   RefreshCw,
   ShieldCheck,
   ShieldEllipsis,
+  ShieldHalf,
   ShieldOff,
   Users,
 } from "lucide-react";
@@ -19,6 +20,9 @@ import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
 import { AuditPane } from "./AuditPane";
 import type {
+  DefenderCheckState,
+  DefenderReport,
+  DefenderVerdict,
   FirewallBackend,
   FirewallReport,
   FirewallState,
@@ -27,10 +31,11 @@ import type {
   UsersReport,
 } from "../types";
 
-type Section = "audit" | "ports" | "firewall" | "users";
+type Section = "audit" | "defender" | "ports" | "firewall" | "users";
 
 const SECTIONS = [
   { value: "audit" as const, label: "Audit", Icon: ShieldCheck },
+  { value: "defender" as const, label: "Defender", Icon: ShieldHalf },
   { value: "ports" as const, label: "Ports", Icon: Network },
   { value: "firewall" as const, label: "Firewall", Icon: BrickWall },
   { value: "users" as const, label: "Users", Icon: Users },
@@ -38,6 +43,9 @@ const SECTIONS = [
 
 export function SecurityPane({ hostId }: { hostId: string }) {
   const [section, setSection] = useState<Section>("audit");
+  const { getConnection } = useHosts();
+  const windows = getConnection(hostId)?.os === "windows";
+  const sections = windows ? SECTIONS : SECTIONS.filter((entry) => entry.value !== "defender");
 
   useEffect(() => setSection("audit"), [hostId]);
 
@@ -46,7 +54,7 @@ export function SecurityPane({ hostId }: { hostId: string }) {
       <div>
         <Segmented
           value={section}
-          options={SECTIONS}
+          options={sections}
           onChange={setSection}
           label="Security section"
         />
@@ -54,6 +62,8 @@ export function SecurityPane({ hostId }: { hostId: string }) {
 
       {section === "audit" ? (
         <AuditPane hostId={hostId} />
+      ) : section === "defender" && windows ? (
+        <DefenderSection hostId={hostId} />
       ) : section === "ports" ? (
         <PortsSection hostId={hostId} />
       ) : section === "firewall" ? (
@@ -384,6 +394,157 @@ function FirewallCard({ backend }: { backend: FirewallBackend }) {
         </pre>
       </Card.Body>
     </Card>
+  );
+}
+
+const VERDICT_BADGE: Record<DefenderVerdict, { className: string; label: string }> = {
+  protected: { className: "status-badge status-badge--connected", label: "Protected" },
+  attention: { className: "status-badge status-badge--warning", label: "Needs attention" },
+  atRisk: { className: "status-badge status-badge--offline", label: "At risk" },
+  thirdParty: { className: "status-badge status-badge--connected", label: "Third-party antivirus" },
+  unavailable: { className: "status-badge status-badge--offline", label: "Unavailable" },
+};
+
+const CHECK_CLASS: Record<DefenderCheckState, string> = {
+  good: "text-success",
+  warn: "text-warning-emphasis",
+  bad: "text-danger fw-semibold",
+  info: "",
+};
+
+/** Read-only: shows Defender's settings, never changes them. */
+function DefenderSection({ hostId }: { hostId: string }) {
+  const [data, setData] = useState<DefenderReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.readDefender(hostId));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setLoading(false);
+    }
+  }, [hostId]);
+
+  useEffect(() => {
+    setData(null);
+    void refresh();
+  }, [refresh]);
+
+  const badge = data ? VERDICT_BADGE[data.verdict] : null;
+
+  return (
+    <div className="d-flex flex-column gap-3">
+      <Toolbar
+        loading={loading}
+        canSudo={false}
+        elevated={false}
+        onRefresh={() => void refresh()}
+        onSudo={() => {}}
+        onDropSudo={() => {}}
+      />
+
+      {error && <Alert variant="danger" className="text-prewrap mb-0">{error}</Alert>}
+
+      {loading && !data ? (
+        <Loading label="Reading Microsoft Defender…" />
+      ) : (
+        data &&
+        badge && (
+          <>
+            <Card>
+              <Card.Body>
+                <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                  <h2 className="h6 mb-0">Microsoft Defender</h2>
+                  <span className={badge.className}>{badge.label}</span>
+                  {data.productVersion && (
+                    <span className="text-body-secondary small">{data.productVersion}</span>
+                  )}
+                </div>
+                <p className="mb-2">{data.summary}</p>
+                {data.checks.length > 0 && (
+                  <Table size="sm" className="mb-0">
+                    <tbody>
+                      {data.checks.map((check) => (
+                        <tr key={check.label}>
+                          <th scope="row" className="fw-normal text-body-secondary">
+                            {check.label}
+                          </th>
+                          <td className={CHECK_CLASS[check.state]}>{check.value}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                )}
+              </Card.Body>
+            </Card>
+
+            <Note text={data.note} />
+
+            {data.otherAntivirus.length > 0 && (
+              <Card>
+                <Card.Body>
+                  <h2 className="h6">Other antivirus</h2>
+                  <ul className="mb-0">
+                    {data.otherAntivirus.map((product) => (
+                      <li key={product.name}>
+                        {product.name}{" "}
+                        <span className="text-body-secondary small">
+                          {product.enabled ? "on" : "off"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card.Body>
+              </Card>
+            )}
+
+            <Card>
+              <Card.Body>
+                <h2 className="h6">
+                  Detections{" "}
+                  <span className="text-body-secondary small fw-normal">
+                    {data.recentDetections} in the last 30 days
+                  </span>
+                </h2>
+                {data.detections.length === 0 ? (
+                  <p className="text-body-secondary mb-0">No threats on record.</p>
+                ) : (
+                  <Table size="sm" className="mb-0">
+                    <thead>
+                      <tr>
+                        <th>Threat</th>
+                        <th>Detected</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.detections.map((detection, index) => (
+                        <tr key={`${detection.name}-${index}`}>
+                          <td className="font-monospace small">{detection.name}</td>
+                          <td className="text-nowrap">{detection.detected ?? "-"}</td>
+                          <td className={detection.active ? "text-danger fw-semibold" : ""}>
+                            {detection.active
+                              ? "Still present"
+                              : detection.resolved
+                                ? "Removed"
+                                : "No longer present"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                )}
+              </Card.Body>
+            </Card>
+          </>
+        )
+      )}
+    </div>
   );
 }
 

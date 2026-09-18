@@ -11,6 +11,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use zeroize::Zeroizing;
 
+use super::defender;
 use super::client::{ConnectStage, Credentials, Progress, Session, Target};
 use super::power::{self, Elevation, PowerOutcome, PowerRequest, PowerPlan, PrivilegeReport};
 use super::jump;
@@ -993,6 +994,19 @@ pub async fn read_firewall(
         command,
         security::uses_sudo(&live.elevation, elevate),
     )
+}
+
+/// Microsoft Defender's posture on a Windows host. Read-only.
+#[tauri::command]
+pub async fn read_defender(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<defender::DefenderReport> {
+    let live = registry.require(&host_id)?;
+    let command = defender::command(live.os)?;
+    // Defender cmdlets can be slow on a cold PowerShell.
+    let output = live.session.exec_with_timeout(&command, None, Duration::from_secs(60)).await?;
+    defender::parse(&output, command)
 }
 
 /// Accounts currently logged in to the host.

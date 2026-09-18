@@ -25,6 +25,7 @@ import type {
   PowerRequest,
   ProbeResult,
   RemoteAuditReport,
+  DefenderReport,
   FirewallReport,
   PortsReport,
   SecurityView,
@@ -279,6 +280,9 @@ export const readFirewall = (
   elevate: boolean,
   password: string | null = null,
 ) => invoke<FirewallReport>("read_firewall", { hostId, elevate, password });
+
+/** Microsoft Defender's posture on a Windows host. Read-only. */
+export const readDefender = (hostId: string) => invoke<DefenderReport>("read_defender", { hostId });
 
 /** Whether the session holds an accepted sudo password a prompt can reuse. */
 /** Check a typed sudo password; once accepted the session keeps it. */

@@ -27,7 +27,7 @@
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
 use parolassh_lib::remote::{
-    audit, metrics, platform, probe, services, sftp, transfer_task, tunnel, OsFamily,
+    audit, defender, metrics, platform, probe, services, sftp, transfer_task, tunnel, OsFamily,
 };
 use zeroize::Zeroizing;
 
@@ -226,6 +226,34 @@ async fn runs_a_command_and_captures_both_streams() {
     assert_eq!(output.stderr.trim(), "to-stderr");
     assert_eq!(output.exit_code, Some(3));
     assert!(!output.succeeded());
+
+    session.close().await;
+}
+
+/// Defender reads without admin tricks and grades cleanly; elsewhere it is refused.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn reads_defender_posture_on_windows_only() {
+    let config = config();
+    let session = connect(&config).await;
+    let os = power::check_privileges(&session).await.unwrap().os;
+
+    if os != OsFamily::Windows {
+        assert!(defender::command(os).is_err());
+        session.close().await;
+        return;
+    }
+
+    let command = defender::command(os).unwrap();
+    let output = session
+        .exec_with_timeout(&command, None, std::time::Duration::from_secs(60))
+        .await
+        .unwrap();
+    let report = defender::parse(&output, command).expect("Defender output should parse");
+    println!("{:?}: {}\n{:#?}\nnote={:?}", report.verdict, report.summary, report.checks, report.note);
+
+    assert!(!report.checks.is_empty(), "a Windows 10 client ships Defender: {report:?}");
+    assert!(report.product_version.is_some());
 
     session.close().await;
 }

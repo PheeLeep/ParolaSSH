@@ -5,9 +5,9 @@ import {
   Ban,
   Eye,
   ListChecks,
+  LucideSkull,
   Play,
   Plus,
-  ShieldAlert,
   Square,
   Trash2,
 } from "lucide-react";
@@ -477,7 +477,7 @@ function DangerNotice({
         {blocked ? (
           <Ban className="icon-sm" aria-hidden="true" />
         ) : destructive ? (
-          <ShieldAlert className="icon-sm" aria-hidden="true" />
+          <LucideSkull className="icon-sm" aria-hidden="true" />
         ) : (
           <AlertTriangle className="icon-sm" aria-hidden="true" />
         )}

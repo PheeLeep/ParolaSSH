@@ -61,7 +61,7 @@ describe("ConnectDialog", () => {
   it("explains that a remembered password stays in memory", async () => {
     const { user } = renderDialog();
     await user.click(screen.getByLabelText("Remember this password until I quit"));
-    expect(screen.getByText(/not in your keychain, and not on disk/)).toBeInTheDocument();
+    expect(screen.getByText(/Held in memory only until you exit ParolaSSH/)).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Password for pheeleep"), "pw{Enter}");
     expect(connect).toHaveBeenCalledWith("h1", expect.objectContaining({ remember: true }));

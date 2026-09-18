@@ -292,8 +292,7 @@ export function ConnectDialog({
               <Alert variant="secondary" className="mt-2 mb-0 d-flex gap-2 py-2 small">
                 <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
                 <div>
-                  Held in memory only - not in your keychain, and not on disk.
-                  Quitting ParolaSSH forgets it.
+                  Held in memory only until you exit ParolaSSH.
                 </div>
               </Alert>
             )}

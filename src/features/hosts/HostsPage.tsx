@@ -27,7 +27,7 @@ export function HostsPage({ onNavigate }: { onNavigate: Navigate }) {
   const columns = useMemo(() => createHostColumns(actions), [actions]);
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <header className="d-flex flex-wrap align-items-center gap-3 mb-4">
         <div className="me-auto">
           <h1 className="page-title">All hosts</h1>

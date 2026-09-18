@@ -77,7 +77,7 @@ export function HostDetail({
   const fill = (feature === "terminal" || feature === "files") && !locked;
 
   return (
-    <div className={`page${fill ? " page--fill" : ""}`}>
+    <div className={`page page--wide${fill ? " page--fill" : ""}`}>
       {/* Pinned while the pane below scrolls, so the host and its tabs stay in reach. */}
       <div className="host-chrome">
         <Button

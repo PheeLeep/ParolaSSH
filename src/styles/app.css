@@ -491,6 +491,11 @@ code,
   padding: 1.75rem 1.5rem 2.5rem;
 }
 
+/* Dashboards and tables use a wide window instead of centring in a gutter. */
+.page--wide {
+  max-width: 112rem;
+}
+
 /* Settings and About read better in a narrower column than a data table. */
 .page--narrow {
   max-width: 44rem;

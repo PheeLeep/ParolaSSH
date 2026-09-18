@@ -198,6 +198,7 @@ pub async fn resources() -> Option<Vec<TwingateResource>> {
     None
 }
 
+#[cfg(any(target_os = "linux", test))]
 /// Read the table `twingate resources` prints: tab-separated name, address,
 /// alias (`-` for none), auth status. Rows that do not fit - header, errors, a
 /// future format change - are skipped rather than half-parsed.
@@ -239,4 +240,41 @@ fn in_cidr(ip: Ipv4Addr, base: Ipv4Addr, prefix: u8) -> bool {
     }
     let mask = u32::MAX << (32 - u32::from(prefix));
     (u32::from(ip) & mask) == (u32::from(base) & mask)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_words_map_onto_up_and_detail() {
+        assert!(interpret("online\n").up);
+        let stopped = interpret("not-running");
+        assert!(!stopped.up);
+        assert_eq!(stopped.detail, "not running");
+        assert_eq!(interpret("authenticating").detail, "authenticating");
+        assert_eq!(interpret("").detail, "state unknown");
+    }
+
+    #[test]
+    fn resources_table_is_read_row_by_row() {
+        // Invented resources, in the client's tab-separated layout.
+        let table = "Resource\tAddress\tAlias\tAuth Status\n\
+                     lab\t192.168.9.0/24\t-\tAuth expires in 4 days\n\
+                     wiki\t*.example.internal\twiki.lan\tAuthentication required\n\
+                     a row that does not fit\n";
+        let resources = parse_resources(table);
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].alias, None);
+        assert!(resources[0].matches("192.168.9.59"));
+        assert_eq!(resources[1].alias.as_deref(), Some("wiki.lan"));
+        assert!(resources[1].needs_auth());
+        assert!(resources[1].matches("docs.example.internal"));
+        assert!(!resources[1].matches("example.internal"));
+    }
+
+    #[test]
+    fn an_error_instead_of_a_table_yields_nothing() {
+        assert!(parse_resources("Twingate must be connected to display available resources\n").is_empty());
+    }
 }

@@ -1330,7 +1330,7 @@ pub async fn copy_remote_entry(
 }
 
 /// The copy command for one remote OS. Pure, so the quoting is unit-tested.
-fn copy_command(os: OsFamily, from: &str, to: &str) -> SshResult<String> {
+pub fn copy_command(os: OsFamily, from: &str, to: &str) -> SshResult<String> {
     match os {
         // `-a` keeps modes and timestamps; `--` stops a path that begins with a
         // dash being read as a flag.
@@ -1360,7 +1360,7 @@ fn copy_command(os: OsFamily, from: &str, to: &str) -> SshResult<String> {
 }
 
 /// `/C:/Users/me` → `C:\Users\me`, for a command line rather than the wire.
-fn to_windows_path(path: &str) -> String {
+pub fn to_windows_path(path: &str) -> String {
     path.trim_start_matches('/').replace('/', "\\")
 }
 

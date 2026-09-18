@@ -676,11 +676,52 @@ async fn write_new(sftp: &russh_sftp::client::SftpSession, path: &str, data: &[u
     file.shutdown().await.unwrap();
 }
 
+/// A fresh folder under the SFTP home. `/tmp` does not exist on Windows; a
+/// home directory exists everywhere, and is `/C:/Users/...` there.
+async fn scratch_dir(sftp: &russh_sftp::client::SftpSession, name: &str) -> String {
+    let home = sftp::home_dir(sftp).await.unwrap();
+    let dir = sftp::join(&home, &format!("parolassh-{name}-{}", now_ms()));
+    sftp.create_dir(dir.clone()).await.unwrap();
+    dir
+}
+
+/// Delete a scratch tree over SFTP, so cleanup needs no shell on any OS.
+fn remove_tree<'a>(
+    sftp: &'a russh_sftp::client::SftpSession,
+    path: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        if let Ok(listing) = sftp::list_dir(sftp, path).await {
+            for entry in listing.entries {
+                if entry.kind == sftp::EntryKind::Dir {
+                    remove_tree(sftp, &entry.path).await;
+                } else {
+                    let _ = sftp.remove_file(entry.path.clone()).await;
+                }
+            }
+        }
+        let _ = sftp.remove_dir(path.to_string()).await;
+    })
+}
+
+/// Make a symlink the way a user on that OS would: `ln -s`, or `mklink`
+/// through cmd, which answers whether sshd's shell is cmd or PowerShell.
+async fn make_link(session: &Session, os: OsFamily, target: &str, link: &str) {
+    use parolassh_lib::remote::commands::to_windows_path;
+    let command = if os == OsFamily::Windows {
+        format!("cmd /c mklink \"{}\" \"{}\"", to_windows_path(link), to_windows_path(target))
+    } else {
+        format!("ln -s '{target}' '{link}'")
+    };
+    let made = session.exec(&command, None).await.unwrap();
+    assert!(made.succeeded(), "could not create the test link: {}", made.failure_text());
+}
+
 /// A full round trip over the subsystem: upload a file, read it back, and
 /// confirm the bytes survived.
 ///
-/// Everything is written under `/tmp` and removed again, so a failed run leaves
-/// at most one stray file on a throwaway box.
+/// Everything is written under a scratch folder in the home directory and
+/// removed again, so a failed run leaves at most one stray folder.
 #[tokio::test]
 #[ignore = "needs a live host: see the module docs"]
 async fn uploads_and_downloads_a_file_intact() {
@@ -688,8 +729,7 @@ async fn uploads_and_downloads_a_file_intact() {
     let session = connect(&config).await;
     let sftp = sftp::connect(&session).await.unwrap();
 
-    let dir = format!("/tmp/parolassh-sftp-{}", now_ms());
-    sftp.create_dir(dir.clone()).await.unwrap();
+    let dir = scratch_dir(&sftp, "sftp").await;
 
     // Deliberately not text: a transfer that mangles high bytes or embedded
     // NULs would still pass a "hello world" check.
@@ -729,22 +769,19 @@ async fn a_symlink_is_reported_as_one_and_refused() {
     let session = connect(&config).await;
     let sftp = sftp::connect(&session).await.unwrap();
 
-    let dir = format!("/tmp/parolassh-link-{}", now_ms());
-    sftp.create_dir(dir.clone()).await.unwrap();
+    let (os, _) = power::detect_os(&session).await.unwrap();
+    let dir = scratch_dir(&sftp, "link").await;
 
     let real = format!("{dir}/real.txt");
     write_new(&sftp, &real, b"contents").await;
 
-    // Made with `ln -s` rather than the SFTP helper: what matters is that we
-    // correctly *read* a link created the ordinary way, and the protocol's own
-    // symlink request has a well-known argument-order disagreement between the
-    // draft and OpenSSH that is not ours to take a side in.
+    // Made with the OS's own tool rather than the SFTP helper: what matters is
+    // that we correctly *read* a link created the ordinary way, and the
+    // protocol's own symlink request has a well-known argument-order
+    // disagreement between the draft and OpenSSH that is not ours to take a
+    // side in.
     let link = format!("{dir}/link.txt");
-    let made = session
-        .exec(&format!("ln -s {real} {link}"), None)
-        .await
-        .unwrap();
-    assert!(made.succeeded(), "could not create the test link: {}", made.failure_text());
+    make_link(&session, os, &real, &link).await;
 
     let listing = sftp::list_dir(&sftp, &dir).await.unwrap();
     let entry = listing
@@ -775,9 +812,7 @@ async fn a_symlink_is_reported_as_one_and_refused() {
     // The real file behind it is still transferable.
     assert_eq!(sftp::stat_regular_file(&sftp, &real).await.unwrap(), 8);
 
-    sftp.remove_file(link).await.unwrap();
-    sftp.remove_file(real).await.unwrap();
-    sftp.remove_dir(dir).await.unwrap();
+    remove_tree(&sftp, &dir).await;
     session.close().await;
 }
 
@@ -794,8 +829,15 @@ async fn a_denied_path_says_sftp_cannot_elevate() {
     let config = config();
     let session = connect(&config).await;
 
-    let whoami = session.exec("id -u", None).await.unwrap();
-    if whoami.stdout.trim() == "0" {
+    let report = power::check_privileges(&session).await.unwrap();
+    if report.os == OsFamily::Windows {
+        // No `/etc/shadow` analogue: an administrator's OpenSSH logon holds
+        // the full token, and a standard user's denials read differently.
+        skip("the /etc/shadow premise is Unix-only");
+        session.close().await;
+        return;
+    }
+    if report.elevation == Elevation::NotNeeded {
         skip("connected as root, so nothing is denied");
         session.close().await;
         return;
@@ -876,7 +918,10 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     let scratch = tempfile::tempdir().unwrap();
     let source_path = scratch.path().join("payload.bin");
     let returned_path = scratch.path().join("returned.bin");
-    let remote_path = format!("/tmp/parolassh-1g-{}.bin", now_ms());
+    let sftp = sftp::connect(&session).await.unwrap();
+    let (os, _) = power::detect_os(&session).await.unwrap();
+    let scratch_remote = scratch_dir(&sftp, "1g").await;
+    let remote_path = format!("{scratch_remote}/payload.bin");
 
     // 1 GiB of non-repeating bytes, generated rather than read from
     // /dev/urandom so the test does not depend on the host's entropy device.
@@ -906,16 +951,25 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     assert_eq!(*seen.lock().unwrap(), SIZE, "progress must end at the full size");
 
     // The server's own view of what it received, computed by the server.
-    let remote_sum = session
-        .exec_with_timeout(
-            &format!("sha256sum {remote_path}"),
-            None,
-            std::time::Duration::from_secs(600),
+    let hash_command = if os == OsFamily::Windows {
+        format!(
+            "powershell -NoProfile -NonInteractive -Command \"(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash\"",
+            parolassh_lib::remote::commands::to_windows_path(&remote_path)
         )
+    } else {
+        format!("sha256sum '{remote_path}'")
+    };
+    let remote_sum = session
+        .exec_with_timeout(&hash_command, None, std::time::Duration::from_secs(600))
         .await
         .unwrap();
     assert!(remote_sum.succeeded(), "{}", remote_sum.failure_text());
-    let remote_digest = remote_sum.stdout.split_whitespace().next().unwrap().to_string();
+    let remote_digest = remote_sum
+        .stdout
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_ascii_lowercase();
     eprintln!("remote sha256 = {remote_digest}");
     assert_eq!(
         remote_digest, local_digest,
@@ -951,11 +1005,8 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     let part = transfer_task::part_path_for(&returned_path);
     assert!(!part.exists(), "the .part file should not survive a success");
 
-    let cleaned = session
-        .exec(&format!("rm -f {remote_path}"), None)
-        .await
-        .unwrap();
-    assert!(cleaned.succeeded(), "{}", cleaned.failure_text());
+    remove_tree(&sftp, &scratch_remote).await;
+    assert!(!sftp.try_exists(remote_path).await.unwrap(), "the remote copy should be gone");
     session.close().await;
 }
 
@@ -1010,21 +1061,15 @@ async fn a_folder_walk_finds_files_and_skips_links() {
     let session = connect(&config).await;
     let sftp = sftp::connect(&session).await.unwrap();
 
-    let root = format!("/tmp/parolassh-tree-{}", now_ms());
-    let build = session
-        .exec(
-            &format!(
-                "mkdir -p {root}/a/b {root}/empty && \
-                 echo one > {root}/top.txt && \
-                 echo two > {root}/a/mid.txt && \
-                 echo three > {root}/a/b/deep.txt && \
-                 ln -s {root}/top.txt {root}/a/link.txt"
-            ),
-            None,
-        )
-        .await
-        .unwrap();
-    assert!(build.succeeded(), "{}", build.failure_text());
+    let (os, _) = power::detect_os(&session).await.unwrap();
+    let root = scratch_dir(&sftp, "tree").await;
+    for dir in ["a", "a/b", "empty"] {
+        sftp.create_dir(format!("{root}/{dir}")).await.unwrap();
+    }
+    write_new(&sftp, &format!("{root}/top.txt"), b"one\n").await;
+    write_new(&sftp, &format!("{root}/a/mid.txt"), b"two\n").await;
+    write_new(&sftp, &format!("{root}/a/b/deep.txt"), b"three\n").await;
+    make_link(&session, os, &format!("{root}/top.txt"), &format!("{root}/a/link.txt")).await;
 
     let tree = sftp::walk(&sftp, &root).await.unwrap();
     let relatives: Vec<&str> = tree.files.iter().map(|f| f.relative.as_str()).collect();
@@ -1040,7 +1085,7 @@ async fn a_folder_walk_finds_files_and_skips_links() {
     // The empty directory contributes nothing: only files are transferred.
     assert!(!relatives.iter().any(|path| path.contains("empty")));
 
-    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    remove_tree(&sftp, &root).await;
     session.close().await;
 }
 
@@ -1052,8 +1097,7 @@ async fn rename_moves_and_never_overwrites() {
     let session = connect(&config).await;
     let sftp = sftp::connect(&session).await.unwrap();
 
-    let root = format!("/tmp/parolassh-mv-{}", now_ms());
-    sftp.create_dir(root.clone()).await.unwrap();
+    let root = scratch_dir(&sftp, "mv").await;
     sftp.create_dir(format!("{root}/sub")).await.unwrap();
     write_new(&sftp, &format!("{root}/a.txt"), b"first").await;
     write_new(&sftp, &format!("{root}/b.txt"), b"second").await;
@@ -1076,7 +1120,7 @@ async fn rename_moves_and_never_overwrites() {
     );
     assert_eq!(sftp.read(format!("{root}/b.txt")).await.unwrap(), b"second");
 
-    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    remove_tree(&sftp, &root).await;
     session.close().await;
 }
 
@@ -1089,32 +1133,32 @@ async fn a_server_side_copy_duplicates_a_tree() {
     let session = connect(&config).await;
     let sftp = sftp::connect(&session).await.unwrap();
 
-    let root = format!("/tmp/parolassh-cp-{}", now_ms());
-    let build = session
-        .exec(&format!(
-            "mkdir -p {root}/src/inner && echo hello > {root}/src/inner/f.txt"
-        ), None)
-        .await
-        .unwrap();
-    assert!(build.succeeded(), "{}", build.failure_text());
+    let (os, _) = power::detect_os(&session).await.unwrap();
+    let root = scratch_dir(&sftp, "cp").await;
+    sftp.create_dir(format!("{root}/src")).await.unwrap();
+    sftp.create_dir(format!("{root}/src/inner")).await.unwrap();
+    write_new(&sftp, &format!("{root}/src/inner/f.txt"), b"hello\n").await;
 
-    // Exactly what `copy_remote_entry` runs.
-    let command = format!(
-        "cp -a -- '{root}/src' '{root}/dst'"
-    );
+    // Exactly what `copy_remote_entry` runs, per OS.
+    let command = parolassh_lib::remote::commands::copy_command(
+        os,
+        &format!("{root}/src"),
+        &format!("{root}/dst"),
+    )
+    .unwrap();
     let copied = session.exec(&command, None).await.unwrap();
     assert!(copied.succeeded(), "{}", copied.failure_text());
 
     assert_eq!(
         sftp.read(format!("{root}/dst/inner/f.txt")).await.unwrap(),
-        b"hello\n", // `echo` adds the newline
+        b"hello\n",
 
         "the copy should carry the whole tree"
     );
     // The original is untouched.
     assert!(sftp.try_exists(format!("{root}/src/inner/f.txt")).await.unwrap());
 
-    let _ = session.exec(&format!("rm -rf {root}"), None).await;
+    remove_tree(&sftp, &root).await;
     session.close().await;
 }
 

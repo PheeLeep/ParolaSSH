@@ -699,7 +699,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 |---|---|---|
 | Rust unit | `cargo test --lib` | 328 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs a VM) | see below | 21, all `#[ignore]`d · green on Linux **and** Windows |
+| Rust live (needs a VM) | see below | 21, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
 | Frontend unit + component | `npm test` | 101 |
 | Frontend types | `npx tsc --noEmit` | - |
 
@@ -738,14 +738,21 @@ than passed. They previously returned early when the environment was unset,
 which libtest counted as **11 passed** against a machine they had never
 contacted. Asking for them without naming a host is now a hard failure.
 
-All 11 assert on both Linux and Windows - verified green against a Windows 11
-VM (`OpenSSH_for_Windows_9.5`). What used to skip now asserts the *other*
+All 21 pass on three targets, verified 2026-09-18: an Ubuntu 24.04 VM, a
+Windows 10 VM (`OpenSSH_for_Windows_9.5`, replacing the earlier Windows 11 VM)
+and a Kali Docker container with no systemd. The SFTP tests used to hard-code
+`/tmp` and clean up with `rm -rf`, so they had never run on Windows; they now
+work in a scratch folder under the SFTP home, build their trees over SFTP, make
+links with `ln -s` or `mklink`, hash with `sha256sum` or `Get-FileHash`, and
+clean up over SFTP. The server-side copy test runs the app's own
+`copy_command`. What used to skip now asserts the *other*
 platform's behaviour: Windows CPU needs no delta (`LoadPercentage` is
 instantaneous), tier 1 is Unix-only so the report must assemble from tier 0
 alone with `tier1_ran = false`, Windows power needs no password and no `sudo`,
 and the reboot cancel is verified by a second `shutdown /a` failing with 1116.
 
-`skip()` remains only for macOS/BSD, which no VM covers yet. A skip still
+`skip()` remains for macOS/BSD, which no VM covers yet, and for the
+`/etc/shadow` denial, which has no Windows analogue. A skip still
 reports `ok` - libtest has no runtime "skipped" outcome - so prefer a per-OS
 assertion over calling it.
 

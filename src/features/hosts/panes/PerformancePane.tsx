@@ -22,7 +22,7 @@ import type { DiskIo, NetworkRate } from "../types";
  *  way - deliberately not the 30-second heartbeat, which answers "is it
  *  up?" and is uselessly coarse for watching a load spike. */
 const INTERVALS: { value: IntervalChoice; label: string }[] = [
-  {value: "0.5", label: "500ms"},
+  { value: "0.5", label: "500ms" },
   { value: "1", label: "1s" },
   { value: "2", label: "2s" },
   { value: "5", label: "5s" },
@@ -263,7 +263,8 @@ export function PerformancePane({ hostId }: { hostId: string }) {
           <div className="stat-grid">
             <div className="stat-tile">
               <div className="stat-tile__label">
-                <HardDriveDownload className="stat-tile__glyph" aria-hidden="true" />
+                <HardDriveUpload className="stat-tile__glyph" aria-hidden="true" />
+
                 Read
               </div>
               <div className="stat-tile__value">
@@ -276,7 +277,7 @@ export function PerformancePane({ hostId }: { hostId: string }) {
 
             <div className="stat-tile">
               <div className="stat-tile__label">
-                <HardDriveUpload className="stat-tile__glyph" aria-hidden="true" />
+                <HardDriveDownload className="stat-tile__glyph" aria-hidden="true" />
                 Write
               </div>
               <div className="stat-tile__value">

@@ -11,7 +11,7 @@ import type { HostMetrics } from "./types";
 /** How many samples the charts keep. */
 export const HISTORY_LIMIT = 60;
 
-export type IntervalChoice = "1" | "2" | "5" | "10" | "30";
+export type IntervalChoice = "0.5" |"1" | "2" | "5" | "10" | "30";
 
 type Entry = {
   history: HostMetrics[];

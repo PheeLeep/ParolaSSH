@@ -13,11 +13,12 @@ import type { NetworkRate } from "../types";
  *  way - deliberately not the 30-second heartbeat, which answers "is it
  *  up?" and is uselessly coarse for watching a load spike. */
 const INTERVALS: { value: IntervalChoice; label: string }[] = [
-  { value: "1", label: "1 s" },
-  { value: "2", label: "2 s" },
-  { value: "5", label: "5 s" },
-  { value: "10", label: "10 s" },
-  { value: "30", label: "30 s" },
+  {value: "0.5", label: "500ms"},
+  { value: "1", label: "1s" },
+  { value: "2", label: "2s" },
+  { value: "5", label: "5s" },
+  { value: "10", label: "10s" },
+  { value: "30", label: "30s" },
 ];
 
 /** Where the CPU trace turns red. Sustained load above this is the point at

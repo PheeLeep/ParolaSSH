@@ -1,0 +1,49 @@
+# Maintainer: PheeLeep
+#
+# Repackages the release .deb so ParolaSSH runs on the system WebKitGTK
+# rather than the older copy the AppImage bundles. Build and install with:
+#
+#   makepkg -si
+#
+# pacman owns the files, so the app does not update itself: bump pkgver and
+# the checksum (from the release's SHA256SUMS.txt), then run makepkg again.
+
+pkgname=parolassh-bin
+pkgver=1.0.3
+pkgrel=1
+pkgdesc="GUI SSH remote console and server manager"
+arch=('x86_64')
+url="https://github.com/PheeLeep/ParolaSSH"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'libsoup3' 'cairo' 'gdk-pixbuf2' 'dbus'
+         'libayatana-appindicator' 'hicolor-icon-theme')
+provides=('parolassh')
+conflicts=('parolassh')
+source=("ParolaSSH_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/ParolaSSH_${pkgver}_amd64.deb"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/LICENSE")
+sha256sums=('18f539b9dd6be4ad7c27475ac2a1fd5f7925561475ce5358422842d639953aac'
+            'SKIP')
+noextract=("ParolaSSH_${pkgver}_amd64.deb")
+
+prepare() {
+  mkdir -p deb
+  bsdtar -xf "ParolaSSH_${pkgver}_amd64.deb" -C deb data.tar.gz
+  bsdtar -xf deb/data.tar.gz -C deb
+}
+
+package() {
+  install -Dm755 deb/usr/bin/parolassh "$pkgdir/usr/bin/parolassh"
+
+  for size in 32x32 128x128; do
+    install -Dm644 "deb/usr/share/icons/hicolor/$size/apps/parolassh.png" \
+      "$pkgdir/usr/share/icons/hicolor/$size/apps/parolassh.png"
+  done
+  install -Dm644 "deb/usr/share/icons/hicolor/256x256@2/apps/parolassh.png" \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/parolassh.png"
+
+  # Named after the Wayland app_id, so the dock matches the window to its icon.
+  install -Dm644 deb/usr/share/applications/ParolaSSH.desktop \
+    "$pkgdir/usr/share/applications/parolassh.desktop"
+
+  install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

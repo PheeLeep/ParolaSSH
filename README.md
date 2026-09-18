@@ -97,6 +97,19 @@ Download the latest build from
 | Debian, Ubuntu, Kali | `.deb` |
 | Fedora, openSUSE | `.rpm` |
 | Any other Linux | `.AppImage` (`chmod +x`, then run it) |
+| Arch, CachyOS, Manjaro | [`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD) (below) |
+
+**On Arch-based systems, prefer the PKGBUILD over the AppImage.** It
+repackages the release `.deb` to run on your system's WebKitGTK, which scrolls
+more smoothly than the older copy the AppImage bundles:
+
+```sh
+git clone https://github.com/PheeLeep/ParolaSSH && cd ParolaSSH/packaging/arch
+makepkg -si
+```
+
+It is not on the AUR. pacman owns the installed files, so the app points you
+to new releases instead of updating itself.
 
 **Windows will warn on first run.** The installers are not code-signed, so
 SmartScreen shows "Windows protected your PC": choose **More info → Run anyway**.

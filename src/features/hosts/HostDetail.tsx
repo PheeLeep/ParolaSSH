@@ -78,7 +78,7 @@ export function HostDetail({
   const ownsScrolling = (feature === "terminal" || feature === "files") && !locked;
 
   return (
-    <div className="page page--wide page--fill">
+    <div className="page page--fill">
       <div className="host-chrome">
         <Button
           variant="link"

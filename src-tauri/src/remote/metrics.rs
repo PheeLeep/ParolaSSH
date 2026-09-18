@@ -19,6 +19,7 @@ use serde::Serialize;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::client::Session;
+use super::power::powershell;
 use super::registry::LiveSession;
 use super::OsFamily;
 use crate::ssh::{SshError, SshResult};
@@ -172,16 +173,6 @@ const WINDOWS_SAMPLE: &str = "@{ \
     diskio = @(Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk | Select-Object Name,DiskReadBytesPersec,DiskWriteBytesPersec) \
     } | ConvertTo-Json -Depth 3 -Compress";
 
-/// Encoded, so neither cmd.exe nor PowerShell as sshd's shell touches the quoting.
-fn powershell(script: &str) -> String {
-    use base64::Engine;
-    let script = format!("$ProgressPreference = 'SilentlyContinue'; {script}");
-    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    format!(
-        "powershell -NoProfile -NonInteractive -EncodedCommand {}",
-        base64::engine::general_purpose::STANDARD.encode(utf16)
-    )
-}
 
 /// The command a sample runs on this OS. Pure.
 pub fn sample_command(os: OsFamily) -> SshResult<String> {

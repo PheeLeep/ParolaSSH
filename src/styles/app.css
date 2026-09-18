@@ -528,6 +528,25 @@ code,
   align-self: flex-start;
 }
 
+/* The back link, host header and feature tabs, pinned to the top of the
+   scroller while a pane scrolls under them. Padding rather than the tabs'
+   margin below, so scrolled content never shows through the gap. */
+.host-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bs-body-bg);
+  padding-bottom: 1rem;
+  /* The page's top padding scrolls away first; this keeps the pinned block
+     from sitting flush against the window edge. */
+  margin-top: -1.75rem;
+  padding-top: 1.75rem;
+}
+
+.host-chrome .feature-nav {
+  margin-bottom: 0;
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 650;

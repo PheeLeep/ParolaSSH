@@ -1199,6 +1199,46 @@ async fn a_server_side_copy_duplicates_a_tree() {
     session.close().await;
 }
 
+/// Every built-in that only reads runs cleanly on this host, elevated or not,
+/// through the same plan the Tasks pane executes. Windows once sent them to
+/// cmd.exe, which cannot parse a cmdlet pipeline. Tasks that act are skipped.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn every_read_only_builtin_task_runs() {
+    use parolassh_lib::tasks::{catalog, model};
+
+    let config = config();
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+
+    let tasks = catalog::for_os(report.os);
+    assert!(!tasks.is_empty(), "this OS should be offered built-in tasks");
+
+    for task in &tasks {
+        if task.acts {
+            println!("{}: skipped, it changes the host", task.id);
+            continue;
+        }
+        let plan = model::plan(report.os, &report.elevation, task.command, task.elevated).unwrap();
+        let stdin = plan.needs_password.then(|| format!("{}\n", config.password).into_bytes());
+        let output = session
+            .exec_with_timeout(&plan.command, stdin.as_deref(), std::time::Duration::from_secs(120))
+            .await
+            .unwrap();
+        let first = output.stdout.lines().find(|line| !line.trim().is_empty()).unwrap_or("");
+        println!("{}: exit {:?}, {} lines - {first}", task.id, output.exit_code, output.stdout.lines().count());
+        assert!(
+            !output.stderr.contains("is not recognized"),
+            "{} reached the wrong shell: {}",
+            task.id,
+            output.stderr
+        );
+        assert!(output.succeeded(), "{} failed: {}", task.id, output.failure_text());
+    }
+
+    session.close().await;
+}
+
 /// `ssh -R` end to end: the server dials its forwarded port, the channel lands
 /// here, and bytes cross both ways. Asks for a fixed port on purpose - russh
 /// reports those as port 0, which once left every connection unrouted.

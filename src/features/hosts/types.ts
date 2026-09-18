@@ -468,6 +468,8 @@ export interface BuiltinTask {
   description: string;
   command: string;
   elevated: boolean;
+  /** Whether it changes the host rather than only reading it. */
+  acts: boolean;
 }
 
 /** A task the operator saved. `command` is their text, run verbatim. */
@@ -507,6 +509,8 @@ export interface TaskPlan {
   innerCommand: string;
   elevated: boolean;
   needsPassword: boolean;
+  /** What the app wrapped the command in: `sudo`, or PowerShell on Windows. */
+  wrapper: "sudo" | "powershell" | null;
   danger: DangerAssessment;
 }
 

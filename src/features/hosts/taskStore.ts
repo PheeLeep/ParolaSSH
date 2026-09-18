@@ -154,7 +154,9 @@ export async function start(
   // The command is echoed into the feed before anything runs, so the log is
   // self-describing: a transcript that does not say what it ran is evidence
   // of nothing.
-  terminal.writeln(`\x1b[2m$ ${plan.command}\x1b[0m`);
+  // A PowerShell task is echoed as written; its encoded form says nothing.
+  const shown = plan.wrapper === "powershell" ? `PS> ${plan.innerCommand}` : `$ ${plan.command}`;
+  terminal.writeln(`\x1b[2m${shown}\x1b[0m`);
 
   // Listeners go on *before* the command is asked for. The host starts writing
   // the moment the channel opens, and a task short enough to finish inside one

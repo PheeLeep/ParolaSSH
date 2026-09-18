@@ -353,14 +353,26 @@ function PlanDialog({
         <Modal.Title className="h6">Run “{name}”?</Modal.Title>
       </Modal.Header>
       <Modal.Body className="d-flex flex-column gap-3">
-        <div>
-          <div className="text-body-secondary small mb-1">
-            This exact command runs on the host:
+        {plan.wrapper === "powershell" ? (
+          <div>
+            <div className="text-body-secondary small mb-1">This runs on the host in PowerShell:</div>
+            <pre className="task-plan__command mb-0">{plan.innerCommand}</pre>
+            <details className="text-body-secondary small mt-1">
+              <summary>Exact command sent</summary>
+              Encoded, so the host's login shell cannot misread it:
+              <pre className="task-plan__command mb-0 mt-1">{plan.command}</pre>
+            </details>
           </div>
-          <pre className="task-plan__command mb-0">{plan.command}</pre>
-        </div>
+        ) : (
+          <div>
+            <div className="text-body-secondary small mb-1">
+              This exact command runs on the host:
+            </div>
+            <pre className="task-plan__command mb-0">{plan.command}</pre>
+          </div>
+        )}
 
-        {plan.elevated && plan.command !== plan.innerCommand && (
+        {plan.wrapper === "sudo" && (
           <div className="text-body-secondary small">
             The <code>sudo</code> wrapper is the app's; the command you saved is{" "}
             <code>{plan.innerCommand}</code>.

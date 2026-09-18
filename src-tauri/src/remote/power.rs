@@ -446,6 +446,19 @@ pub(crate) fn sudo_sh(script: &str) -> String {
     format!("sudo -S -p '' {}", sh_c(script))
 }
 
+/// Run a PowerShell script, whatever sshd's shell is. Encoded, so neither
+/// cmd.exe nor PowerShell touches the quoting; progress bars are silenced
+/// because they arrive on stderr as CLIXML noise. Pure.
+pub(crate) fn powershell(script: &str) -> String {
+    use base64::Engine;
+    let script = format!("$ProgressPreference = 'SilentlyContinue'; {script}");
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    format!(
+        "powershell -NoProfile -NonInteractive -EncodedCommand {}",
+        base64::engine::general_purpose::STANDARD.encode(utf16)
+    )
+}
+
 /// Checks a typed sudo password without running anything: `-k` ignores cached
 /// credentials, so exit 0 means sudo accepted this password just now.
 pub(crate) const SUDO_VALIDATE_COMMAND: &str = "sudo -k -S -p '' -v";

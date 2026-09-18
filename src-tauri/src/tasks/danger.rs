@@ -447,6 +447,18 @@ fn assess_windows(text: &str, reasons: &mut Vec<DangerReason>) {
              shows a pending job and can cancel it.",
         );
     }
+    // The Windows twin of the Unix sshd check: this is the service carrying the session.
+    if (text.contains("restart-service") || text.contains("stop-service") || text.contains("net stop"))
+        && text.contains("sshd")
+    {
+        push(
+            reasons,
+            DangerLevel::Caution,
+            "Restarts the SSH service",
+            "This is the service carrying this session. If sshd does not come back, \
+             there is no way in over SSH - have console or RDP access ready.",
+        );
+    }
     if text.contains("downloadstring") || (text.contains("irm ") && text.contains("| iex")) {
         push(
             reasons,
@@ -712,6 +724,16 @@ mod tests {
         let assessment = linux("systemctl restart sshd");
         assert_eq!(assessment.level, DangerLevel::Caution);
         assert!(assessment.reasons[0].detail.contains("sshd_config"));
+    }
+
+    #[test]
+    fn restarting_sshd_on_windows_warns_too() {
+        for command in ["Restart-Service sshd", "Stop-Service -Name sshd", "net stop sshd"] {
+            let assessment = assess(OsFamily::Windows, command);
+            assert_eq!(assessment.level, DangerLevel::Caution, "{command}");
+        }
+        assert!(assess(OsFamily::Windows, "Get-Service sshd").level.is_none());
+        assert!(assess(OsFamily::Windows, "Restart-Service Spooler").level.is_none());
     }
 
     #[test]

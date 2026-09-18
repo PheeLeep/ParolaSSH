@@ -7,9 +7,9 @@
 //!   that only works once something is installed reports that it is missing
 //!   and stops; the operator installs it in a terminal, deliberately.
 //! * **Nothing is changed by default.** The built-ins answer questions. The
-//!   two that act (`restart-ssh`, `clear-package-cache`) are marked
-//!   `elevated` and carry their own warning through `danger.rs` like any
-//!   other command, because being shipped by the app does not make a
+//!   two that act (`restart-ssh`, `clear-package-cache`) are marked `acts`
+//!   and `elevated`, and go through `danger.rs` like any other command:
+//!   restarting sshd warns, because being shipped by the app does not make a
 //!   disruptive command less disruptive.
 //!
 //! A family with no entry for a task simply does not see it - `None` here is
@@ -31,6 +31,8 @@ pub struct BuiltinTask {
     /// answer is materially incomplete unprivileged - it is still the
     /// operator's choice at run time, this is only the default the UI offers.
     pub elevated: bool,
+    /// Whether it changes the host rather than only reading it.
+    pub acts: bool,
     pub linux: Option<&'static str>,
     pub macos: Option<&'static str>,
     pub windows: Option<&'static str>,
@@ -64,6 +66,7 @@ pub struct BuiltinTaskView {
     pub description: &'static str,
     pub command: &'static str,
     pub elevated: bool,
+    pub acts: bool,
 }
 
 pub const BUILTIN_TASKS: &[BuiltinTask] = &[
@@ -72,6 +75,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Disk usage",
         description: "Free space per filesystem, then the ten largest directories under /.",
         elevated: false,
+        acts: false,
         // `-x` keeps the walk on one filesystem, so a mounted NFS share or a
         // container overlay does not turn this into a minutes-long crawl.
         linux: Some("df -h; echo; du -xh / 2>/dev/null | sort -rh | head -10"),
@@ -87,6 +91,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Top processes",
         description: "The ten processes using the most CPU, and the ten using the most memory.",
         elevated: false,
+        acts: false,
         linux: Some(
             "echo '== by CPU =='; ps -eo pid,user,pcpu,pmem,comm --sort=-pcpu | head -11; \
              echo; echo '== by memory =='; ps -eo pid,user,pcpu,pmem,comm --sort=-pmem | head -11",
@@ -105,6 +110,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Failed services",
         description: "Units systemd could not start, or Windows services set to auto-start that are not running.",
         elevated: false,
+        acts: false,
         linux: Some("systemctl list-units --state=failed --no-pager --no-legend || echo 'No systemd on this host.'"),
         // launchd has no equivalent listing worth phrasing this way.
         macos: None,
@@ -120,6 +126,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         // Without root the socket list still appears; the owning process does
         // not, which is usually the part being looked for.
         elevated: true,
+        acts: false,
         linux: Some("ss -tulpn 2>/dev/null || netstat -tulpn 2>/dev/null || echo 'Neither ss nor netstat is installed.'"),
         macos: Some("netstat -an -p tcp | grep LISTEN"),
         windows: Some("Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize"),
@@ -129,6 +136,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Who is logged in",
         description: "Current sessions and the last ten logins.",
         elevated: false,
+        acts: false,
         linux: Some("who -a; echo; last -n 10 2>/dev/null || echo 'No login history available.'"),
         macos: Some("who -a; echo; last -n 10"),
         windows: Some("query user 2>$null; if ($LASTEXITCODE -ne 0) { 'No interactive sessions.' }"),
@@ -139,6 +147,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         description: "The last fifty error-level entries from the system log.",
         // journald restricts the full journal to root and the `adm` group.
         elevated: true,
+        acts: false,
         linux: Some("journalctl -p err -n 50 --no-pager 2>/dev/null || tail -n 50 /var/log/syslog 2>/dev/null || echo 'No readable system log.'"),
         macos: Some("log show --last 1h --style compact 2>/dev/null | grep -i error | tail -50"),
         windows: Some(
@@ -151,6 +160,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Is a reboot pending",
         description: "Whether the host is waiting on a restart to finish applying updates.",
         elevated: false,
+        acts: false,
         linux: Some(
             "if [ -f /var/run/reboot-required ]; then cat /var/run/reboot-required; \
              elif command -v needs-restarting >/dev/null 2>&1; then needs-restarting -r; \
@@ -167,6 +177,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Restart the SSH service",
         description: "Validates the config first, and stops if it does not parse - a bad config would otherwise end every route back in.",
         elevated: true,
+        acts: true,
         // `sshd -t` before the restart is the whole point of shipping this
         // rather than leaving it to a hand-typed `systemctl restart`.
         linux: Some("sshd -t && systemctl restart sshd && systemctl --no-pager status sshd"),
@@ -178,6 +189,7 @@ pub const BUILTIN_TASKS: &[BuiltinTask] = &[
         name: "Clear the package cache",
         description: "Frees the space taken by downloaded package archives. Installs nothing and removes no installed package.",
         elevated: true,
+        acts: true,
         linux: Some(
             "if command -v apt-get >/dev/null 2>&1; then apt-get clean && echo 'apt cache cleared.'; \
              elif command -v dnf >/dev/null 2>&1; then dnf clean packages; \
@@ -200,6 +212,7 @@ pub fn for_os(os: OsFamily) -> Vec<BuiltinTaskView> {
                 description: task.description,
                 command,
                 elevated: task.elevated,
+                acts: task.acts,
             })
         })
         .collect()
@@ -218,6 +231,7 @@ pub fn find(id: &str, os: OsFamily) -> Option<BuiltinTaskView> {
                 description: task.description,
                 command,
                 elevated: task.elevated,
+                acts: task.acts,
             })
         })
 }
@@ -334,5 +348,21 @@ mod tests {
         // to each other than either is to systemd.
         assert!(find("disk-usage", OsFamily::Bsd).is_some());
         assert!(find("failed-services", OsFamily::Bsd).is_none());
+    }
+
+    #[test]
+    fn restarting_ssh_warns_on_every_family_that_offers_it() {
+        let task = BUILTIN_TASKS.iter().find(|task| task.id == "restart-ssh").unwrap();
+        assert!(task.acts);
+        for os in [OsFamily::Linux, OsFamily::Windows] {
+            let command = task.command_for(os).unwrap();
+            assert_eq!(assess(os, command).level, DangerLevel::Caution, "{os:?}: {command}");
+        }
+    }
+
+    #[test]
+    fn only_the_two_named_tasks_act() {
+        let acting: Vec<&str> = BUILTIN_TASKS.iter().filter(|task| task.acts).map(|task| task.id).collect();
+        assert_eq!(acting, ["restart-ssh", "clear-package-cache"]);
     }
 }

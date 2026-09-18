@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::remote::power::{sudo_sh, Elevation};
+use crate::remote::power::{powershell, sudo_sh, Elevation};
 use crate::remote::OsFamily;
 use crate::ssh::{SshError, SshResult};
 
@@ -186,7 +186,16 @@ pub struct TaskPlan {
     pub elevated: bool,
     /// Whether the account password must be sent to `sudo -S`.
     pub needs_password: bool,
+    /// What the app wrapped the command in, if anything.
+    pub wrapper: Option<TaskWrapper>,
     pub danger: DangerAssessment,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskWrapper {
+    Sudo,
+    PowerShell,
 }
 
 /// Build the plan. Pure - no session, no I/O, so every branch is unit-tested.
@@ -207,12 +216,19 @@ pub fn plan(
 
     let danger = danger::assess(os, inner);
 
+    // Windows tasks are PowerShell - the built-ins are written in it - while
+    // sshd's default shell is cmd.exe, which cannot parse a pipeline of cmdlets.
+    let windows = os == OsFamily::Windows;
+    let as_sent = |script: &str| if windows { powershell(script) } else { script.to_string() };
+    let shell_wrapper = windows.then_some(TaskWrapper::PowerShell);
+
     if !elevated {
         return Ok(TaskPlan {
-            command: inner.to_string(),
+            command: as_sent(inner),
             inner_command: inner.to_string(),
             elevated: false,
             needs_password: false,
+            wrapper: shell_wrapper,
             danger,
         });
     }
@@ -220,7 +236,7 @@ pub fn plan(
     // Elevation was asked for, so a session with no route to it is an error
     // rather than a quiet downgrade: a task that says it runs as root and then
     // does not is the failure mode this app avoids everywhere else.
-    let command = match elevation {
+    let (command, wrapper) = match elevation {
         Elevation::Unavailable { reason } => {
             return Err(SshError::invalid(format!(
                 "This task is set to run with elevated privileges, and this session has \
@@ -229,7 +245,7 @@ pub fn plan(
             )))
         }
         // Already root, and Windows decided at logon - the command runs as-is.
-        Elevation::NotNeeded | Elevation::WindowsAdminToken => inner.to_string(),
+        Elevation::NotNeeded | Elevation::WindowsAdminToken => (as_sent(inner), shell_wrapper),
         Elevation::SudoNoPassword | Elevation::SudoPassword => {
             if !os.is_unix() {
                 return Err(SshError::invalid(
@@ -239,7 +255,7 @@ pub fn plan(
             // `sh -c` so a task with pipes, redirects or several statements
             // elevates as a whole rather than only its first word. `-p ''`
             // suppresses the prompt, which nothing is there to read.
-            sudo_sh(inner)
+            (sudo_sh(inner), Some(TaskWrapper::Sudo))
         }
     };
 
@@ -248,6 +264,7 @@ pub fn plan(
         inner_command: inner.to_string(),
         elevated: true,
         needs_password: elevation.needs_password(),
+        wrapper,
         danger,
     })
 }
@@ -327,7 +344,21 @@ mod tests {
             true,
         )
         .unwrap();
-        assert_eq!(windows.command, "Get-Service");
+        assert!(windows.command.starts_with("powershell -NoProfile -NonInteractive -EncodedCommand "));
+        assert_eq!(windows.inner_command, "Get-Service", "the readable form is kept for display");
+        assert_eq!(windows.wrapper, Some(TaskWrapper::PowerShell));
+        assert_eq!(as_root.wrapper, None);
+    }
+
+    #[test]
+    fn a_windows_task_runs_in_powershell_whatever_the_login_shell() {
+        let task = "Get-Process | Sort-Object CPU -Descending | Select-Object -First 3";
+        let unprivileged = plan(OsFamily::Windows, &Elevation::WindowsAdminToken, task, false).unwrap();
+        assert!(unprivileged.command.starts_with("powershell "), "{}", unprivileged.command);
+        assert!(!unprivileged.command.contains('|'), "no pipe reaches cmd.exe unencoded");
+
+        // Linux is untouched.
+        assert_eq!(plan(OsFamily::Linux, &Elevation::NotNeeded, "uptime", false).unwrap().command, "uptime");
     }
 
     #[test]

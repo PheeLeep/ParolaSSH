@@ -575,6 +575,20 @@ late answer can never be read as the reply to a later request. The VM's
 remaining high CPU was real - Defender and .NET image compilation - and is
 reported as such.
 
+## Windows tasks and the pinned host header ✅
+
+Found on the Windows 10 VM (2026-09-18):
+
+| Problem | Fix |
+|---|---|
+| Every built-in Windows task failed with "'Get-Process' is not recognized" | They are PowerShell, and sshd's default shell is cmd.exe. Windows tasks now run through `powershell -EncodedCommand`, the same helper the metrics sampler uses. The plan carries `wrapper: powershell`, so the dialog and the run feed show the script as written and keep the exact encoded command one click away |
+| `Restart-Service sshd` passed the danger check silently, while `systemctl restart sshd` warns | A Windows rule for restarting or stopping sshd, at the same Caution level |
+| "Which built-ins change the host" was inferred from danger levels, and `apt clean` does not (and should not) warn | An explicit `acts` flag in the catalog; a test pins it to `restart-ssh` and `clear-package-cache` |
+| The host header and tabs scrolled away on every pane except Terminal and Files | The back link, header and tabs are one sticky block over an opaque background |
+
+A live test now runs every built-in that only reads, elevated ones included,
+through the same plan the pane executes - all pass on Ubuntu and Windows 10.
+
 ## Open questions
 
 | Question | State |
@@ -715,9 +729,9 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 334 |
+| Rust unit | `cargo test --lib` | 338 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs a VM) | see below | 21, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
+| Rust live (needs a VM) | see below | 22, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
 | Frontend unit + component | `npm test` | 101 |
 | Frontend types | `npx tsc --noEmit` | - |
 

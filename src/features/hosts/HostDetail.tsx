@@ -78,64 +78,67 @@ export function HostDetail({
 
   return (
     <div className={`page${fill ? " page--fill" : ""}`}>
-      <Button
-        variant="link"
-        size="sm"
-        className="page-back p-0 mb-3 text-decoration-none text-body-secondary"
-        onClick={() => onNavigate({ kind: "hosts" })}
-      >
-        <ChevronLeft className="icon-sm" aria-hidden="true" />
-        All hosts
-      </Button>
+      {/* Pinned while the pane below scrolls, so the host and its tabs stay in reach. */}
+      <div className="host-chrome">
+        <Button
+          variant="link"
+          size="sm"
+          className="page-back p-0 mb-3 text-decoration-none text-body-secondary"
+          onClick={() => onNavigate({ kind: "hosts" })}
+        >
+          <ChevronLeft className="icon-sm" aria-hidden="true" />
+          All hosts
+        </Button>
 
-      <header className="d-flex flex-wrap align-items-center gap-3 mb-3">
-        <div className="me-auto">
-          <div className="d-flex align-items-center gap-2 mb-1">
-            <h1 className="page-title">{host.label}</h1>
-            <StatusBadge status={host.status} />
-            <OsBadge connection={connection} />
+        <header className="d-flex flex-wrap align-items-center gap-3 mb-3">
+          <div className="me-auto">
+            <div className="d-flex align-items-center gap-2 mb-1">
+              <h1 className="page-title">{host.label}</h1>
+              <StatusBadge status={host.status} />
+              <OsBadge connection={connection} />
+            </div>
+            <p className="text-body-secondary font-monospace small mb-0 d-inline-flex align-items-center gap-1">
+              {host.username}@{host.hostname}:{host.port}
+              <VpnGlyph hostname={host.hostname} />
+            </p>
           </div>
-          <p className="text-body-secondary font-monospace small mb-0 d-inline-flex align-items-center gap-1">
-            {host.username}@{host.hostname}:{host.port}
-            <VpnGlyph hostname={host.hostname} />
-          </p>
-        </div>
 
-        <div className="d-flex flex-wrap gap-2">
-          {connected ? (
-            <Button variant="outline-secondary" onClick={() => actions.onDisconnect(host)}>
-              <Unplug aria-hidden="true" />
-              Disconnect
+          <div className="d-flex flex-wrap gap-2">
+            {connected ? (
+              <Button variant="outline-secondary" onClick={() => actions.onDisconnect(host)}>
+                <Unplug aria-hidden="true" />
+                Disconnect
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => actions.onConnect(host)}>
+                <Plug aria-hidden="true" />
+                Connect
+              </Button>
+            )}
+
+            <Button
+              variant="outline-secondary"
+              disabled={!connected}
+              title={connected ? undefined : "Connect first"}
+              onClick={() => actions.onPower(host)}
+            >
+              <Power aria-hidden="true" />
+              Power
             </Button>
-          ) : (
-            <Button variant="primary" onClick={() => actions.onConnect(host)}>
-              <Plug aria-hidden="true" />
-              Connect
+
+            <Button variant="outline-secondary" onClick={() => actions.onEdit(host)}>
+              <Pencil aria-hidden="true" />
+              Edit
             </Button>
-          )}
+            <Button variant="outline-secondary" onClick={() => actions.onDelete(host)}>
+              <Trash2 aria-hidden="true" />
+              <span className="visually-hidden">Delete {host.label}</span>
+            </Button>
+          </div>
+        </header>
 
-          <Button
-            variant="outline-secondary"
-            disabled={!connected}
-            title={connected ? undefined : "Connect first"}
-            onClick={() => actions.onPower(host)}
-          >
-            <Power aria-hidden="true" />
-            Power
-          </Button>
-
-          <Button variant="outline-secondary" onClick={() => actions.onEdit(host)}>
-            <Pencil aria-hidden="true" />
-            Edit
-          </Button>
-          <Button variant="outline-secondary" onClick={() => actions.onDelete(host)}>
-            <Trash2 aria-hidden="true" />
-            <span className="visually-hidden">Delete {host.label}</span>
-          </Button>
-        </div>
-      </header>
-
-      <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
+        <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
+      </div>
 
       <div className={`feature-pane${fill ? " feature-pane--fill" : ""}`}>
         <PaneBoundary resetKey={`${hostId}:${feature}`}>

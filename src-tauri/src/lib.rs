@@ -19,6 +19,35 @@ use remote::registry::SessionRegistry;
 use remote::secrets::SecretVault;
 use remote::transfers::TransferManager;
 
+/// How the webview will draw, for choppy-rendering reports: WebKitGTK's own
+/// version, and the environment `main` settled on. Also printed to stderr.
+#[cfg(target_os = "linux")]
+fn log_display_setup() {
+    #[link(name = "webkit2gtk-4.1")]
+    extern "C" {
+        fn webkit_get_major_version() -> u32;
+        fn webkit_get_minor_version() -> u32;
+        fn webkit_get_micro_version() -> u32;
+    }
+    // SAFETY: plain getters with no arguments, in a library wry already links.
+    let webkit = unsafe {
+        format!("{}.{}.{}", webkit_get_major_version(), webkit_get_minor_version(), webkit_get_micro_version())
+    };
+    let var = |name: &str| std::env::var(name).unwrap_or_else(|_| "-".to_string());
+    let line = format!(
+        "display: webkitgtk={webkit} session={} wayland={} GDK_BACKEND={} \
+         WEBKIT_SKIA_ENABLE_CPU_RENDERING={} WEBKIT_DISABLE_DMABUF_RENDERER={} appimage={}",
+        var("XDG_SESSION_TYPE"),
+        var("WAYLAND_DISPLAY"),
+        var("GDK_BACKEND"),
+        var("WEBKIT_SKIA_ENABLE_CPU_RENDERING"),
+        var("WEBKIT_DISABLE_DMABUF_RENDERER"),
+        if std::env::var_os("APPIMAGE").is_some() { "yes" } else { "no" },
+    );
+    logging::debug("app", &line);
+    eprintln!("[parolassh] {line}");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
@@ -50,6 +79,8 @@ pub fn run() {
             // Before anything else that might want to record a failure.
             logging::init(app.handle());
             logging::info("app", concat!("ParolaSSH ", env!("CARGO_PKG_VERSION"), " started"));
+            #[cfg(target_os = "linux")]
+            log_display_setup();
 
             if let Ok(dir) = app_paths::config_dir(app.handle()) {
                 vpn::init(dir);

@@ -4,6 +4,17 @@ All notable changes to ParolaSSH. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-09-18
+
+### Fixed
+- Choppy scrolling in the Linux AppImage: it now runs on Wayland in a
+  Wayland session instead of the slower XWayland it was forced onto. Set
+  `PAROLASSH_FORCE_X11=1` to keep X11
+
+### Added
+- A debug-level startup log line with the WebKitGTK version and display
+  settings, for rendering bug reports
+
 ## [1.0.2] - 2026-09-18
 
 ### Fixed
@@ -90,6 +101,7 @@ the code has macOS branches, but no Mac has ever run them.
 - FIDO security keys work through the SSH agent only
 - `.deb` and `.rpm` installs are told about updates but download them by hand
 
+[1.0.3]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.3
 [1.0.2]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.2
 [1.0.1]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.1
 [1.0.0]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.0

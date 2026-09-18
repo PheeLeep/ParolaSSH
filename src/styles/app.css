@@ -533,19 +533,10 @@ code,
   align-self: flex-start;
 }
 
-/* The back link, host header and feature tabs, pinned to the top of the
-   scroller while a pane scrolls under them. Padding rather than the tabs'
-   margin below, so scrolled content never shows through the gap. */
+/* The back link, host header and feature tabs. They stay put because host
+   pages fill the window and only the pane below them scrolls. */
 .host-chrome {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: var(--bs-body-bg);
   padding-bottom: 1rem;
-  /* The page's top padding scrolls away first; this keeps the pinned block
-     from sitting flush against the window edge. */
-  margin-top: -1.75rem;
-  padding-top: 1.75rem;
 }
 
 .host-chrome .feature-nav {
@@ -1917,6 +1908,16 @@ code,
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* A pane at its natural height, scrolling under the host header. The inline
+   padding gives card shadows room instead of clipping them at the edge. */
+.feature-pane--scroll {
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem 0.5rem;
 }
 
 /* ---------------------------------------------- Stat tiles ----- */

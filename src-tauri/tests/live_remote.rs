@@ -504,7 +504,16 @@ async fn tier1_audit_reads_sshd_posture_with_sudo() {
         &std::collections::HashSet::new(),
     );
     println!("score={} findings={}", assembled.score, assembled.findings.len());
+    for finding in &assembled.findings {
+        println!("  {:?} {}", finding.severity, finding.title);
+    }
     assert!(assembled.tier1_ran);
+    // Merged-/usr makes /bin and /sbin symlinks, whose own mode is always 777.
+    assert!(
+        !assembled.findings.iter().any(|finding| finding.rule_id == "files.world-writable-path"
+            && ["/bin", "/sbin"].contains(&finding.location.as_str())),
+        "a symlinked PATH entry was judged by the link, not its target"
+    );
 
     session.close().await;
 }

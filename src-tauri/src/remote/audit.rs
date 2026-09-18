@@ -163,11 +163,13 @@ fn tier0_findings(crypto: &NegotiatedCrypto) -> Vec<NewFinding> {
 /// separated by named markers.
 ///
 /// `/usr/sbin` is commonly absent from a non-root PATH, hence the fallback.
+/// `find -H` judges a symlinked PATH entry by its target: `/bin` on merged-/usr
+/// systems is a link, and a link's own mode is always 777.
 pub const TIER1_COMMAND: &str = "sshd -T 2>&1 || /usr/sbin/sshd -T 2>&1; \
      echo ---PAROLA:stat---; \
      stat -c %a ~/.ssh/authorized_keys 2>/dev/null || stat -f %Lp ~/.ssh/authorized_keys 2>/dev/null; \
      echo ---PAROLA:path---; \
-     for d in $(echo \"$PATH\" | tr ':' ' '); do find \"$d\" -maxdepth 0 -perm -0002 2>/dev/null; done";
+     for d in $(echo \"$PATH\" | tr ':' ' '); do find -H \"$d\" -maxdepth 0 -perm -0002 2>/dev/null; done";
 
 /// The privileged retry, run only when the unprivileged `sshd -T` failed and a
 /// sudo route exists: the daemon config again, plus the empty-password check

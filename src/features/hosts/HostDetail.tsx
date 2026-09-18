@@ -72,13 +72,13 @@ export function HostDetail({
 
   const selected = HOST_FEATURES.find((entry) => entry.id === feature);
   const locked = Boolean(selected?.needsSession) && !connected;
-  // The terminal and the file browser want the whole window; the other panes
-  // read better at their natural height.
-  const fill = (feature === "terminal" || feature === "files") && !locked;
+  // The terminal and the file browser size themselves to the window and scroll
+  // inside; every other pane scrolls in a box under the fixed header. Not
+  // `position: sticky`, which WebKitGTK repositions a frame late and jitters.
+  const ownsScrolling = (feature === "terminal" || feature === "files") && !locked;
 
   return (
-    <div className={`page page--wide${fill ? " page--fill" : ""}`}>
-      {/* Pinned while the pane below scrolls, so the host and its tabs stay in reach. */}
+    <div className="page page--wide page--fill">
       <div className="host-chrome">
         <Button
           variant="link"
@@ -140,7 +140,11 @@ export function HostDetail({
         <HostFeatureNav active={feature} connected={connected} onSelect={setFeature} />
       </div>
 
-      <div className={`feature-pane${fill ? " feature-pane--fill" : ""}`}>
+      <div
+        // Keyed so each tab starts scrolled to the top.
+        key={ownsScrolling ? "fill" : `scroll:${feature}`}
+        className={`feature-pane feature-pane--fill${ownsScrolling ? "" : " feature-pane--scroll"}`}
+      >
         <PaneBoundary resetKey={`${hostId}:${feature}`}>
           {locked ? (
             <Alert variant="secondary" className="mb-0">

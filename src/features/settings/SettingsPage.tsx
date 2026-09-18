@@ -562,7 +562,12 @@ function UpdateStatus() {
     case "checking":
       return <>Checking…</>;
     case "current":
-      return <>{base} You have the latest version, {__APP_VERSION__}.</>;
+      return (
+        <>
+          {base} You have the latest version, {__APP_VERSION__} (checked at{" "}
+          {new Date(state.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}).
+        </>
+      );
     case "available":
       return <>{base} Version {state.version} is available; see the banner above.</>;
     case "installing":

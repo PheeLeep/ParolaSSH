@@ -56,7 +56,10 @@ async function openDialog() {
 describe("blocking dangerous tasks", () => {
   it("blocks a destructive task by default", async () => {
     const { dialog } = await openDialog();
-    expect(within(dialog).getByText(/Blocked by your settings/)).toBeInTheDocument();
+    // One alert, carrying both the verdict and the reason.
+    expect(within(dialog).getAllByRole("alert")).toHaveLength(1);
+    expect(within(dialog).getByText("Blocked: this command cannot be run")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Recursive delete/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Run" })).toBeDisabled();
     expect(within(dialog).queryByLabelText(/Type/)).not.toBeInTheDocument();
   });
@@ -64,7 +67,7 @@ describe("blocking dangerous tasks", () => {
   it("falls back to the typed confirmation when turned off", async () => {
     localStorage.setItem(TASK_BLOCKING_STORAGE_KEY, "off");
     const { dialog } = await openDialog();
-    expect(within(dialog).queryByText(/Blocked by your settings/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/Blocked:/)).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText(/Type/)).toBeInTheDocument();
   });
 
@@ -96,7 +99,7 @@ describe("the task editor", () => {
 
   it("will not save a command the setting blocks", async () => {
     const { dialog } = await openEditor();
-    expect(await within(dialog).findByText(/Blocked by your settings/)).toBeInTheDocument();
+    expect(await within(dialog).findByText("Blocked: this command cannot be saved")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
   });
 

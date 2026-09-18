@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Badge, Button, Card, Form, Modal, Spinner } from "react-bootstrap";
+import { Alert, Badge, Button, Form, Modal, Spinner } from "react-bootstrap";
 import {
   AlertTriangle,
   Ban,
+  Eye,
   ListChecks,
-  Pencil,
   Play,
   Plus,
   ShieldAlert,
@@ -51,7 +51,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
   const [editing, setEditing] = useState<TaskRecord | "new" | null>(null);
 
   useStoreSubscription(taskStore.subscribe);
-  const run = taskStore.get(hostId);
+  const { runs } = taskStore.list(hostId);
 
   useEffect(() => {
     taskStore.applyTheme(theme);
@@ -78,6 +78,13 @@ export function TasksPane({ hostId }: { hostId: string }) {
   // show the real command before the run exists.
   const preview = async (id: string, name: string) => {
     setError(null);
+    // Already running: show it rather than start a second copy. Finished: its
+    // tab comes forward and the rerun lands there once approved.
+    const open = taskStore.find(hostId, id);
+    if (open) {
+      taskStore.select(hostId, id);
+      if (open.state === "running") return;
+    }
     try {
       setPending({ id, name, plan: await api.planTask(hostId, id) });
     } catch (caught) {
@@ -129,7 +136,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
         </Alert>
       )}
 
-      {run && <RunCard hostId={hostId} run={run} />}
+      {runs.length > 0 && <RunTabs hostId={hostId} />}
 
       {loading ? (
         <div className="d-flex align-items-center gap-2 text-body-secondary">
@@ -141,38 +148,10 @@ export function TasksPane({ hostId }: { hostId: string }) {
           <section>
             <div className="d-flex align-items-center gap-2 mb-2">
               <ListChecks className="icon-sm" aria-hidden="true" />
-              <h2 className="h6 mb-0">Built in</h2>
+              <h2 className="h6 mb-0">Tasks</h2>
               <span className="text-body-secondary small">
-                written for {osLabel(os)} - none of them install anything
-              </span>
-            </div>
-
-            {catalog && catalog.builtin.length > 0 ? (
-              <div className="task-grid">
-                {catalog.builtin.map((task) => (
-                  <BuiltinCard
-                    key={task.id}
-                    task={task}
-                    busy={run?.state === "running"}
-                    onRun={() => void preview(task.id, task.name)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <Alert variant="secondary" className="mb-0">
-                {disconnected
-                  ? "Connect to this host to see the tasks written for its operating system."
-                  : `No built-in task is written for ${osLabel(os)} yet. Your own tasks still run here.`}
-              </Alert>
-            )}
-          </section>
-
-          <section>
-            <div className="d-flex align-items-center gap-2 mb-2">
-              <Pencil className="icon-sm" aria-hidden="true" />
-              <h2 className="h6 mb-0">Yours</h2>
-              <span className="text-body-secondary small">
-                run exactly as written - the app makes no claim about them
+                built-ins are written for {osLabel(os)} and install nothing; yours run
+                exactly as written
               </span>
               <Button
                 size="sm"
@@ -185,13 +164,27 @@ export function TasksPane({ hostId }: { hostId: string }) {
               </Button>
             </div>
 
-            {catalog && catalog.saved.length > 0 ? (
+            {disconnected && (
+              <Alert variant="secondary" className="mb-2">
+                Connect to this host to see the built-in tasks written for its operating system.
+              </Alert>
+            )}
+
+            {catalog && catalog.builtin.length + catalog.saved.length > 0 ? (
               <div className="task-grid">
+                {catalog.builtin.map((task) => (
+                  <BuiltinCard
+                    key={task.id}
+                    task={task}
+                    run={taskStore.find(hostId, task.id)}
+                    onRun={() => void preview(task.id, task.name)}
+                  />
+                ))}
                 {catalog.saved.map((task) => (
                   <SavedCard
                     key={task.id}
                     task={task}
-                    busy={run?.state === "running"}
+                    run={taskStore.find(hostId, task.id)}
                     onRun={() => void preview(task.id, task.name)}
                     onEdit={() => setEditing(task)}
                     onDelete={() => void remove(task)}
@@ -199,10 +192,12 @@ export function TasksPane({ hostId }: { hostId: string }) {
                 ))}
               </div>
             ) : (
-              <Alert variant="secondary" className="mb-0">
-                No saved tasks for this host yet. A task is a command you keep - set it
-                global to get it on every host, or pin it to this one.
-              </Alert>
+              !disconnected && (
+                <Alert variant="secondary" className="mb-0">
+                  No tasks for {osLabel(os)} yet. A task is a command you keep - set it global
+                  to get it on every host, or pin it to this one.
+                </Alert>
+              )
             )}
           </section>
         </>
@@ -235,13 +230,24 @@ export function TasksPane({ hostId }: { hostId: string }) {
 
 /* ── The list ──────────────────────────────────────────────────────────── */
 
+/** Run, or Show when this task's tab is still running. */
+function RunButton({ run, onRun }: { run: taskStore.TaskRun | undefined; onRun: () => void }) {
+  const running = run?.state === "running";
+  return (
+    <Button size="sm" variant="outline-primary" onClick={onRun}>
+      {running ? <Eye className="icon-sm" aria-hidden="true" /> : <Play className="icon-sm" aria-hidden="true" />}
+      {running ? "Show" : "Run"}
+    </Button>
+  );
+}
+
 function BuiltinCard({
   task,
-  busy,
+  run,
   onRun,
 }: {
   task: BuiltinTask;
-  busy: boolean;
+  run: taskStore.TaskRun | undefined;
   onRun: () => void;
 }) {
   return (
@@ -253,25 +259,25 @@ function BuiltinCard({
             root
           </Badge>
         )}
+        <Badge bg="primary" className="task-card__badge">
+          built-in
+        </Badge>
       </div>
       <p className="task-card__detail">{task.description}</p>
-      <Button size="sm" variant="outline-primary" disabled={busy} onClick={onRun}>
-        <Play className="icon-sm" aria-hidden="true" />
-        Run
-      </Button>
+      <RunButton run={run} onRun={onRun} />
     </article>
   );
 }
 
 function SavedCard({
   task,
-  busy,
+  run,
   onRun,
   onEdit,
   onDelete,
 }: {
   task: TaskRecord;
-  busy: boolean;
+  run: taskStore.TaskRun | undefined;
   onRun: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -296,10 +302,7 @@ function SavedCard({
       <code className="task-card__command">{task.command}</code>
 
       <div className="task-card__actions">
-        <Button size="sm" variant="outline-primary" disabled={busy} onClick={onRun}>
-          <Play className="icon-sm" aria-hidden="true" />
-          Run
-        </Button>
+        <RunButton run={run} onRun={onRun} />
         <Button size="sm" variant="link" className="p-0 text-decoration-none" onClick={onEdit}>
           Edit
         </Button>
@@ -382,9 +385,7 @@ function PlanDialog({
           </div>
         )}
 
-        <DangerNotice danger={plan.danger} />
-
-        {blocked && <BlockedNotice what="run" />}
+        <DangerNotice danger={plan.danger} blocked={blocked ? "run" : undefined} />
 
         {destructive && !blocked && (
           <Form.Group controlId="task-confirm">
@@ -413,37 +414,37 @@ function PlanDialog({
   );
 }
 
-/** Why the setting stops this command, and where to change it. */
-function BlockedNotice({ what }: { what: "run" | "saved" }) {
-  return (
-    <Alert variant="secondary" className="d-flex gap-2 mb-0" role="status">
-      <Ban className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
-      <div>
-        <strong>Blocked by your settings.</strong> Settings › Advanced › Block dangerous
-        tasks does not allow this command to be {what}. Turn it off there, or run the
-        command in a terminal, if you mean it.
-      </div>
-    </Alert>
-  );
-}
-
 /** The assessment, in the operator's terms. Absent when nothing matched -
  *  and deliberately *not* replaced with "looks safe", which the check has no
  *  basis to say. */
-function DangerNotice({ danger }: { danger: DangerAssessment }) {
+function DangerNotice({
+  danger,
+  blocked,
+}: {
+  danger: DangerAssessment;
+  /** Set when the blocking setting forbids this command; the alert then says so. */
+  blocked?: "run" | "saved";
+}) {
   if (danger.level === "none") return null;
 
   const destructive = danger.level === "destructive";
+  const title = blocked
+    ? `Blocked: this command cannot be ${blocked}`
+    : destructive
+      ? "This destroys data or the machine"
+      : "Worth a second look";
 
   return (
-    <Alert variant={destructive ? "danger" : "warning"} className="mb-0">
+    <Alert variant={destructive || blocked ? "danger" : "warning"} className="mb-0">
       <div className="d-flex align-items-center gap-2 mb-2">
-        {destructive ? (
+        {blocked ? (
+          <Ban className="icon-sm" aria-hidden="true" />
+        ) : destructive ? (
           <ShieldAlert className="icon-sm" aria-hidden="true" />
         ) : (
           <AlertTriangle className="icon-sm" aria-hidden="true" />
         )}
-        <strong>{destructive ? "This destroys data or the machine" : "Worth a second look"}</strong>
+        <strong>{title}</strong>
       </div>
 
       <ul className="task-danger__list">
@@ -455,9 +456,9 @@ function DangerNotice({ danger }: { danger: DangerAssessment }) {
       </ul>
 
       <div className="small text-body-secondary mt-2 mb-0">
-        This is a check on the text of the command - it catches common mistakes, not a
-        command written to hide what it does. Read the command above; it is the one that
-        runs.
+        {blocked
+          ? "Settings › Advanced › Block dangerous tasks does not allow it. Turn that off, or use a terminal, if you mean it."
+          : "This is a check on the text of the command - it catches common mistakes, not a command written to hide what it does. Read the command above; it is the one that runs."}
       </div>
     </Alert>
   );
@@ -465,41 +466,73 @@ function DangerNotice({ danger }: { danger: DangerAssessment }) {
 
 /* ── The run ───────────────────────────────────────────────────────────── */
 
-function RunCard({ hostId, run }: { hostId: string; run: taskStore.TaskRun }) {
+/** Every run on this host as a tab, like the terminals. Output keeps
+ *  collecting in the hidden ones. */
+function RunTabs({ hostId }: { hostId: string }) {
   const mount = useRef<HTMLDivElement>(null);
+  const { runs, active } = taskStore.list(hostId);
 
   useEffect(() => {
-    if (!mount.current) return;
-    return taskStore.attach(hostId, mount.current);
-  }, [hostId, run.startedAt]);
-
-  const running = run.state === "running";
+    if (!mount.current || !active) return;
+    return taskStore.attach(hostId, active.taskId, mount.current);
+  }, [hostId, active, active?.startedAt]);
 
   return (
-    <Card>
-      <Card.Body className="d-flex flex-column gap-2">
-        <div className="d-flex flex-wrap align-items-center gap-2">
-          <h2 className="h6 mb-0">{run.taskName}</h2>
-          <RunBadge run={run} />
-          <div className="ms-auto d-flex gap-2">
-            {running ? (
-              <Button size="sm" variant="outline-danger" onClick={() => void taskStore.stop(hostId)}>
+    <div className="terminal-pane task-runs">
+      <div className="terminal-pane__bar">
+        <div className="terminal-pane__tabs" role="tablist" aria-label="Task runs">
+          {runs.map((run) => (
+            <div
+              key={run.taskId}
+              className={`shell-tab${run === active ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={run === active}
+                className="shell-tab__label"
+                onClick={() => taskStore.select(hostId, run.taskId)}
+                title={run.taskName}
+              >
+                <RunDot run={run} />
+                {run.taskName}
+              </button>
+              <button
+                type="button"
+                className="shell-tab__close"
+                onClick={() => void taskStore.close(hostId, run.taskId)}
+                aria-label={`Close ${run.taskName}`}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {active && (
+          <div className="terminal-pane__actions">
+            <RunBadge run={active} />
+            {active.state === "running" && (
+              <Button size="sm" variant="outline-danger" onClick={() => void taskStore.stop(hostId, active.taskId)}>
                 <Square className="icon-sm" aria-hidden="true" />
                 Stop watching
               </Button>
-            ) : (
-              <Button size="sm" variant="outline-secondary" onClick={() => taskStore.clear(hostId)}>
-                <X className="icon-sm" aria-hidden="true" />
-                Clear
-              </Button>
             )}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div className="task-feed" ref={mount} />
-      </Card.Body>
-    </Card>
+      {/* Owned by the store, which appends the run's terminal here. */}
+      <div className="task-feed" ref={mount} />
+    </div>
   );
+}
+
+/** A tab's state at a glance: pulsing while running, coloured once done. */
+function RunDot({ run }: { run: taskStore.TaskRun }) {
+  const tone =
+    run.state === "running" ? "running" : run.state === "finished" ? "ok" : run.state === "failed" ? "bad" : "idle";
+  return <span className={`task-dot task-dot--${tone}`} aria-hidden="true" />;
 }
 
 function RunBadge({ run }: { run: taskStore.TaskRun }) {
@@ -642,8 +675,7 @@ function TaskEditor({
           </Form.Text>
         </Form.Group>
 
-        {danger && <DangerNotice danger={danger} />}
-        {blocked && <BlockedNotice what="saved" />}
+        {danger && <DangerNotice danger={danger} blocked={blocked ? "saved" : undefined} />}
 
         <Form.Check
           type="switch"

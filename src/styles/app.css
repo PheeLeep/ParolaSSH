@@ -1544,8 +1544,52 @@ code,
   overflow: auto;
   /* No padding: xterm paints its own background, and a gutter in a different
      colour would frame it in the wrong one. */
-  border: 1px solid var(--bs-border-color);
-  border-radius: var(--parola-radius-sm);
+}
+
+/* Run tabs share the terminal pane's frame but keep a fixed height: the
+   task list sits below them. */
+.task-runs {
+  flex: 0 0 auto;
+}
+
+.task-runs .terminal-pane__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.task-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--parola-unknown);
+}
+
+.task-dot--running {
+  background: var(--bs-primary);
+  animation: parola-task-dot 1.2s ease-in-out infinite;
+}
+
+.task-dot--ok {
+  background: var(--parola-online);
+}
+
+.task-dot--bad {
+  background: var(--parola-offline);
+}
+
+@keyframes parola-task-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-dot--running {
+    animation: none;
+  }
 }
 
 .task-feed .terminal-host {

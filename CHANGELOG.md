@@ -4,6 +4,13 @@ All notable changes to ParolaSSH. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Choppy scrolling on Linux (seen on Wayland with hybrid graphics): the
+  webview now draws on the CPU, unless `WEBKIT_SKIA_ENABLE_CPU_RENDERING` is
+  already set in the environment
+
 ## [1.0.1] - 2026-09-18
 
 ### Fixed

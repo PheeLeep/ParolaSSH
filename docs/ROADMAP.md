@@ -729,7 +729,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 356 |
+| Rust unit | `cargo test --lib` | 358 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 23, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
 | Frontend unit + component | `npm test` | 127 |

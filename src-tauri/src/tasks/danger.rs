@@ -191,6 +191,17 @@ fn assess_unix(text: &str, reasons: &mut Vec<DangerReason>) {
         }
     }
 
+    // GNU rm refuses `/` unless told otherwise; this is being told otherwise.
+    if text.contains("--no-preserve-root") {
+        push(
+            reasons,
+            DangerLevel::Destructive,
+            "Overrides rm's root safeguard",
+            "`--no-preserve-root` switches off the one check that stops `rm -r /` \
+             from deleting the whole filesystem. Nothing needs it except that.",
+        );
+    }
+
     // An unquoted variable next to a recursive delete is the classic way a
     // narrow command becomes a wide one.
     if (text.contains("rm -rf $") || text.contains("rm -fr $") || text.contains("rm -r -f $"))
@@ -488,6 +499,27 @@ fn assess_windows(text: &str, reasons: &mut Vec<DangerReason>) {
              pinned, reviewed, or logged.",
         );
     }
+    if launches_wininit(text) {
+        push(
+            reasons,
+            DangerLevel::Destructive,
+            "Starts wininit by hand",
+            "`wininit.exe` may only be started by Windows at boot. Launched again as \
+             an administrator, it crashes the machine with a blue screen.",
+        );
+    }
+    if let Some(name) = kills_critical_process(text) {
+        push(
+            reasons,
+            DangerLevel::Destructive,
+            "Kills a process Windows cannot run without",
+            &format!(
+                "`{name}` is a critical system process. Ending it crashes Windows with \
+                 CRITICAL_PROCESS_DIED, or ends every session on it - newer builds \
+                 may refuse with \"Access is denied\", but that is not guaranteed."
+            ),
+        );
+    }
     if starts_or_follows(text, "bcdedit") || starts_or_follows(text, "diskpart") {
         push(
             reasons,
@@ -528,6 +560,58 @@ fn assess_secrets(text: &str, reasons: &mut Vec<DangerReason>) {
 /// Both flags are required before anything is reported: `rm -r` alone prompts,
 /// and `rm -f` alone cannot take a tree. Flags are matched in the combined
 /// (`-rf`) and separate (`-r -f`) spellings, plus the long forms.
+/// Whether some command in `text` runs wininit, directly or through a
+/// launcher. Naming it as an argument (`Get-Process wininit`) does not count.
+fn launches_wininit(text: &str) -> bool {
+    const LAUNCHERS: &[&str] = &["&", "start", "start-process", "saps", "invoke-item", "ii", "cmd", "/c", "call"];
+    let is_wininit = |word: &str| {
+        let word = word.trim_matches(|c| c == '"' || c == '\'' || c == '(' || c == ')');
+        let base = word.rsplit(['\\', '/']).next().unwrap_or(word);
+        base == "wininit" || base == "wininit.exe"
+    };
+    text.split([';', '|', '&', '\n'])
+        .flat_map(|command| {
+            let mut words = command.split(' ').filter(|word| !word.is_empty());
+            let mut program = words.next();
+            // Step over launchers and their switches to the program they start.
+            while let Some(word) = program {
+                if LAUNCHERS.contains(&word) || (word.starts_with('-') && word != "-") {
+                    program = words.next();
+                } else {
+                    break;
+                }
+            }
+            program
+        })
+        .any(is_wininit)
+}
+
+/// Processes whose termination bugchecks Windows or ends every session on it.
+const CRITICAL_PROCESSES: &[&str] = &["wininit", "csrss", "smss", "lsass", "winlogon", "services"];
+
+/// The critical process a kill command names, if it names one. Pure.
+fn kills_critical_process(text: &str) -> Option<&'static str> {
+    let kills = text.contains("taskkill")
+        || text.contains("stop-process")
+        || text.contains("pskill")
+        || starts_or_follows(text, "kill ")
+        || starts_or_follows(text, "spps ")
+        || (text.contains("wmic") && text.contains("process") && text.contains("delete"))
+        || (text.contains("win32_process") && text.contains("terminate"));
+    if !kills {
+        return None;
+    }
+    let names_it = |name: &str| {
+        text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '_'))
+            .any(|word| word == name || word == format!("{name}.exe"))
+    };
+    if let Some(name) = CRITICAL_PROCESSES.iter().copied().find(|name| names_it(name)) {
+        return Some(name);
+    }
+    // Every svchost at once takes most of Windows' services with it.
+    (names_it("svchost") && (text.contains("/im") || text.contains("-name"))).then_some("svchost")
+}
+
 fn recursive_delete_targets(text: &str) -> Option<Vec<&str>> {
     let mut words = text.split(' ').peekable();
     let mut found = false;
@@ -810,6 +894,50 @@ mod tests {
             assess(OsFamily::Unknown, "format c:").level,
             DangerLevel::Destructive
         );
+    }
+
+    #[test]
+    fn overriding_the_root_safeguard_is_destructive() {
+        let assessment = linux("rm -rf --no-preserve-root /");
+        assert_eq!(assessment.level, DangerLevel::Destructive);
+        assert!(assessment.reasons.iter().any(|reason| reason.label == "Overrides rm's root safeguard"));
+        assert_eq!(linux("rm -rf /*").level, DangerLevel::Destructive);
+    }
+
+    #[test]
+    fn killing_a_critical_windows_process_is_destructive() {
+        for command in [
+            "taskkill /f /im wininit.exe",
+            "TASKKILL /IM csrss.exe /F",
+            "Stop-Process -Name lsass -Force",
+            "Get-Process winlogon | Stop-Process -Force",
+            "kill -Name smss",
+            "wmic process where name='wininit.exe' delete",
+            "taskkill /f /im svchost.exe",
+        ] {
+            let assessment = assess(OsFamily::Windows, command);
+            assert_eq!(assessment.level, DangerLevel::Destructive, "{command}");
+            assert_eq!(assessment.reasons[0].label, "Kills a process Windows cannot run without", "{command}");
+        }
+        for command in [
+            "wininit",
+            "wininit.exe",
+            "C:\\Windows\\System32\\wininit.exe",
+            "Start-Process wininit.exe -Verb RunAs",
+            "& \"C:\\Windows\\System32\\wininit.exe\"",
+            "cmd /c wininit",
+            "echo hi; wininit",
+        ] {
+            let assessment = assess(OsFamily::Windows, command);
+            assert_eq!(assessment.level, DangerLevel::Destructive, "{command}");
+            assert_eq!(assessment.reasons[0].label, "Starts wininit by hand", "{command}");
+        }
+        assert!(assess(OsFamily::Windows, "Get-Item C:\\Windows\\System32\\wininit.exe").level.is_none());
+        // Ordinary processes, and merely looking, stay quiet.
+        assert!(assess(OsFamily::Windows, "taskkill /f /im notepad.exe").level.is_none());
+        assert!(assess(OsFamily::Windows, "Get-Process wininit").level.is_none());
+        assert!(assess(OsFamily::Windows, "Stop-Process -Id 4242").level.is_none());
+        assert!(assess(OsFamily::Windows, "Stop-Process -Name myservices").level.is_none());
     }
 
     #[test]

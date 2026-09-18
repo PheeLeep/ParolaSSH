@@ -4,7 +4,7 @@ All notable changes to ParolaSSH. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.1] - 2026-09-18
 
 ### Fixed
 - Every page uses the same wide layout, so none sits centred in an empty
@@ -83,4 +83,5 @@ the code has macOS branches, but no Mac has ever run them.
 - FIDO security keys work through the SSH agent only
 - `.deb` and `.rpm` installs are told about updates but download them by hand
 
+[1.0.1]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.1
 [1.0.0]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.0

@@ -82,7 +82,7 @@ pub fn refusal(assessment: &DangerAssessment, block_from: Option<DangerLevel>) -
     let reasons: Vec<&str> = assessment.reasons.iter().map(|reason| reason.label.as_str()).collect();
     Some(format!(
         "Blocked: this task is rated {what} ({}). Settings › Advanced › Block dangerous \
-         tasks stops it from running.",
+         tasks does not allow it.",
         reasons.join(", ")
     ))
 }

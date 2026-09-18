@@ -332,8 +332,16 @@ export const listHostTasks = (hostId: string) =>
 /** Every saved task, for the list that manages them across hosts. */
 export const listAllTasks = () => invoke<TaskRecord[]>("list_all_tasks");
 
-export const saveTask = (draft: TaskDraft) =>
-  invoke<TaskRecord>("save_task", { draft });
+export const saveTask = (
+  draft: TaskDraft,
+  hostId: string | null = null,
+  blocking: TaskBlocking = "destructive",
+) =>
+  invoke<TaskRecord>("save_task", {
+    draft,
+    hostId,
+    blockFrom: blocking === "off" ? null : blocking,
+  });
 
 export const deleteTask = (id: string) => invoke<TaskRecord>("delete_task", { id });
 

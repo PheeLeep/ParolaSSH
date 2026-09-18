@@ -73,9 +73,24 @@ pub fn list_all_tasks(app: AppHandle) -> SshResult<Vec<TaskRecord>> {
     Ok(TaskStore::read(&config_dir(&app)?).tasks)
 }
 
-/// Add a task, or update one when the draft carries an id.
+/// Add a task, or update one when the draft carries an id. A command the
+/// blocking setting would refuse to run is refused here too, so it is never saved.
 #[tauri::command]
-pub fn save_task(app: AppHandle, draft: TaskDraft) -> SshResult<TaskRecord> {
+pub fn save_task(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    draft: TaskDraft,
+    host_id: Option<String>,
+    block_from: Option<super::danger::DangerLevel>,
+) -> SshResult<TaskRecord> {
+    // Same OS choice as `assess_task_command`, so Save agrees with the warning shown.
+    let os = host_id
+        .and_then(|id| registry.get(&id).map(|live| live.os))
+        .unwrap_or(OsFamily::Unknown);
+    if let Some(reason) = super::danger::refusal(&super::danger::assess(os, &draft.command), block_from) {
+        return Err(SshError::invalid(reason.replace("this task is", "this command is")));
+    }
+
     let config_dir = config_dir(&app)?;
     let mut store = TaskStore::read(&config_dir);
 

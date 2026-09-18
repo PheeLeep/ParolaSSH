@@ -31,7 +31,11 @@ pub enum TaskScope {
     /// exactly one machine - the one being looked at.
     Global,
     /// Offered on one host only.
-    Host { host_id: String },
+    Host {
+        // `rename_all` above renames variants only, not their fields.
+        #[serde(rename = "hostId", alias = "host_id")]
+        host_id: String,
+    },
 }
 
 impl TaskScope {
@@ -284,6 +288,16 @@ mod tests {
             scope: TaskScope::Global,
             os_families: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_host_scope_round_trips_in_the_frontend_spelling() {
+        let scope: TaskScope = serde_json::from_str(r#"{"kind":"host","hostId":"h1"}"#).unwrap();
+        assert_eq!(scope, TaskScope::Host { host_id: "h1".into() });
+        assert_eq!(serde_json::to_string(&scope).unwrap(), r#"{"kind":"host","hostId":"h1"}"#);
+        // What an older file might hold.
+        let old: TaskScope = serde_json::from_str(r#"{"kind":"host","host_id":"h1"}"#).unwrap();
+        assert_eq!(old, scope);
     }
 
     #[test]

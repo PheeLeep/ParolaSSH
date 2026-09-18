@@ -384,16 +384,7 @@ function PlanDialog({
 
         <DangerNotice danger={plan.danger} />
 
-        {blocked && (
-          <Alert variant="secondary" className="d-flex gap-2 mb-0" role="status">
-            <Ban className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
-            <div>
-              <strong>Blocked by your settings.</strong> Settings › Advanced › Block
-              dangerous tasks stops this task from running. Turn it off there, or run the
-              command in a terminal, if you mean it.
-            </div>
-          </Alert>
-        )}
+        {blocked && <BlockedNotice what="run" />}
 
         {destructive && !blocked && (
           <Form.Group controlId="task-confirm">
@@ -419,6 +410,20 @@ function PlanDialog({
         </Button>
       </Modal.Footer>
     </Modal>
+  );
+}
+
+/** Why the setting stops this command, and where to change it. */
+function BlockedNotice({ what }: { what: "run" | "saved" }) {
+  return (
+    <Alert variant="secondary" className="d-flex gap-2 mb-0" role="status">
+      <Ban className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+      <div>
+        <strong>Blocked by your settings.</strong> Settings › Advanced › Block dangerous
+        tasks does not allow this command to be {what}. Turn it off there, or run the
+        command in a terminal, if you mean it.
+      </div>
+    </Alert>
   );
 }
 
@@ -539,6 +544,8 @@ function TaskEditor({
   const [danger, setDanger] = useState<DangerAssessment | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [blocking] = useState(readTaskBlocking);
+  const blocked = danger !== null && command.trim() !== "" && isBlocked(danger.level, blocking);
 
   // Assessed as it is typed, so the warning arrives while the command is still
   // being written rather than at the moment of pressing run.
@@ -580,7 +587,7 @@ function TaskEditor({
     };
 
     try {
-      await api.saveTask(draft);
+      await api.saveTask(draft, hostId, readTaskBlocking());
       onSaved();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -636,6 +643,7 @@ function TaskEditor({
         </Form.Group>
 
         {danger && <DangerNotice danger={danger} />}
+        {blocked && <BlockedNotice what="saved" />}
 
         <Form.Check
           type="switch"
@@ -676,7 +684,7 @@ function TaskEditor({
         <Button variant="outline-secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="primary" disabled={saving || !name.trim() || !command.trim()} onClick={() => void save()}>
+        <Button variant="primary" disabled={saving || blocked || !name.trim() || !command.trim()} onClick={() => void save()}>
           {saving && <Spinner animation="border" size="sm" className="me-1" aria-hidden="true" />}
           Save
         </Button>

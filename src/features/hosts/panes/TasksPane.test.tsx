@@ -29,13 +29,20 @@ const plan = (level: DangerLevel): TaskPlan => ({
 });
 
 let level: DangerLevel;
+let saved: Record<string, unknown> | null;
 
 beforeEach(() => {
   localStorage.clear();
   level = "destructive";
-  mockIPC((cmd) => {
+  saved = null;
+  mockIPC((cmd, args) => {
     if (cmd === "list_host_tasks") return catalog;
     if (cmd === "plan_task") return plan(level);
+    if (cmd === "assess_task_command") return plan(level).danger;
+    if (cmd === "save_task") {
+      saved = args as Record<string, unknown>;
+      return { id: "t-1" };
+    }
   });
 });
 
@@ -73,5 +80,36 @@ describe("blocking dangerous tasks", () => {
     expect(isBlocked("caution", "caution")).toBe(true);
     expect(isBlocked("none", "caution")).toBe(false);
     expect(isBlocked("destructive", "off")).toBe(false);
+  });
+});
+
+describe("the task editor", () => {
+  async function openEditor() {
+    const user = userEvent.setup();
+    render(<TasksPane hostId="h1" />);
+    await user.click(await screen.findByRole("button", { name: /new task/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Nuke");
+    await user.type(within(dialog).getByLabelText("Command"), "rm -rf /");
+    return { user, dialog };
+  }
+
+  it("will not save a command the setting blocks", async () => {
+    const { dialog } = await openEditor();
+    expect(await within(dialog).findByText(/Blocked by your settings/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("saves a host-only task with its host id", async () => {
+    level = "none";
+    const { user, dialog } = await openEditor();
+    await user.click(within(dialog).getByLabelText("Available on every host"));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(saved).toMatchObject({
+      draft: { scope: { kind: "host", hostId: "h1" } },
+      hostId: "h1",
+      blockFrom: "destructive",
+    });
   });
 });

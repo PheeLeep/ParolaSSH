@@ -3,7 +3,7 @@
 //! Each sample is one compound command over the existing session, parsed here
 //! into numbers the pane can chart. Nothing is installed or privileged.
 //!
-//! CPU percentage and network rates are deltas between two cumulative
+//! CPU percentage, network and disk I/O rates are deltas between two cumulative
 //! readings, so the previous ones are kept on the session
 //! (`LiveSession::prev_readings`) and the first sample reports "no reading
 //! yet" rather than sleeping inside the command.
@@ -38,6 +38,8 @@ pub struct HostMetrics {
     pub disks: Vec<DiskInfo>,
     /// Summed across physical interfaces. `None` until there are two readings.
     pub network: Option<NetworkRate>,
+    /// Summed across whole disks. `None` until there are two readings.
+    pub disk_io: Option<DiskIo>,
     /// Sentences explaining anything absent above.
     pub notes: Vec<String>,
 }
@@ -79,6 +81,22 @@ pub struct InterfaceRate {
     pub is_virtual: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskIo {
+    pub read_bytes_per_sec: f64,
+    pub write_bytes_per_sec: f64,
+    pub devices: Vec<DeviceIo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceIo {
+    pub name: String,
+    pub read_bytes_per_sec: f64,
+    pub write_bytes_per_sec: f64,
+}
+
 /// Cumulative CPU counters from one `/proc/stat` reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CpuTimes {
@@ -101,21 +119,39 @@ pub struct NetCounters {
     pub interfaces: Vec<InterfaceCounters>,
 }
 
+/// Cumulative byte counters for one disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceCounters {
+    pub name: String,
+    pub read_bytes: u64,
+    pub write_bytes: u64,
+}
+
+/// Every disk's counters, stamped with when they were read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiskCounters {
+    pub at_ms: i64,
+    pub devices: Vec<DeviceCounters>,
+}
+
 /// The counters one sample leaves behind for the next one's deltas.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Readings {
     pub cpu: Option<CpuTimes>,
     pub net: Option<NetCounters>,
+    pub disk: Option<DiskCounters>,
 }
 
 /// The whole Linux sample in one exec.
 const LINUX_COMMAND: &str = "cat /proc/stat; echo ---PAROLA---; cat /proc/meminfo; \
      echo ---PAROLA---; df -P -k; echo ---PAROLA---; cat /proc/uptime; \
-     echo ---PAROLA---; cat /proc/loadavg; echo ---PAROLA---; cat /proc/net/dev";
+     echo ---PAROLA---; cat /proc/loadavg; echo ---PAROLA---; cat /proc/net/dev; \
+     echo ---PAROLA---; cat /proc/diskstats; echo ---PAROLA---; ls /sys/block";
 
 /// What a /proc-less Unix can still answer.
 const UNIX_FALLBACK_COMMAND: &str = "uptime; echo ---PAROLA---; df -P -k; \
-     echo ---PAROLA---; netstat -ibn";
+     echo ---PAROLA---; netstat -ibn; \
+     echo ---PAROLA---; ioreg -c IOBlockStorageDriver -r -w0 2>/dev/null";
 
 /// One PowerShell invocation, JSON out, so parsing does not depend on the
 /// display locale. `LoadPercentage` is instantaneous - no delta needed.
@@ -127,7 +163,10 @@ const WINDOWS_COMMAND: &str = "powershell -NoProfile -NonInteractive -Command \
     disks = @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | \
     Select-Object DeviceID,Size,FreeSpace); \
     net = @(Get-NetAdapterStatistics -ErrorAction SilentlyContinue | \
-    Select-Object Name,ReceivedBytes,SentBytes) } | ConvertTo-Json -Depth 3\"";
+    Select-Object Name,ReceivedBytes,SentBytes); \
+    diskio = @(Get-CimInstance Win32_PerfRawData_PerfDisk_PhysicalDisk | \
+    Select-Object Name,DiskReadBytesPersec,DiskWriteBytesPersec) } | \
+    ConvertTo-Json -Depth 3\"";
 
 /// The command a sample runs on this OS. Pure.
 pub fn sample_command(os: OsFamily) -> SshResult<&'static str> {
@@ -163,6 +202,7 @@ pub async fn sample(live: &LiveSession) -> SshResult<HostMetrics> {
     live.set_prev_readings(Readings {
         cpu: current.cpu.or(previous.cpu),
         net: current.net.or(previous.net),
+        disk: current.disk.or(previous.disk),
     });
 
     Ok(metrics)
@@ -182,10 +222,13 @@ pub fn parse_linux(
     let uptime = sections.next().unwrap_or("");
     let loadavg = sections.next().unwrap_or("");
     let net_dev = sections.next().unwrap_or("");
+    let diskstats = sections.next().unwrap_or("");
+    let block = sections.next().unwrap_or("");
 
     let current = Readings {
         cpu: parse_proc_stat(stat),
         net: parse_proc_net_dev(net_dev, sampled_at_ms),
+        disk: parse_diskstats(diskstats, block, sampled_at_ms),
     };
     let cpu_percent = match (previous.cpu, current.cpu) {
         (Some(previous), Some(current)) => cpu_percent(previous, current),
@@ -200,6 +243,7 @@ pub fn parse_linux(
         );
     }
     let network = network_between(previous.net.as_ref(), current.net.as_ref(), &mut notes);
+    let disk_io = disk_io_between(previous.disk.as_ref(), current.disk.as_ref(), &mut notes);
 
     (
         HostMetrics {
@@ -210,6 +254,7 @@ pub fn parse_linux(
             uptime_seconds: parse_proc_uptime(uptime),
             disks: parse_df(df),
             network,
+            disk_io,
             notes,
         },
         current,
@@ -396,6 +441,122 @@ fn parse_netstat_ib(text: &str, at_ms: i64) -> Option<NetCounters> {
     Some(NetCounters { at_ms, interfaces }).filter(|counters| !counters.interfaces.is_empty())
 }
 
+/// Bytes per second per disk between two readings, with the same rules as
+/// `network_rate` for new or reset devices.
+pub fn disk_io_rate(previous: &DiskCounters, current: &DiskCounters) -> Option<DiskIo> {
+    let elapsed_ms = current.at_ms - previous.at_ms;
+    if elapsed_ms <= 0 {
+        return None;
+    }
+    let seconds = elapsed_ms as f64 / 1000.0;
+
+    let devices: Vec<DeviceIo> = current
+        .devices
+        .iter()
+        .filter_map(|now| {
+            let before = previous.devices.iter().find(|before| before.name == now.name)?;
+            if now.read_bytes < before.read_bytes || now.write_bytes < before.write_bytes {
+                return None;
+            }
+            Some(DeviceIo {
+                name: now.name.clone(),
+                read_bytes_per_sec: (now.read_bytes - before.read_bytes) as f64 / seconds,
+                write_bytes_per_sec: (now.write_bytes - before.write_bytes) as f64 / seconds,
+            })
+        })
+        .collect();
+    if devices.is_empty() {
+        return None;
+    }
+
+    Some(DiskIo {
+        read_bytes_per_sec: devices.iter().map(|device| device.read_bytes_per_sec).sum(),
+        write_bytes_per_sec: devices.iter().map(|device| device.write_bytes_per_sec).sum(),
+        devices,
+    })
+}
+
+fn disk_io_between(
+    previous: Option<&DiskCounters>,
+    current: Option<&DiskCounters>,
+    notes: &mut Vec<String>,
+) -> Option<DiskIo> {
+    match (previous, current) {
+        (Some(previous), Some(current)) => disk_io_rate(previous, current),
+        (_, None) => {
+            notes.push("The host did not report disk I/O counters.".to_string());
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Collects one disk, skipping ones that never moved a byte.
+fn push_device(devices: &mut Vec<DeviceCounters>, name: &str, read_bytes: u64, write_bytes: u64) {
+    if read_bytes == 0 && write_bytes == 0 {
+        return;
+    }
+    devices.push(DeviceCounters {
+        name: name.to_string(),
+        read_bytes,
+        write_bytes,
+    });
+}
+
+/// `/proc/diskstats`, whole disks only: `/sys/block` lists them without their
+/// partitions. Loop, RAM and device-mapper/RAID layers are dropped because
+/// their I/O is already counted on the disks underneath. Sectors are always
+/// 512 bytes here, whatever the hardware uses.
+fn parse_diskstats(text: &str, block: &str, at_ms: i64) -> Option<DiskCounters> {
+    const LAYERED: &[&str] = &["loop", "ram", "zram", "dm-", "md", "sr", "fd", "nbd"];
+    let whole: Vec<&str> = block
+        .split_whitespace()
+        .filter(|name| !LAYERED.iter().any(|prefix| name.starts_with(prefix)))
+        .collect();
+
+    let mut devices = Vec::new();
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 10 || !whole.contains(&fields[2]) {
+            continue;
+        }
+        let (Ok(read), Ok(written)) = (fields[5].parse::<u64>(), fields[9].parse::<u64>()) else {
+            continue;
+        };
+        push_device(&mut devices, fields[2], read * 512, written * 512);
+    }
+
+    Some(DiskCounters { at_ms, devices }).filter(|counters| !counters.devices.is_empty())
+}
+
+/// macOS `ioreg`: each storage driver carries a `Statistics` dictionary with
+/// `"Bytes (Read)"` and `"Bytes (Write)"`. No reliable disk name comes with it,
+/// so the drivers are summed into one entry.
+fn parse_ioreg_storage(text: &str, at_ms: i64) -> Option<DiskCounters> {
+    let total = |key: &str| -> Option<u64> {
+        let values: Vec<u64> = text
+            .match_indices(key)
+            .filter_map(|(index, _)| {
+                let digits: String = text[index + key.len()..]
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                digits.parse().ok()
+            })
+            .collect();
+        (!values.is_empty()).then(|| values.iter().sum())
+    };
+
+    let mut devices = Vec::new();
+    push_device(
+        &mut devices,
+        "all disks",
+        total("\"Bytes (Read)\"=")?,
+        total("\"Bytes (Write)\"=")?,
+    );
+    Some(DiskCounters { at_ms, devices }).filter(|counters| !counters.devices.is_empty())
+}
+
 /// `/proc/meminfo`: prefer `MemAvailable` (kernel ≥ 3.14); on older kernels
 /// approximate it the way `free` used to, from free + buffers + cached.
 fn parse_meminfo(text: &str) -> Option<MemoryInfo> {
@@ -486,6 +647,7 @@ pub fn parse_unix_fallback(
     let uptime_line = sections.next().unwrap_or("");
     let df = sections.next().unwrap_or("");
     let netstat = sections.next().unwrap_or("");
+    let ioreg = sections.next().unwrap_or("");
 
     // `… load averages: 1.84 1.90 2.01` (macOS) or `load average: 0.12, …`.
     let load = uptime_line
@@ -503,14 +665,16 @@ pub fn parse_unix_fallback(
 
     let mut notes = vec![
         "CPU and memory sampling is implemented for Linux and Windows; this \
-         platform reports load, disks and network."
+         platform reports load, disks, network and disk I/O."
             .to_string(),
     ];
     let current = Readings {
         cpu: None,
         net: parse_netstat_ib(netstat, sampled_at_ms),
+        disk: parse_ioreg_storage(ioreg, sampled_at_ms),
     };
     let network = network_between(previous.net.as_ref(), current.net.as_ref(), &mut notes);
+    let disk_io = disk_io_between(previous.disk.as_ref(), current.disk.as_ref(), &mut notes);
 
     (
         HostMetrics {
@@ -521,6 +685,7 @@ pub fn parse_unix_fallback(
             uptime_seconds: None,
             disks: parse_df(df),
             network,
+            disk_io,
             notes,
         },
         current,
@@ -545,6 +710,7 @@ pub fn parse_windows(
             uptime_seconds: None,
             disks: Vec::new(),
             network: None,
+            disk_io: None,
             notes: vec!["The host's PowerShell answer could not be parsed.".to_string()],
         };
         return (metrics, Readings::default());
@@ -591,8 +757,10 @@ pub fn parse_windows(
     let current = Readings {
         cpu: None,
         net: windows_net(value.get("net"), sampled_at_ms),
+        disk: windows_disk_io(value.get("diskio"), sampled_at_ms),
     };
     let network = network_between(previous.net.as_ref(), current.net.as_ref(), &mut notes);
+    let disk_io = disk_io_between(previous.disk.as_ref(), current.disk.as_ref(), &mut notes);
 
     (
         HostMetrics {
@@ -603,6 +771,7 @@ pub fn parse_windows(
             uptime_seconds,
             disks,
             network,
+            disk_io,
             notes,
         },
         current,
@@ -634,6 +803,40 @@ fn windows_net(value: Option<&serde_json::Value>, at_ms: i64) -> Option<NetCount
     }
 
     Some(NetCounters { at_ms, interfaces }).filter(|counters| !counters.interfaces.is_empty())
+}
+
+/// `Win32_PerfRawData_PerfDisk_PhysicalDisk` rows: raw values of the "per sec"
+/// counters are cumulative byte counts. `_Total` is dropped in favour of the
+/// per-disk rows.
+fn windows_disk_io(value: Option<&serde_json::Value>, at_ms: i64) -> Option<DiskCounters> {
+    let rows: Vec<&serde_json::Value> = match value? {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        item @ serde_json::Value::Object(_) => vec![item],
+        _ => return None,
+    };
+    let count = |row: &serde_json::Value, key: &str| -> Option<u64> {
+        let value = row.get(key)?;
+        value
+            .as_u64()
+            .or_else(|| value.as_f64().map(|float| float as u64))
+            .or_else(|| value.as_str()?.parse().ok())
+    };
+
+    let mut devices = Vec::new();
+    for row in rows {
+        let (Some(name), Some(read), Some(write)) = (
+            row.get("Name").and_then(|name| name.as_str()),
+            count(row, "DiskReadBytesPersec"),
+            count(row, "DiskWriteBytesPersec"),
+        ) else {
+            continue;
+        };
+        if name != "_Total" {
+            push_device(&mut devices, name, read, write);
+        }
+    }
+
+    Some(DiskCounters { at_ms, devices }).filter(|counters| !counters.devices.is_empty())
 }
 
 fn windows_disk(value: &serde_json::Value) -> Option<DiskInfo> {
@@ -744,7 +947,13 @@ Inter-|   Receive                            |  Transmit\n\
  face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed\n\
     lo: 9999 1 0 0 0 0 0 0 9999 1 0 0 0 0 0 0\n\
   eth0:1000 10 0 0 0 0 0 0 500 5 0 0 0 0 0 0\n\
-   wg0: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0\n";
+   wg0: 100 1 0 0 0 0 0 0 100 1 0 0 0 0 0 0\n\
+---PAROLA---\n\
+   8       0 sda 100 0 2000 0 50 0 1000 0 0 0 0\n\
+   8       1 sda1 100 0 2000 0 50 0 1000 0 0 0 0\n\
+   7       0 loop0 10 0 80 0 0 0 0 0 0 0 0\n\
+---PAROLA---\n\
+loop0\nsda\n";
 
         // First sample: no previous reading, so no CPU yet - and a note says so.
         let (first, current) = parse_linux(stdout, &Readings::default(), 1_000);
@@ -759,7 +968,8 @@ Inter-|   Receive                            |  Transmit\n\
         // Second sample against the stored reading produces a percentage.
         let later = stdout
             .replace("cpu  100 0 100 700 100 0 0 0", "cpu  200 0 200 1100 100 0 0 0")
-            .replace("eth0:1000 10 0 0 0 0 0 0 500", "eth0:3000 10 0 0 0 0 0 0 1500");
+            .replace("eth0:1000 10 0 0 0 0 0 0 500", "eth0:3000 10 0 0 0 0 0 0 1500")
+            .replace("sda 100 0 2000 0 50 0 1000", "sda 100 0 4000 0 50 0 1500");
         let (second, _) = parse_linux(&later, &current, 2_000);
         // 200 more busy jiffies of 600 elapsed = 33.3%.
         let cpu = second.cpu_percent.unwrap();
@@ -772,6 +982,11 @@ Inter-|   Receive                            |  Transmit\n\
         let names: Vec<&str> = network.interfaces.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(names, ["eth0", "wg0"]);
         assert!(network.interfaces[1].is_virtual);
+        // Only the whole disk counts, in 512-byte sectors: 2000 and 500 more.
+        let disk_io = second.disk_io.unwrap();
+        assert_eq!(disk_io.read_bytes_per_sec, 2000.0 * 512.0);
+        assert_eq!(disk_io.write_bytes_per_sec, 500.0 * 512.0);
+        assert_eq!(disk_io.devices.len(), 1);
         assert!(second.notes.is_empty());
     }
 
@@ -806,6 +1021,18 @@ Inter-|   Receive                            |  Transmit\n\
     }
 
     #[test]
+    fn ioreg_sums_every_storage_driver() {
+        let text = r#"
+    | "Statistics" = {"Bytes (Read)"=1000,"Operations (Write)"=3,"Bytes (Write)"=200}
+    | "Statistics" = {"Bytes (Read)"=500,"Bytes (Write)"=50}
+"#;
+        let disk = parse_ioreg_storage(text, 7).unwrap();
+        assert_eq!(disk.devices[0].read_bytes, 1_500);
+        assert_eq!(disk.devices[0].write_bytes, 250);
+        assert!(parse_ioreg_storage("", 7).is_none(), "BSD has no ioreg");
+    }
+
+    #[test]
     fn netstat_counts_each_interface_once_from_its_link_row() {
         // macOS layout: lo0's link row has no address, so it is one field short.
         let macos = "\
@@ -834,7 +1061,11 @@ em0     1500  <Link>      08:00:27:aa:bb:cc    123456       654321\n";
   "disks": [
     { "DeviceID": "C:", "Size": 255953203200, "FreeSpace": 63988300800 }
   ],
-  "net": { "Name": "Ethernet 2", "ReceivedBytes": 4000000, "SentBytes": 1000000 }
+  "net": { "Name": "Ethernet 2", "ReceivedBytes": 4000000, "SentBytes": 1000000 },
+  "diskio": [
+    { "Name": "0 C:", "DiskReadBytesPersec": 5000, "DiskWriteBytesPersec": 7000 },
+    { "Name": "_Total", "DiskReadBytesPersec": 5000, "DiskWriteBytesPersec": 7000 }
+  ]
 }"#;
         let (metrics, current) = parse_windows(stdout, &Readings::default(), 87_400_000);
         assert!(metrics.network.is_none(), "the first sample has no rate yet");
@@ -842,6 +1073,9 @@ em0     1500  <Link>      08:00:27:aa:bb:cc    123456       654321\n";
             current.net.unwrap(),
             counters(87_400_000, &[("Ethernet 2", 4_000_000, 1_000_000)])
         );
+        let disk = current.disk.unwrap();
+        assert_eq!(disk.devices.len(), 1, "_Total is not a disk");
+        assert_eq!(disk.devices[0].name, "0 C:");
         assert_eq!(metrics.cpu_percent, Some(12.5));
         let memory = metrics.memory.unwrap();
         assert_eq!(memory.total_kb, 16_712_204);
@@ -882,7 +1116,7 @@ Filesystem 1024-blocks Used Available Capacity Mounted on\n\
         assert_eq!(metrics.load, Some([1.84, 1.90, 2.01]));
         assert_eq!(metrics.disks.len(), 1);
         assert!(metrics.cpu_percent.is_none());
-        assert!(metrics.notes[0].contains("load, disks and network"));
+        assert!(metrics.notes[0].contains("network and disk I/O"));
 
         // Linux wording of the same line, with commas.
         let linuxish = "10:15:01 up 3 days, 2 users, load average: 0.12, 0.20, 0.31\n";

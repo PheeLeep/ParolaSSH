@@ -1,13 +1,22 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Alert, Badge, Card, Spinner } from "react-bootstrap";
-import { ArrowDown, ArrowUp, Clock, Cpu, Gauge, MemoryStick } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Clock,
+  Cpu,
+  Gauge,
+  HardDriveDownload,
+  HardDriveUpload,
+  MemoryStick,
+} from "lucide-react";
 import { Segmented } from "../../../components/Segmented";
 import { useStoreSubscription } from "../../../lib/useStoreSubscription";
 import * as api from "../api";
 import { errorMessage } from "../api";
 import * as metricsCache from "../metricsCache";
 import type { IntervalChoice } from "../metricsCache";
-import type { NetworkRate } from "../types";
+import type { DiskIo, NetworkRate } from "../types";
 
 /** Offered cadences. The pane polls only while mounted and visible either
  *  way - deliberately not the 30-second heartbeat, which answers "is it
@@ -104,6 +113,13 @@ export function PerformancePane({ hostId }: { hostId: string }) {
   // One scale for both directions, so a quiet uplink reads as quiet.
   const netMax = Math.max(1, ...rxHistory, ...txHistory);
   const interfaces = metrics.network?.interfaces ?? [];
+  const ioHistory = history
+    .map((sample) => sample.diskIo)
+    .filter((value): value is DiskIo => value !== null);
+  const readHistory = ioHistory.map((io) => io.readBytesPerSec);
+  const writeHistory = ioHistory.map((io) => io.writeBytesPerSec);
+  const ioMax = Math.max(1, ...readHistory, ...writeHistory);
+  const devices = metrics.diskIo?.devices ?? [];
 
   return (
     <div className="d-flex flex-column gap-3">
@@ -215,9 +231,9 @@ export function PerformancePane({ hostId }: { hostId: string }) {
 
         {/* One physical interface is already the totals above. */}
         {(interfaces.length > 1 || interfaces.some((entry) => entry.isVirtual)) && (
-          <div className="net-ifaces mt-3">
+          <div className="io-list mt-3">
             {interfaces.map((entry) => (
-              <div key={entry.name} className="net-ifaces__row">
+              <div key={entry.name} className="io-list__row">
                 <code className="text-truncate">{entry.name}</code>
                 {entry.isVirtual && (
                   <Badge
@@ -228,11 +244,11 @@ export function PerformancePane({ hostId }: { hostId: string }) {
                     Virtual
                   </Badge>
                 )}
-                <span className="net-ifaces__rate ms-auto">
+                <span className="io-list__rate ms-auto">
                   <ArrowDown className="icon-sm" aria-label="Down" />
                   {formatBitRate(entry.rxBytesPerSec)}
                 </span>
-                <span className="net-ifaces__rate">
+                <span className="io-list__rate">
                   <ArrowUp className="icon-sm" aria-label="Up" />
                   {formatBitRate(entry.txBytesPerSec)}
                 </span>
@@ -242,9 +258,55 @@ export function PerformancePane({ hostId }: { hostId: string }) {
         )}
       </Section>
 
-      {metrics.disks.length > 0 && (
+      {(metrics.disks.length > 0 || ioHistory.length > 0) && (
         <Section title="Disks">
-          <div className="d-flex flex-column gap-3">
+          <div className="stat-grid">
+            <div className="stat-tile">
+              <div className="stat-tile__label">
+                <HardDriveDownload className="stat-tile__glyph" aria-hidden="true" />
+                Read
+              </div>
+              <div className="stat-tile__value">
+                {metrics.diskIo ? formatByteRate(metrics.diskIo.readBytesPerSec) : "-"}
+              </div>
+              <div className="stat-tile__sub">
+                <Sparkline values={readHistory} max={ioMax} label="Disk read history" />
+              </div>
+            </div>
+
+            <div className="stat-tile">
+              <div className="stat-tile__label">
+                <HardDriveUpload className="stat-tile__glyph" aria-hidden="true" />
+                Write
+              </div>
+              <div className="stat-tile__value">
+                {metrics.diskIo ? formatByteRate(metrics.diskIo.writeBytesPerSec) : "-"}
+              </div>
+              <div className="stat-tile__sub">
+                <Sparkline values={writeHistory} max={ioMax} label="Disk write history" />
+              </div>
+            </div>
+          </div>
+
+          {devices.length > 1 && (
+            <div className="io-list mt-3">
+              {devices.map((device) => (
+                <div key={device.name} className="io-list__row">
+                  <code className="text-truncate">{device.name}</code>
+                  <span className="io-list__rate ms-auto">
+                    <span className="text-body-secondary">R</span>
+                    {formatByteRate(device.readBytesPerSec)}
+                  </span>
+                  <span className="io-list__rate">
+                    <span className="text-body-secondary">W</span>
+                    {formatByteRate(device.writeBytesPerSec)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="d-flex flex-column gap-3 mt-3">
             {metrics.disks.map((disk) => (
               <div key={disk.mount}>
                 <div className="d-flex justify-content-between small mb-1">
@@ -411,6 +473,16 @@ function formatBitRate(bytesPerSec: number): string {
   if (bits < 1_000_000) return `${(bits / 1_000).toFixed(1)} kbps`;
   if (bits < 1_000_000_000) return `${(bits / 1_000_000).toFixed(1)} Mbps`;
   return `${(bits / 1_000_000_000).toFixed(2)} Gbps`;
+}
+
+/** Disk throughput is quoted in bytes, binary units like the sizes above. */
+function formatByteRate(bytesPerSec: number): string {
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)} B/s`;
+  const kib = bytesPerSec / 1024;
+  if (kib < 1024) return `${kib.toFixed(1)} KiB/s`;
+  const mib = kib / 1024;
+  if (mib < 1024) return `${mib.toFixed(1)} MiB/s`;
+  return `${(mib / 1024).toFixed(2)} GiB/s`;
 }
 
 function formatUptime(seconds: number): string {

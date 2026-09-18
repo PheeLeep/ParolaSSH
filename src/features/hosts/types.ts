@@ -340,6 +340,18 @@ export interface NetworkRate {
   interfaces: InterfaceRate[];
 }
 
+export interface DeviceIo {
+  name: string;
+  readBytesPerSec: number;
+  writeBytesPerSec: number;
+}
+
+export interface DiskIo {
+  readBytesPerSec: number;
+  writeBytesPerSec: number;
+  devices: DeviceIo[];
+}
+
 export interface HostMetrics {
   sampledAtMs: number;
   cpuPercent: number | null;
@@ -348,6 +360,7 @@ export interface HostMetrics {
   uptimeSeconds: number | null;
   disks: DiskInfo[];
   network: NetworkRate | null;
+  diskIo: DiskIo | null;
   notes: string[];
 }
 

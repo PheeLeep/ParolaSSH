@@ -306,11 +306,12 @@ async fn samples_metrics_twice_and_reads_a_cpu_delta() {
     let second = session.exec(command, None).await.unwrap();
     let (sample, _) = metrics::parse_linux(&second.stdout, &previous, now_ms());
     println!(
-        "cpu={:?} load={:?} uptime={:?} network={:?}",
-        sample.cpu_percent, sample.load, sample.uptime_seconds, sample.network
+        "cpu={:?} load={:?} uptime={:?} network={:?} disk_io={:?}",
+        sample.cpu_percent, sample.load, sample.uptime_seconds, sample.network, sample.disk_io
     );
     assert!(sample.cpu_percent.is_some(), "the second sample should carry a CPU figure");
     assert!(sample.network.is_some(), "the second sample should carry network rates");
+    assert!(sample.disk_io.is_some(), "the second sample should carry disk I/O rates");
 
     session.close().await;
 }

@@ -2016,23 +2016,25 @@ code,
   background: var(--parola-offline);
 }
 
-/* ---------------------------------------------- Interface list ----- */
+/* ---------------------------------------------- I/O lists ----- */
 
-.net-ifaces {
+/* Per-interface and per-disk rates under their totals. */
+
+.io-list {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
   font-size: 0.8125rem;
 }
 
-.net-ifaces__row {
+.io-list__row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   min-width: 0;
 }
 
-.net-ifaces__rate {
+.io-list__rate {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;

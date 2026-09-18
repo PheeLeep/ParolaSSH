@@ -14,7 +14,9 @@ import { errorMessage } from "../api";
 import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
 import {
+  CONTAINER_LABELS,
   SERVICE_STATE_LABELS,
+  pid1IsApplication,
   type ServiceAction,
   type ServiceActionRequest,
   type ServiceEntry,
@@ -95,7 +97,24 @@ export function ServicesPane({ hostId }: { hostId: string }) {
         </Button>
       </div>
 
-      {error && <Alert variant="danger" className="text-prewrap mb-0">{error}</Alert>}
+      {error && (
+        // No service manager is a fact about the host, not a failure.
+        <Alert
+          variant={connection?.platform.init === "none" ? "secondary" : "danger"}
+          className="text-prewrap mb-0"
+        >
+          {error}
+        </Alert>
+      )}
+
+      {services && connection?.platform.container && pid1IsApplication(connection.platform) && (
+        <Alert variant="warning" className="small py-2 mb-0">
+          This is a {CONTAINER_LABELS[connection.platform.container]} container whose main
+          process is <code>{connection.platform.pid1 || "unknown"}</code>. Stopping or
+          restarting the service that runs as PID 1 stops the whole container - and this
+          connection with it.
+        </Alert>
+      )}
 
       {loading && !services ? (
         <div className="d-flex align-items-center gap-2 text-body-secondary py-4">

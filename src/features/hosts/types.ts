@@ -81,6 +81,43 @@ export interface NegotiatedCrypto {
   strictKex: boolean;
 }
 
+export type InitSystem = "systemd" | "openrc" | "sysv" | "none" | "native";
+export type ContainerKind = "docker" | "podman" | "lxc" | "kubernetes" | "nspawn" | "other";
+
+/** What runs a Linux host, read once at connect. */
+export interface Platform {
+  init: InitSystem;
+  container: ContainerKind | null;
+  /** PID 1's name, e.g. `systemd` or `sshd`; empty when unreadable. */
+  pid1: string;
+  hasShutdown: boolean;
+}
+
+export const INIT_LABELS: Record<InitSystem, string> = {
+  systemd: "systemd",
+  openrc: "OpenRC",
+  sysv: "SysV init",
+  none: "No init system",
+  native: "Native",
+};
+
+export const CONTAINER_LABELS: Record<ContainerKind, string> = {
+  docker: "Docker",
+  podman: "Podman",
+  lxc: "LXC",
+  kubernetes: "Kubernetes",
+  nspawn: "systemd-nspawn",
+  other: "Container",
+};
+
+/** PID 1 names that are real inits; anything else is an application. */
+const INIT_PROCESSES = ["systemd", "init", "openrc-init", "runit", "s6-svscan"];
+
+/** Whether stopping PID 1's service would stop the whole container. */
+export function pid1IsApplication(platform: Platform): boolean {
+  return platform.container !== null && !INIT_PROCESSES.includes(platform.pid1);
+}
+
 /** A live SSH session's details. */
 export interface ConnectionInfo {
   hostId: string;
@@ -92,6 +129,11 @@ export interface ConnectionInfo {
   elevationExplanation: string;
   supportsForce: boolean;
   supportsCancel: boolean;
+  /** Whether a shutdown can be scheduled rather than only run now. */
+  supportsDelay: boolean;
+  /** Why power actions cannot work on this host, if they cannot. */
+  powerRefusal: string | null;
+  platform: Platform;
   fingerprint: string | null;
   negotiated: NegotiatedCrypto | null;
   connectedAt: string;

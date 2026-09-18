@@ -13,6 +13,7 @@
 //!   * `stream`   - long-running command output, streamed without a PTY.
 //!   * `sftp`     - browsing a remote filesystem; never follows a symlink.
 //!   * `transfers`- the app-wide upload/download queue, shared by every host.
+//!   * `platform` - init system and container detection for Linux hosts.
 //!   * `services` - list, act on, and read logs of system services.
 //!   * `metrics`  - one-round-trip performance sampling.
 //!   * `audit`    - remote security posture, tiered by cost.
@@ -24,6 +25,7 @@ pub mod client;
 pub mod commands;
 pub mod jump;
 pub mod metrics;
+pub mod platform;
 pub mod power;
 pub mod probe;
 pub mod registry;

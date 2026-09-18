@@ -17,6 +17,7 @@ use zeroize::Zeroizing;
 
 use super::client::{NegotiatedCrypto, Session};
 use super::metrics::Readings;
+use super::platform::Platform;
 use super::power::Elevation;
 use super::sftp::BrowseSession;
 use super::shell::ShellHandle;
@@ -36,6 +37,8 @@ pub struct LiveSession {
     pub os: OsFamily,
     pub os_detail: String,
     pub elevation: Elevation,
+    /// Init system and container status, read once at connect.
+    pub platform: Platform,
     pub fingerprint: Option<String>,
     /// What the first key exchange negotiated - the audit tab's tier 0.
     pub negotiated: Option<NegotiatedCrypto>,
@@ -81,6 +84,7 @@ impl LiveSession {
         os: OsFamily,
         os_detail: String,
         elevation: Elevation,
+        platform: Platform,
         connected_at: String,
     ) -> Self {
         let fingerprint = session.fingerprint.clone();
@@ -91,6 +95,7 @@ impl LiveSession {
             os,
             os_detail,
             elevation,
+            platform,
             fingerprint,
             negotiated,
             connected_at,

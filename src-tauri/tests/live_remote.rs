@@ -26,7 +26,9 @@
 
 use parolassh_lib::remote::client::{Credentials, Session, Target};
 use parolassh_lib::remote::power::{self, Elevation, PowerAction, PowerRequest};
-use parolassh_lib::remote::{audit, metrics, probe, services, sftp, transfer_task, tunnel, OsFamily};
+use parolassh_lib::remote::{
+    audit, metrics, platform, probe, services, sftp, transfer_task, tunnel, OsFamily,
+};
 use zeroize::Zeroizing;
 
 struct LiveConfig {
@@ -235,12 +237,23 @@ async fn lists_services_and_finds_sshd_among_them() {
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
+    let platform = platform::detect(&session, report.os).await;
+    println!("platform: {platform:?}");
 
-    let command = services::list_command(report.os).unwrap();
-    let output = session.exec(command, None).await.unwrap();
+    // A container with no init has no services; it must say so, not fail oddly.
+    let manager = match services::ServiceManager::for_host(report.os, &platform) {
+        Ok(manager) => manager,
+        Err(refusal) => {
+            assert!(platform.container.is_some(), "only a container may lack a manager: {refusal}");
+            session.close().await;
+            return;
+        }
+    };
+
+    let output = session.exec(services::list_command(manager), None).await.unwrap();
     assert!(output.succeeded(), "{}", output.failure_text());
 
-    let entries = services::parse_list(report.os, &output.stdout);
+    let entries = services::parse_list(manager, &output.stdout);
     println!("{} services; first: {:?}", entries.len(), entries.first().map(|e| &e.name));
     assert!(!entries.is_empty(), "a live host has services");
 
@@ -249,6 +262,35 @@ async fn lists_services_and_finds_sshd_among_them() {
         entries.iter().any(|entry| entry.name.contains("ssh")),
         "sshd should appear in its own service list"
     );
+
+    session.close().await;
+}
+
+/// A service's history comes back as lines or as a note saying why there are
+/// none - never as an error, whichever manager the host runs.
+#[tokio::test]
+#[ignore = "needs a live host: see the module docs"]
+async fn reads_ssh_history_or_explains_its_absence() {
+    let config = config();
+    let session = connect(&config).await;
+    let report = power::check_privileges(&session).await.unwrap();
+    let platform = platform::detect(&session, report.os).await;
+
+    let Ok(manager) = services::ServiceManager::for_host(report.os, &platform) else {
+        session.close().await;
+        return;
+    };
+    let unit = match manager {
+        services::ServiceManager::Systemd => "ssh.service",
+        services::ServiceManager::WindowsScm => "sshd",
+        _ => "ssh",
+    };
+
+    let command = services::log_command(manager, unit).unwrap();
+    let output = session.exec(&command, None).await.unwrap();
+    let log = services::parse_log(manager, &output, Some("OpenSSH"));
+    println!("{} lines; note: {:?}", log.lines.len(), log.note);
+    assert!(!log.lines.is_empty() || log.note.is_some(), "neither history nor a reason");
 
     session.close().await;
 }
@@ -402,6 +444,21 @@ async fn schedules_a_reboot_over_sudo_then_cancels_it() {
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
+
+    // An init-less container cannot reboot itself: assert the refusal instead.
+    let platform = platform::detect(&session, report.os).await;
+    if let Some(reason) = platform.power_refusal() {
+        let request = PowerRequest {
+            action: PowerAction::Reboot,
+            delay_minutes: 600,
+            force: false,
+            message: None,
+        };
+        let error = power::plan_on(report.os, &platform, &report.elevation, &request).unwrap_err();
+        assert_eq!(error.to_string(), reason);
+        session.close().await;
+        return;
+    }
 
     // Far enough out that a failure to cancel is still harmless.
     let scheduled = PowerRequest {

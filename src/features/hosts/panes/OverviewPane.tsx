@@ -1,6 +1,7 @@
 import { Badge, Card } from "react-bootstrap";
 import {
   Activity,
+  Container,
   Clock,
   Fingerprint,
   History,
@@ -18,9 +19,12 @@ import { StatusBadge } from "../StatusIndicator";
 import type { HostRow } from "../HostsProvider";
 import {
   AUTH_METHOD_LABELS,
+  CONTAINER_LABELS,
   ELEVATION_LABELS,
+  INIT_LABELS,
   OS_LABELS,
   type ConnectionInfo,
+  type Platform,
   type HostHealth,
 } from "../types";
 import { formatAbsolute, formatRelative } from "../../../lib/format";
@@ -76,6 +80,7 @@ export function OverviewPane({
             sub={health ? "checked every 30s" : "not yet checked"}
             Icon={Activity}
           />
+          {connection.os === "linux" && <PlatformTile platform={connection.platform} />}
           {jumpTile}
         </div>
       ) : (
@@ -190,6 +195,19 @@ export function OverviewPane({
         </Card.Body>
       </Card>
     </div>
+  );
+}
+
+/** Container or machine, and what manages its services. */
+function PlatformTile({ platform }: { platform: Platform }) {
+  const pid1 = platform.pid1 ? `PID 1: ${platform.pid1}` : null;
+  return (
+    <Stat
+      label="Runs as"
+      value={platform.container ? `${CONTAINER_LABELS[platform.container]} container` : "Full system"}
+      sub={[INIT_LABELS[platform.init], pid1].filter(Boolean).join(" · ")}
+      Icon={Container}
+    />
   );
 }
 

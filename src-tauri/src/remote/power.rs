@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 use super::client::Session;
+use super::platform::Platform;
 use super::{CommandOutput, OsFamily};
 use crate::ssh::{SshError, SshResult};
 
@@ -294,6 +295,20 @@ pub fn plan(
     elevation: &Elevation,
     request: &PowerRequest,
 ) -> SshResult<PowerPlan> {
+    plan_on(os, &Platform::native(), elevation, request)
+}
+
+/// `plan`, for a host whose init and container status are known.
+pub fn plan_on(
+    os: OsFamily,
+    platform: &Platform,
+    elevation: &Elevation,
+    request: &PowerRequest,
+) -> SshResult<PowerPlan> {
+    if let Some(reason) = platform.power_refusal() {
+        return Err(SshError::unsupported(reason));
+    }
+
     if let Elevation::Unavailable { reason } = elevation {
         return Err(SshError::invalid(format!(
             "This account cannot power the machine off: {reason}"
@@ -310,6 +325,7 @@ pub fn plan(
     let command = match os {
         OsFamily::Windows => windows_command(request),
         OsFamily::Macos => unix_command(request, true),
+        family if family.is_unix() && !platform.has_shutdown => busybox_command(request)?,
         family if family.is_unix() => unix_command(request, false),
         _ => {
             return Err(SshError::unsupported(
@@ -354,6 +370,22 @@ fn unix_command(request: &PowerRequest, is_macos: bool) -> String {
                 None => format!("shutdown {flag} {when}"),
             }
         }
+    }
+}
+
+/// BusyBox systems (Alpine) have `reboot`/`poweroff` but no `shutdown`, so
+/// nothing to schedule with and nothing to cancel.
+fn busybox_command(request: &PowerRequest) -> SshResult<String> {
+    match request.action {
+        PowerAction::Cancel => Err(SshError::unsupported(
+            "This host has no `shutdown` command, so there is no pending shutdown to cancel.",
+        )),
+        _ if request.delay_minutes > 0 => Err(SshError::unsupported(
+            "This host has no `shutdown` command (BusyBox), so it can only reboot or \
+             power off immediately.",
+        )),
+        PowerAction::Reboot => Ok("reboot".to_string()),
+        PowerAction::Shutdown => Ok("poweroff".to_string()),
     }
 }
 
@@ -444,7 +476,19 @@ pub async fn execute(
     request: &PowerRequest,
     password: Option<&str>,
 ) -> SshResult<PowerOutcome> {
-    let plan = plan(os, elevation, request)?;
+    execute_on(session, os, &Platform::native(), elevation, request, password).await
+}
+
+/// `execute`, for a host whose init and container status are known.
+pub async fn execute_on(
+    session: &Session,
+    os: OsFamily,
+    platform: &Platform,
+    elevation: &Elevation,
+    request: &PowerRequest,
+    password: Option<&str>,
+) -> SshResult<PowerOutcome> {
+    let plan = plan_on(os, platform, elevation, request)?;
 
     let stdin = if plan.needs_password {
         let password = password.ok_or_else(|| {
@@ -799,5 +843,35 @@ mod tests {
         let outcome = interpret(&plan, &reboot, denied).unwrap();
         assert!(!outcome.succeeded);
         assert!(outcome.message.contains("shutdown rights"));
+    }
+
+    #[test]
+    fn a_container_without_an_init_is_refused_with_the_reason() {
+        use crate::remote::platform::{ContainerKind, InitSystem};
+        let container = Platform {
+            init: InitSystem::SysV,
+            container: Some(ContainerKind::Docker),
+            pid1: "sshd".into(),
+            has_shutdown: true,
+        };
+        let error = plan_on(OsFamily::Linux, &container, &Elevation::NotNeeded, &request(PowerAction::Reboot, 0))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("docker restart"), "{error}");
+    }
+
+    #[test]
+    fn busybox_reboots_now_or_not_at_all() {
+        use crate::remote::platform::InitSystem;
+        let alpine = Platform { init: InitSystem::OpenRc, container: None, pid1: "init".into(), has_shutdown: false };
+        let now = |action| plan_on(OsFamily::Linux, &alpine, &Elevation::NotNeeded, &request(action, 0));
+        assert_eq!(now(PowerAction::Reboot).unwrap().command, "reboot");
+        assert_eq!(now(PowerAction::Shutdown).unwrap().command, "poweroff");
+        assert!(now(PowerAction::Cancel).is_err());
+        assert!(plan_on(OsFamily::Linux, &alpine, &Elevation::NotNeeded, &request(PowerAction::Reboot, 5)).is_err());
+        assert_eq!(
+            plan_on(OsFamily::Linux, &alpine, &Elevation::SudoPassword, &request(PowerAction::Reboot, 0)).unwrap().command,
+            "sudo -S -p '' sh -c 'exec </dev/null; reboot'"
+        );
     }
 }

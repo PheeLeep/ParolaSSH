@@ -14,12 +14,14 @@ use zeroize::Zeroizing;
 use super::client::{ConnectStage, Credentials, Progress, Session, Target};
 use super::power::{self, Elevation, PowerOutcome, PowerRequest, PowerPlan, PrivilegeReport};
 use super::jump;
+use super::platform::{self, Platform};
 use super::probe::{self, ProbeResult};
 use super::registry::{LiveSession, SessionRegistry};
 use super::secrets::SecretVault;
 use super::security;
 use super::services::{
-    self, ServiceActionRequest, ServiceEntry, ServiceLog, ServiceOutcome, ServicePlan,
+    self, ServiceActionRequest, ServiceEntry, ServiceLog, ServiceManager, ServiceOutcome,
+    ServicePlan,
 };
 use super::sftp::{self, DirListing};
 use super::transfer_task;
@@ -45,6 +47,11 @@ pub struct ConnectionInfo {
     pub elevation_explanation: String,
     pub supports_force: bool,
     pub supports_cancel: bool,
+    /// Whether a shutdown can be scheduled, not only run now.
+    pub supports_delay: bool,
+    /// Why power actions cannot work on this host at all, if they cannot.
+    pub power_refusal: Option<String>,
+    pub platform: Platform,
     pub fingerprint: Option<String>,
     /// What the key exchange negotiated, for the audit tab's free tier.
     pub negotiated: Option<super::client::NegotiatedCrypto>,
@@ -201,6 +208,7 @@ pub async fn connect_host(
     // Read once at connect time: neither can change under a live session.
     progress(ConnectStage::CheckingAccount);
     let report = power::check_privileges(&session).await?;
+    let platform = platform::detect(&session, report.os).await;
 
     let connected_at = now_iso8601();
     let mut store = HostStore::read(&config_dir);
@@ -213,6 +221,7 @@ pub async fn connect_host(
         report.os,
         report.os_detail.clone(),
         report.elevation.clone(),
+        platform.clone(),
         connected_at.clone(),
     ));
 
@@ -231,7 +240,10 @@ pub async fn connect_host(
         elevation: report.elevation,
         elevation_explanation: report.explanation,
         supports_force: report.supports_force,
-        supports_cancel: report.supports_cancel,
+        supports_cancel: report.supports_cancel && platform.can_schedule_power(),
+        supports_delay: platform.can_schedule_power(),
+        power_refusal: platform.power_refusal(),
+        platform,
         fingerprint: live.fingerprint.clone(),
         negotiated: live.negotiated.clone(),
         connected_at,
@@ -318,7 +330,7 @@ pub fn preview_power(
     request: PowerRequest,
 ) -> SshResult<PowerPlan> {
     let live = registry.require(&host_id)?;
-    power::plan(live.os, &live.elevation, &request)
+    power::plan_on(live.os, &live.platform, &live.elevation, &request)
 }
 
 /// Shut down, reboot, or cancel a pending shutdown.
@@ -334,9 +346,10 @@ pub async fn power_host(
 
     let sudo_password = resolve_sudo_password(&live, &vault, &host_id, password).await?;
 
-    let outcome = power::execute(
+    let outcome = power::execute_on(
         &live.session,
         live.os,
+        &live.platform,
         &live.elevation,
         &request,
         sudo_password.as_deref().map(|password| password.as_str()),
@@ -618,8 +631,8 @@ pub async fn list_services(
     host_id: String,
 ) -> SshResult<Vec<ServiceEntry>> {
     let live = registry.require(&host_id)?;
-    let command = services::list_command(live.os)?;
-    let output = live.session.exec(command, None).await?;
+    let manager = ServiceManager::for_host(live.os, &live.platform)?;
+    let output = live.session.exec(services::list_command(manager), None).await?;
 
     if !output.succeeded() {
         return Err(SshError::Io(format!(
@@ -628,7 +641,7 @@ pub async fn list_services(
         )));
     }
 
-    Ok(services::parse_list(live.os, &output.stdout))
+    Ok(services::parse_list(manager, &output.stdout))
 }
 
 /// The exact command a service action would run, without running it.
@@ -639,7 +652,8 @@ pub fn preview_service_action(
     request: ServiceActionRequest,
 ) -> SshResult<ServicePlan> {
     let live = registry.require(&host_id)?;
-    services::plan_action(live.os, &live.elevation, &request)
+    let manager = ServiceManager::for_host(live.os, &live.platform)?;
+    services::plan_action(manager, &live.elevation, &request)
 }
 
 /// Start, stop, or restart one service.
@@ -652,7 +666,8 @@ pub async fn service_action(
     password: Option<String>,
 ) -> SshResult<ServiceOutcome> {
     let live = registry.require(&host_id)?;
-    let plan = services::plan_action(live.os, &live.elevation, &request)?;
+    let manager = ServiceManager::for_host(live.os, &live.platform)?;
+    let plan = services::plan_action(manager, &live.elevation, &request)?;
 
     let sudo_password = resolve_sudo_password(&live, &vault, &host_id, password).await?;
 
@@ -692,7 +707,8 @@ pub async fn service_log(
     display_name: Option<String>,
 ) -> SshResult<ServiceLog> {
     let live = registry.require(&host_id)?;
-    let command = services::log_command(live.os, &unit)?;
+    let manager = ServiceManager::for_host(live.os, &live.platform)?;
+    let command = services::log_command(manager, &unit)?;
     let output = live.session.exec(&command, None).await?;
 
     let filter = match live.os {
@@ -700,7 +716,7 @@ pub async fn service_log(
         _ => None,
     };
 
-    Ok(services::parse_log(live.os, &output, filter))
+    Ok(services::parse_log(manager, &output, filter))
 }
 
 /// Follow a service's journal. Output arrives as `stream://output` events
@@ -715,7 +731,8 @@ pub async fn follow_service_log(
     unit: String,
 ) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
-    let command = services::follow_command(live.os, &unit)?;
+    let manager = ServiceManager::for_host(live.os, &live.platform)?;
+    let command = services::follow_command(manager, &unit)?;
 
     // Checked before the channel opens, so a refusal never strands a command
     // running remotely with nothing tracking it.

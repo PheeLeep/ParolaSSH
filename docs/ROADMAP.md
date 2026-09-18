@@ -534,6 +534,29 @@ growing list.
 Verified against the Linux VM: dialing → host key → encrypted → authenticating
 → authenticated, in that order.
 
+## Hosts without systemd, and containers ✅
+
+Services assumed systemd and Power assumed a machine it could reboot. Against a
+Debian/Kali Docker container both failed with systemctl's "System has not been
+booted with systemd". `remote/platform.rs` now reads, in one `sh -c` round trip
+at connect: the init system, whether this is a container and which kind, PID 1's
+name, and whether `shutdown` exists.
+
+| Decision | Why |
+|---|---|
+| Services picks a manager: systemd, OpenRC (`rc-status --servicelist`, `rc-service`), SysV (`service --status-all`, `service`), or the Windows SCM | Debian/Kali containers keep `/etc/init.d` scripts, so `service` works there; Alpine and Gentoo run OpenRC |
+| Without a journal, history is the lines naming the service in `/var/log/syslog` or `/var/log/messages` | When neither is readable the pane says so and points at `docker logs`, instead of showing nothing |
+| An init-less container gets an explanation, shown as information rather than an error | Nothing supervises its services; its runtime does |
+| Power is refused in a container whose PID 1 is not an init | It has nothing to reboot. An LXC system container running a real init keeps Power |
+| BusyBox hosts (no `shutdown`) get immediate `reboot`/`poweroff` only | No scheduling or cancelling exists there; the dialog hides both |
+| Services warns when PID 1 is an application | Restarting that service stops the whole container, and the connection with it |
+| Init script names may not start with `-` or contain `/` | `service` and `rc-service` take no `--` |
+| A failed detection falls back to systemd | The pre-detection behaviour, rather than disabling a working host |
+
+Verified live against a Kali container: detected as Docker, SysV, PID 1 `sshd`;
+the full live suite passes, 21 of 21. runit, s6 and a process list for bare
+containers are not built.
+
 ## Open questions
 
 | Question | State |
@@ -674,10 +697,10 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 311 |
+| Rust unit | `cargo test --lib` | 328 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
-| Rust live (needs a VM) | see below | 20, all `#[ignore]`d · green on Linux **and** Windows |
-| Frontend unit + component | `npm test` | 95 |
+| Rust live (needs a VM) | see below | 21, all `#[ignore]`d · green on Linux **and** Windows |
+| Frontend unit + component | `npm test` | 101 |
 | Frontend types | `npx tsc --noEmit` | - |
 
 Frontend tests run on Vitest in jsdom. The backend is never real: Tauri's

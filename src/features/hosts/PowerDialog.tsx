@@ -134,8 +134,9 @@ export function PowerDialog({
     );
   }
 
-  const { elevation, elevationExplanation, os, osDetail, user } = connection;
-  const blocked = elevation.kind === "unavailable";
+  const { elevation, elevationExplanation, os, osDetail, user, powerRefusal, supportsDelay } =
+    connection;
+  const blocked = elevation.kind === "unavailable" || powerRefusal !== null;
   const destructive = action !== "cancel";
 
   const canRun = !busy && !blocked && plan !== null && (!destructive || confirmed);
@@ -249,117 +250,133 @@ export function PowerDialog({
               </div>
             </div>
 
-            {blocked && (
-              <Alert variant="danger" className="d-flex gap-2">
+            {powerRefusal ? (
+              <Alert variant="secondary" className="d-flex gap-2">
                 <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
-                <div>
-                  {elevation.kind === "unavailable" && elevation.reason}
-                </div>
+                <div>{powerRefusal}</div>
+              </Alert>
+            ) : (
+              elevation.kind === "unavailable" && (
+                <Alert variant="danger" className="d-flex gap-2">
+                  <TriangleAlert className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+                  <div>{elevation.reason}</div>
+                </Alert>
+              )
+            )}
+
+            {!powerRefusal && !supportsDelay && (
+              <Alert variant="secondary" className="small py-2">
+                This host has no <code>shutdown</code> command, so it can only reboot
+                or power off immediately.
               </Alert>
             )}
 
-            <Form.Group className="mb-3">
-              <Form.Label className="fw-semibold">Action</Form.Label>
-              <div className="algorithm-choices">
-                <ActionChoice
-                  active={action === "reboot"}
-                  onClick={() => setAction("reboot")}
-                  Icon={RotateCcw}
-                  name="Reboot"
-                  hint="Restart the machine"
-                />
-                <ActionChoice
-                  active={action === "shutdown"}
-                  onClick={() => setAction("shutdown")}
-                  Icon={Power}
-                  name="Shut down"
-                  hint="Power off - you will need physical or IPMI access to bring it back"
-                />
-                {connection.supportsCancel && (
-                  <ActionChoice
-                    active={action === "cancel"}
-                    onClick={() => setAction("cancel")}
-                    Icon={XCircle}
-                    name="Cancel"
-                    hint="Call off a scheduled shutdown"
+            {!powerRefusal && (
+              <>
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-semibold">Action</Form.Label>
+                  <div className="algorithm-choices">
+                    <ActionChoice
+                      active={action === "reboot"}
+                      onClick={() => setAction("reboot")}
+                      Icon={RotateCcw}
+                      name="Reboot"
+                      hint="Restart the machine"
+                    />
+                    <ActionChoice
+                      active={action === "shutdown"}
+                      onClick={() => setAction("shutdown")}
+                      Icon={Power}
+                      name="Shut down"
+                      hint="Power off - you will need physical or IPMI access to bring it back"
+                    />
+                    {connection.supportsCancel && (
+                      <ActionChoice
+                        active={action === "cancel"}
+                        onClick={() => setAction("cancel")}
+                        Icon={XCircle}
+                        name="Cancel"
+                        hint="Call off a scheduled shutdown"
+                      />
+                    )}
+                  </div>
+                </Form.Group>
+
+                {action !== "cancel" && supportsDelay && (
+                  <Row className="g-3 mb-3">
+                    <Col sm={7}>
+                      <Form.Label className="fw-semibold">When</Form.Label>
+                      <div className="d-flex flex-wrap gap-1">
+                        {PRESETS.map((preset) => (
+                          <Button
+                            key={preset.minutes}
+                            size="sm"
+                            variant={
+                              minutes === preset.minutes ? "primary" : "outline-secondary"
+                            }
+                            onClick={() => setMinutes(preset.minutes)}
+                          >
+                            {preset.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </Col>
+                    <Col sm={5}>
+                      <Form.Label>Or in… (minutes)</Form.Label>
+                      <Form.Control
+                        type="number"
+                        min={0}
+                        value={minutes}
+                        onChange={(event) =>
+                          setMinutes(Math.max(0, Number(event.target.value) || 0))
+                        }
+                      />
+                    </Col>
+                  </Row>
+                )}
+
+                {action !== "cancel" && supportsDelay && (
+                  <Form.Group className="mb-3">
+                    <Form.Label>Message to logged-in users</Form.Label>
+                    <Form.Control
+                      value={message}
+                      onChange={(event) => setMessage(event.target.value)}
+                      placeholder="Patching - back in five minutes"
+                    />
+                  </Form.Group>
+                )}
+
+                {connection.supportsForce && action !== "cancel" && (
+                  <Form.Check
+                    type="checkbox"
+                    id="power-force"
+                    className="mb-3"
+                    label="Force applications to close without saving (Windows /f)"
+                    checked={force}
+                    onChange={(event) => setForce(event.target.checked)}
                   />
                 )}
-              </div>
-            </Form.Group>
 
-            {action !== "cancel" && (
-              <Row className="g-3 mb-3">
-                <Col sm={7}>
-                  <Form.Label className="fw-semibold">When</Form.Label>
-                  <div className="d-flex flex-wrap gap-1">
-                    {PRESETS.map((preset) => (
-                      <Button
-                        key={preset.minutes}
-                        size="sm"
-                        variant={
-                          minutes === preset.minutes ? "primary" : "outline-secondary"
-                        }
-                        onClick={() => setMinutes(preset.minutes)}
-                      >
-                        {preset.label}
-                      </Button>
-                    ))}
-                  </div>
-                </Col>
-                <Col sm={5}>
-                  <Form.Label>Or in… (minutes)</Form.Label>
-                  <Form.Control
-                    type="number"
-                    min={0}
-                    value={minutes}
-                    onChange={(event) =>
-                      setMinutes(Math.max(0, Number(event.target.value) || 0))
-                    }
+                {/* The literal command. */}
+                {planError && <Alert variant="warning">{planError}</Alert>}
+                {plan && (
+                  <>
+                    <div className="detail-grid__label">Command that will run</div>
+                    <div className="public-key-box user-select-auto">{plan.command}</div>
+                  </>
+                )}
+
+                {destructive && plan && !blocked && (
+                  <Form.Check
+                    type="checkbox"
+                    id="power-confirm"
+                    className="mt-3"
+                    label={`I want to ${plan.summary.toLowerCase()} on ${host.hostname}`}
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
                   />
-                </Col>
-              </Row>
-            )}
-
-            {action !== "cancel" && (
-              <Form.Group className="mb-3">
-                <Form.Label>Message to logged-in users</Form.Label>
-                <Form.Control
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  placeholder="Patching - back in five minutes"
-                />
-              </Form.Group>
-            )}
-
-            {connection.supportsForce && action !== "cancel" && (
-              <Form.Check
-                type="checkbox"
-                id="power-force"
-                className="mb-3"
-                label="Force applications to close without saving (Windows /f)"
-                checked={force}
-                onChange={(event) => setForce(event.target.checked)}
-              />
-            )}
-
-            {/* The literal command. */}
-            {planError && <Alert variant="warning">{planError}</Alert>}
-            {plan && (
-              <>
-                <div className="detail-grid__label">Command that will run</div>
-                <div className="public-key-box user-select-auto">{plan.command}</div>
+                )}
               </>
-            )}
-
-            {destructive && plan && !blocked && (
-              <Form.Check
-                type="checkbox"
-                id="power-confirm"
-                className="mt-3"
-                label={`I want to ${plan.summary.toLowerCase()} on ${host.hostname}`}
-                checked={confirmed}
-                onChange={(event) => setConfirmed(event.target.checked)}
-              />
             )}
           </Modal.Body>
 

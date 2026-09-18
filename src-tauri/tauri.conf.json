@@ -41,5 +41,16 @@
     "publisher": "PheeLeep",
     "copyright": "Copyright (c) 2026 PheeLeep",
     "license": "MIT"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzMDlDNzNCNzY3NTlFNkIKUldScm5uVjJPOGNKazVQNGhmRHlpYkpQTE5MY0tLWXFLY1l5OUVDa0srenlaVGdkUTFQZmJuOGwK",
+      "endpoints": [
+        "https://github.com/PheeLeep/ParolaSSH/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

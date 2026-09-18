@@ -17,10 +17,13 @@ import { AboutPage } from "./features/settings/AboutPage";
 import {
   applyStoredConcurrency,
   readStartupView,
+  readUpdateCheck,
 } from "./features/settings/preferences";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import * as transfers from "./features/transfers/transferStore";
 import { TransfersPage } from "./features/transfers/TransfersPage";
+import { UpdateBanner } from "./features/updates/UpdateBanner";
+import { checkForUpdate } from "./features/updates/updateStore";
 import { VpnPage } from "./features/vpn/VpnPage";
 import { VpnProvider } from "./features/vpn/VpnProvider";
 import { WelcomeScreen } from "./features/welcome/WelcomeScreen";
@@ -75,6 +78,7 @@ function AppShell() {
     // A reload destroys every dialog but not the Rust process, so anything it
     // still thinks is open would leave the tray blinking at nothing.
     void clearConnectPending();
+    if (readUpdateCheck()) void checkForUpdate({ quiet: true });
   }, []);
 
   return (
@@ -86,6 +90,7 @@ function AppShell() {
         onToggleSidebar={() => setSidebarHidden((hidden) => !hidden)}
         onNavigate={setView}
       />
+      <UpdateBanner />
 
       <div className="app-body">
         <HostSidebar view={view} onNavigate={setView} hidden={sidebarHidden} />

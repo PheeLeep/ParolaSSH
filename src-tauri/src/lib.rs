@@ -10,6 +10,7 @@ pub mod ssh;
 pub mod tasks;
 #[cfg(desktop)]
 pub mod tray;
+mod updates;
 pub mod vpn;
 
 use std::sync::Arc;
@@ -35,6 +36,12 @@ pub fn run() {
             let _ = window.set_focus();
         }
     }));
+
+    // Signed updates from GitHub Releases; the key is in tauri.conf.json.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
 
     builder
         .plugin(tauri_plugin_opener::init())
@@ -63,6 +70,7 @@ pub fn run() {
         .manage(Arc::new(TransferManager::new()))
         .invoke_handler(tauri::generate_handler![
             commands::ssh_location,
+            updates::install_kind,
             commands::list_ssh_keys,
             commands::ssh_config_hosts,
             commands::audit_ssh_dir,

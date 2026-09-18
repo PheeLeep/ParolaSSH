@@ -103,7 +103,11 @@ SmartScreen shows "Windows protected your PC": choose **More info → Run anyway
 The checksum file is how you confirm the download is the one this repository
 built.
 
-There are no automatic updates yet; new versions appear on the Releases page.
+**Updates.** At launch ParolaSSH asks GitHub for a newer release and shows a
+banner; nothing installs until you click. The Windows installers and the
+AppImage update in place. The `.deb` and `.rpm` belong to your package manager,
+so the banner links to the download instead. Each update is verified against
+the signing key built into the app. Turn the check off in Settings › Startup.
 See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Build it yourself

@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { Segmented } from "../../components/Segmented";
 import { LogsPanel } from "./LogsPanel";
+import { useStoreSubscription } from "../../lib/useStoreSubscription";
+import * as updates from "../updates/updateStore";
 import { revealInFileManager } from "../../lib/openExternal";
 import { useMotion, type MotionMode } from "../../theme/MotionProvider";
 import { useTheme, type ThemeMode } from "../../theme/ThemeProvider";
@@ -45,6 +47,7 @@ import {
   readNavLayout,
   readStartupView,
   readTerminalFont,
+  readUpdateCheck,
   writeAutoAudit,
   writeConnectDetails,
   writeDefaultTransferPriority,
@@ -52,6 +55,7 @@ import {
   writeNavLayout,
   writeStartupView,
   writeTerminalFont,
+  writeUpdateCheck,
   type NavLayout,
   type StartupView,
   type TerminalFont,
@@ -97,6 +101,7 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const [navLayout, setNavLayout] = useState<NavLayout>(readNavLayout);
   const [startup, setStartup] = useState<StartupView>(readStartupView);
   const [autoAudit, setAutoAudit] = useState<boolean>(readAutoAudit);
+  const [updateCheck, setUpdateCheck] = useState<boolean>(readUpdateCheck);
   const [connectDetails, setConnectDetails] = useState<boolean>(readConnectDetails);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
@@ -124,6 +129,11 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeNavLayout = (next: NavLayout) => {
     setNavLayout(next);
     writeNavLayout(next);
+  };
+
+  const changeUpdateCheck = (next: boolean) => {
+    setUpdateCheck(next);
+    writeUpdateCheck(next);
   };
 
   const changeAutoAudit = (next: boolean) => {
@@ -268,7 +278,6 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
           <SettingRow
             title="Check posture on connect"
             hint="Runs the Audit tab's read-only checks once a host connects, without asking. Only the unprivileged half: the checks needing root stay behind their prompt, and the report names what it had to skip."
-            last
           >
             <Form.Check
               type="switch"
@@ -277,6 +286,23 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
               checked={autoAudit}
               onChange={(event) => changeAutoAudit(event.target.checked)}
             />
+          </SettingRow>
+
+          <SettingRow
+            title="Check for updates"
+            hint={<UpdateStatus />}
+            last
+          >
+            <div className="d-flex align-items-center gap-2">
+              <CheckNowButton />
+              <Form.Check
+                type="switch"
+                id="update-check"
+                aria-label="Check for updates at launch"
+                checked={updateCheck}
+                onChange={(event) => changeUpdateCheck(event.target.checked)}
+              />
+            </div>
           </SettingRow>
         </Card.Body>
       </Card>
@@ -466,6 +492,42 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
         About ParolaSSH
       </Button>
     </div>
+  );
+}
+
+/** What the last update check found, under the setting's title. */
+function UpdateStatus() {
+  useStoreSubscription(updates.subscribe);
+  const state = updates.getState();
+  const base = "At launch, asks GitHub for a newer release. Nothing installs until you choose to.";
+  switch (state.status) {
+    case "checking":
+      return <>Checking…</>;
+    case "current":
+      return <>{base} You have the latest version, {__APP_VERSION__}.</>;
+    case "available":
+      return <>{base} Version {state.version} is available; see the banner above.</>;
+    case "installing":
+      return <>Installing {state.version}…</>;
+    case "error":
+      return (
+        <>
+          {base} <span className="text-danger">{state.message}</span>
+        </>
+      );
+    default:
+      return <>{base}</>;
+  }
+}
+
+function CheckNowButton() {
+  useStoreSubscription(updates.subscribe);
+  const busy = ["checking", "installing"].includes(updates.getState().status);
+  return (
+    <Button size="sm" variant="outline-secondary" disabled={busy} onClick={() => void updates.checkForUpdate()}>
+      {busy && <Spinner animation="border" size="sm" aria-hidden="true" />}
+      Check now
+    </Button>
   );
 }
 

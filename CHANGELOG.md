@@ -62,9 +62,16 @@ the code has macOS branches, but no Mac has ever run them.
 - Explains unreachable VPN addresses, and remembers Twingate's resource list
   while its service is stopped
 
+### Updates
+- Checks GitHub for a newer release at launch (can be turned off) and offers it
+  in a banner; nothing installs without a click
+- Windows installers and the AppImage update in place, after the download is
+  verified against the app's signing key; a warning comes first if sessions
+  are open
+
 ### Known limitations
 - Windows installers are not code-signed; SmartScreen warns on first run
 - FIDO security keys work through the SSH agent only
-- No automatic updates yet: download new versions from the Releases page
+- `.deb` and `.rpm` installs are told about updates but download them by hand
 
 [1.0.0]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.0

@@ -295,3 +295,25 @@ export function writeConnectDetails(enabled: boolean): void {
     // non-fatal: the preference just won't survive a restart
   }
 }
+
+/* ── Updates ───────────────────────────────────────────────────────────── */
+
+export const UPDATE_CHECK_STORAGE_KEY = "parolassh:update-check";
+
+/** Whether to ask GitHub for a newer version at launch. On unless turned off. */
+export function readUpdateCheck(): boolean {
+  try {
+    return localStorage.getItem(UPDATE_CHECK_STORAGE_KEY) !== "off";
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+    return true;
+  }
+}
+
+export function writeUpdateCheck(enabled: boolean): void {
+  try {
+    localStorage.setItem(UPDATE_CHECK_STORAGE_KEY, enabled ? "on" : "off");
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+}

@@ -185,7 +185,7 @@ of tiles scans as a column of numbers: `UserRound`, `Clock`, `Activity`,
 | Tier | What | State |
 |---|---|---|
 | 0 | Crypto from the handshake russh already did - weak kex, CBC ciphers, `ssh-rsa`+SHA-1, strict-kex | ✅ via `Handler::kex_done`; no remote command, no privileges |
-| 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH | ✅ read-only; degrades honestly without root |
+| 1 | `sshd -T` posture, `authorized_keys` perms, empty passwords, world-writable PATH; on Windows, ACLs on sshd_config, key files and host keys | ✅ read-only; degrades honestly without root or an administrator |
 
 A third-party deep scanner (Lynis) was built and then removed: driving another
 tool's minutes-long run was its own subsystem, and the ground it covered belongs
@@ -729,7 +729,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 348 |
+| Rust unit | `cargo test --lib` | 351 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 23, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
 | Frontend unit + component | `npm test` | 105 |
@@ -779,8 +779,8 @@ links with `ln -s` or `mklink`, hash with `sha256sum` or `Get-FileHash`, and
 clean up over SFTP. The server-side copy test runs the app's own
 `copy_command`. What used to skip now asserts the *other*
 platform's behaviour: Windows CPU needs no delta (`LoadPercentage` is
-instantaneous), tier 1 is Unix-only so the report must assemble from tier 0
-alone with `tier1_ran = false`, Windows power needs no password and no `sudo`,
+instantaneous), Windows tier 1 reads `sshd -T` as an administrator plus
+ACLs and never reports root login, Windows power needs no password and no `sudo`,
 and the reboot cancel is verified by a second `shutdown /a` failing with 1116.
 
 `skip()` remains for macOS/BSD, which no VM covers yet, and for the

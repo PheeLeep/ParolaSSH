@@ -30,7 +30,9 @@ the code has macOS branches, but no Mac has ever run them.
 - **Tasks** - built-in and your own one-click commands, with a danger check
   before anything destructive
 - **Security** - handshake crypto, `sshd -T` posture, listening ports,
-  firewall state and logged-in users; on Windows, a read-only Microsoft
+  firewall state and logged-in users. On Windows the posture audit also
+  checks who can write sshd_config and the authorized_keys files, who can read
+  the host keys, and writable PATH folders; plus a read-only Microsoft
   Defender view (protection switches, definition age, scans, detections, and
   any third-party antivirus in charge)
 - **Files** - SFTP browse, upload, download (files and folders), rename, move,

@@ -430,26 +430,33 @@ async fn tier1_audit_reads_sshd_posture_with_sudo() {
 
     let session = connect(&config).await;
     let report = power::check_privileges(&session).await.unwrap();
-    // Tier 1 is Unix-only, but tier 0 comes from the handshake and must still
-    // produce a report that says plainly that tier 1 did not run.
-    if !report.os.is_unix() {
+    // Windows reads the same sshd posture as an administrator, plus ACLs.
+    if report.os == OsFamily::Windows {
+        let output = session
+            .exec_with_timeout(&audit::windows_tier1_command(), None, std::time::Duration::from_secs(60))
+            .await
+            .unwrap();
+        let gathered = audit::gather_windows_tier1(&output);
         let assembled = audit::assemble(
             "live-test",
             session.negotiated.as_ref(),
-            None,
+            Some(&gathered),
             &std::collections::HashSet::new(),
         );
-        println!(
-            "tier0 only: score={} findings={} tier1_ran={}",
-            assembled.score,
-            assembled.findings.len(),
-            assembled.tier1_ran
-        );
+        println!("score={} note={:?}", assembled.score, assembled.tier1_note);
+        for finding in &assembled.findings {
+            println!("  {:?} {} [{}]", finding.severity, finding.title, finding.location);
+        }
 
-        assert!(!assembled.tier1_ran, "tier 1 cannot have run on a non-Unix host");
+        assert!(assembled.tier1_ran);
         assert!(
-            session.negotiated.is_some(),
-            "tier 0 needs what the key exchange negotiated"
+            gathered.sshd_config.is_some(),
+            "the test account is an administrator, so sshd -T must answer: {:?}",
+            gathered.note
+        );
+        assert!(
+            assembled.findings.iter().all(|finding| finding.rule_id != "sshd.permit-root-login"),
+            "Windows has no root account"
         );
 
         session.close().await;

@@ -8,6 +8,9 @@
 //!   permissions, world-writable PATH directories, and (only with elevation,
 //!   which `/etc/shadow` demands) empty-password accounts. What could not be
 //!   checked is named in a note, never guessed at.
+//! * **Windows tier 1.** The same `sshd -T` rules (bar root login), with ACLs
+//!   standing in for file modes: who may write sshd_config and the key files,
+//!   who may read the host private keys, and writable PATH folders.
 //!
 //! Report shape follows `ssh::audit`: same `Severity`, counts, and scoring.
 //! Findings are not the local `Finding` type, whose `Remediation` can be an
@@ -49,7 +52,7 @@ pub struct RemoteAuditReport {
     pub counts: SeverityCounts,
     /// 0–100, suppressed findings not counted - same scale as the key audit.
     pub score: u32,
-    /// Whether the tier-1 commands ran at all (they need a Unix host).
+    /// Whether the tier-1 commands ran at all (Unix or Windows hosts).
     pub tier1_ran: bool,
     /// What tier 1 could not check, and why. `None` when everything ran.
     pub tier1_note: Option<String>,
@@ -57,6 +60,7 @@ pub struct RemoteAuditReport {
 }
 
 /// A finding before id and suppression are resolved.
+#[derive(Clone)]
 struct NewFinding {
     rule_id: &'static str,
     target: String,
@@ -353,6 +357,10 @@ pub struct GatheredTier1 {
     /// Why sshd posture (and the shadow check) could not run, when they
     /// could not.
     pub note: Option<String>,
+    /// Windows ACL findings, already judged.
+    acl: Vec<NewFinding>,
+    /// Windows has no root account, so root-login rules do not apply.
+    windows: bool,
 }
 
 /// Build the report. Pure - everything remote has already happened.
@@ -371,13 +379,18 @@ pub fn assemble(
     let (tier1_ran, tier1_note) = match tier1 {
         Some(gathered) => {
             if let Some(config) = gathered.sshd_config.as_deref() {
-                new_findings.extend(sshd_findings(config));
+                new_findings.extend(
+                    sshd_findings(config)
+                        .into_iter()
+                        .filter(|finding| !(gathered.windows && finding.rule_id == "sshd.permit-root-login")),
+                );
             }
             new_findings.extend(authorized_keys_findings(&gathered.authorized_keys_mode));
             new_findings.extend(path_findings(&gathered.writable_path_dirs));
             if let Some(shadow) = gathered.shadow.as_deref() {
                 new_findings.extend(shadow_findings(shadow));
             }
+            new_findings.extend(gathered.acl.iter().map(NewFinding::clone));
             (true, gathered.note.clone())
         }
         None => (false, None),
@@ -465,6 +478,8 @@ pub fn gather_tier1(
         writable_path_dirs: sections.get("path").cloned().unwrap_or_default(),
         shadow,
         note,
+        acl: Vec::new(),
+        windows: false,
     }
 }
 
@@ -472,6 +487,157 @@ pub fn gather_tier1(
 pub fn needs_privileged_retry(unprivileged: &CommandOutput) -> bool {
     let (first, _) = parse_sections(&unprivileged.stdout);
     !sshd_config_is_usable(&first)
+}
+
+// ---------------------------------------------------------- windows tier 1
+
+/// `sshd -T` first (it needs an administrator), then marker sections of ACL
+/// entries as `kind|path|identity|rights|type`, and writable PATH folders.
+const WINDOWS_TIER1_SCRIPT: &str = "$ErrorActionPreference='SilentlyContinue'; \
+    $sshd=(Get-Command sshd).Source; if (-not $sshd) { $sshd=\"$env:WINDIR\\System32\\OpenSSH\\sshd.exe\" }; \
+    & $sshd -T 2>&1 | ForEach-Object { [string]$_ }; \
+    '---PAROLA:admin---'; ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); \
+    '---PAROLA:user---'; [Security.Principal.WindowsIdentity]::GetCurrent().Name; \
+    '---PAROLA:acl---'; $d=\"$env:ProgramData\\ssh\"; \
+    $f=@(@('config',\"$d\\sshd_config\"),@('adminkeys',\"$d\\administrators_authorized_keys\"),@('userkeys',\"$env:USERPROFILE\\.ssh\\authorized_keys\")); \
+    Get-ChildItem \"$d\\ssh_host_*_key\" | ForEach-Object { $f+=,@('hostkey',$_.FullName) }; \
+    foreach ($e in $f) { if (Test-Path -LiteralPath $e[1]) { (Get-Acl -LiteralPath $e[1]).Access | ForEach-Object { \"$($e[0])|$($e[1])|$($_.IdentityReference)|$($_.FileSystemRights)|$($_.AccessControlType)\" } } }; \
+    '---PAROLA:path---'; foreach ($p in ($env:Path -split ';' | Where-Object { $_ } | Select-Object -Unique)) { \
+    if (Test-Path -LiteralPath $p) { if ((Get-Acl -LiteralPath $p).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and [string]$_.IdentityReference -match '^(Everyone|BUILTIN\\\\Users|NT AUTHORITY\\\\Authenticated Users)$' -and [string]$_.FileSystemRights -match 'FullControl|Modify|Write|CreateFiles|268435456|1073741824' }) { $p } } }";
+
+pub fn windows_tier1_command() -> String {
+    super::power::powershell(WINDOWS_TIER1_SCRIPT)
+}
+
+/// Principals that legitimately hold full control of sshd's files.
+fn trusted_principal(identity: &str) -> bool {
+    let identity = identity.to_ascii_lowercase();
+    matches!(
+        identity.as_str(),
+        "nt authority\\system" | "builtin\\administrators" | "nt service\\trustedinstaller" | "nt service\\sshd"
+    )
+}
+
+/// Whether an ACE's rights let the holder change the file.
+fn grants_write(rights: &str) -> bool {
+    ["FullControl", "Modify", "Write", "AppendData", "TakeOwnership", "ChangePermissions", "268435456", "1073741824"]
+        .iter()
+        .any(|right| rights.contains(right))
+}
+
+/// Whether an ACE's rights let the holder read the file.
+fn grants_read(rights: &str) -> bool {
+    grants_write(rights) || rights.contains("Read") || rights.contains("-2147483648")
+}
+
+/// Judge the ACL lines. `user` owns their own authorized_keys. Pure.
+fn windows_acl_findings(text: &str, user: &str) -> Vec<NewFinding> {
+    let mut findings: Vec<NewFinding> = Vec::new();
+    let mut seen = HashSet::new();
+
+    for line in text.lines() {
+        let fields: Vec<&str> = line.trim().split('|').collect();
+        let [kind, path, identity, rights, access] = fields[..] else { continue };
+        if access != "Allow" || trusted_principal(identity) {
+            continue;
+        }
+        let owner = identity.eq_ignore_ascii_case(user);
+
+        let (rule_id, severity, title, detail, instruction) = match kind {
+            "config" if grants_write(rights) => (
+                "files.sshd-config-writable",
+                Severity::High,
+                format!("{identity} can change sshd_config"),
+                "Whoever can edit sshd_config can turn on password logins or point \
+                 sshd at their own keys, then wait for the service to restart.",
+                format!("icacls \"{path}\" /remove \"{identity}\""),
+            ),
+            "adminkeys" if grants_write(rights) => (
+                "files.admin-keys-writable",
+                Severity::Critical,
+                format!("{identity} can edit administrators_authorized_keys"),
+                "This file admits keys for every administrator account. Anyone who \
+                 can write it can add a key and log in as an administrator.",
+                format!("icacls \"{path}\" /inheritance:r /grant \"Administrators:F\" /grant \"SYSTEM:F\""),
+            ),
+            "userkeys" if !owner && grants_write(rights) => (
+                "files.authorized-keys-writable",
+                Severity::High,
+                format!("{identity} can edit authorized_keys"),
+                "Anyone who can write this file can add their own key and log in \
+                 as this account.",
+                format!("icacls \"{path}\" /remove \"{identity}\""),
+            ),
+            "hostkey" if grants_read(rights) => (
+                "files.host-key-readable",
+                Severity::High,
+                format!("{identity} can read a host private key"),
+                "With the host's private key, anyone can impersonate this server \
+                 to every client that trusts it.",
+                format!("icacls \"{path}\" /inheritance:r /grant \"Administrators:F\" /grant \"SYSTEM:F\""),
+            ),
+            _ => continue,
+        };
+
+        // One finding per file and principal, however many ACEs grant it.
+        if !seen.insert((rule_id, path.to_string(), identity.to_string())) {
+            continue;
+        }
+        findings.push(NewFinding {
+            rule_id,
+            target: format!("{path}|{identity}"),
+            severity,
+            title,
+            detail: detail.to_string(),
+            location: path.to_string(),
+            instruction: Some(instruction),
+        });
+    }
+    findings
+}
+
+/// Interpret the Windows batch. Pure.
+pub fn gather_windows_tier1(output: &CommandOutput) -> GatheredTier1 {
+    let (first, sections) = parse_sections(&output.stdout.replace('\r', ""));
+    let admin = sections.get("admin").is_some_and(|value| value.trim() == "True");
+    let user = sections.get("user").map(|value| value.trim().to_string()).unwrap_or_default();
+    let sshd_config = sshd_config_is_usable(&first).then_some(first);
+
+    let note = sshd_config.is_none().then(|| {
+        if admin {
+            "sshd -T did not answer, so daemon posture could not be checked. Is OpenSSH Server installed?"
+                .to_string()
+        } else {
+            "sshd -T needs an administrator on Windows, so daemon posture was skipped. \
+             File permissions were still checked."
+                .to_string()
+        }
+    });
+
+    let mut acl = windows_acl_findings(sections.get("acl").map(String::as_str).unwrap_or_default(), &user);
+    acl.extend(sections.get("path").into_iter().flat_map(|dirs| dirs.lines()).map(str::trim).filter(|dir| !dir.is_empty()).map(|dir| NewFinding {
+        rule_id: "files.world-writable-path",
+        target: dir.to_string(),
+        severity: Severity::High,
+        title: format!("{dir} on PATH is writable by every user"),
+        detail: "Any local user can drop a program there and wait for this \
+                 account to run it."
+            .to_string(),
+        location: dir.to_string(),
+        instruction: Some(format!(
+            "Remove write access for Users, Authenticated Users and Everyone: icacls \"{dir}\""
+        )),
+    }));
+
+    GatheredTier1 {
+        sshd_config,
+        authorized_keys_mode: String::new(),
+        writable_path_dirs: String::new(),
+        shadow: None,
+        note,
+        acl,
+        windows: true,
+    }
 }
 
 // ------------------------------------------------------------------ scoring
@@ -704,6 +870,8 @@ maxauthtries 10\n";
             writable_path_dirs: "/opt/a\n/opt/b\n".to_string(),
             shadow: None,
             note: None,
+            acl: Vec::new(),
+            windows: false,
         };
         let report = assemble("h", Some(&modern_crypto()), Some(&tier1), &HashSet::new());
 
@@ -713,8 +881,67 @@ maxauthtries 10\n";
         assert!(report.tier1_ran);
     }
 
+    /// Shaped like the Windows 10 VM's real output, with CRLF.
+    const WINDOWS_CLEAN: &str = "port 22\r\npermitrootlogin without-password\r\npasswordauthentication no\r\n\
+        permitemptypasswords no\r\nx11forwarding no\r\nmaxauthtries 6\r\n\
+        ---PAROLA:admin---\r\nTrue\r\n---PAROLA:user---\r\ndesktop-72f3g54\\admin\r\n---PAROLA:acl---\r\n\
+        config|C:\\ProgramData\\ssh\\sshd_config|NT AUTHORITY\\SYSTEM|FullControl|Allow\r\n\
+        config|C:\\ProgramData\\ssh\\sshd_config|BUILTIN\\Administrators|FullControl|Allow\r\n\
+        config|C:\\ProgramData\\ssh\\sshd_config|NT AUTHORITY\\Authenticated Users|ReadAndExecute, Synchronize|Allow\r\n\
+        userkeys|C:\\Users\\Admin\\.ssh\\authorized_keys|DESKTOP-72F3G54\\Admin|FullControl|Allow\r\n\
+        hostkey|C:\\ProgramData\\ssh\\ssh_host_ed25519_key|BUILTIN\\Administrators|FullControl|Allow\r\n\
+        ---PAROLA:path---\r\n";
+
     #[test]
-    fn windows_reports_tier0_only_with_tier1_not_run() {
+    fn a_default_windows_openssh_is_clean() {
+        let output = CommandOutput { stdout: WINDOWS_CLEAN.into(), stderr: String::new(), exit_code: Some(0) };
+        let gathered = gather_windows_tier1(&output);
+        assert!(gathered.note.is_none());
+        let report = assemble("h", Some(&modern_crypto()), Some(&gathered), &HashSet::new());
+        assert!(report.tier1_ran);
+        assert!(report.findings.is_empty(), "{:?}", report.findings.iter().map(|f| &f.title).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn windows_flags_loose_acls_but_never_root_login() {
+        let stdout = WINDOWS_CLEAN
+            .replace("permitrootlogin without-password", "permitrootlogin yes")
+            .replace("passwordauthentication no", "passwordauthentication yes")
+            .replace(
+                "---PAROLA:path---\r\n",
+                "config|C:\\ProgramData\\ssh\\sshd_config|BUILTIN\\Users|Modify, Synchronize|Allow\r\n\
+                 adminkeys|C:\\ProgramData\\ssh\\administrators_authorized_keys|Everyone|Write|Allow\r\n\
+                 adminkeys|C:\\ProgramData\\ssh\\administrators_authorized_keys|Everyone|FullControl|Allow\r\n\
+                 userkeys|C:\\Users\\Admin\\.ssh\\authorized_keys|DESKTOP-72F3G54\\bob|Write|Deny\r\n\
+                 hostkey|C:\\ProgramData\\ssh\\ssh_host_ed25519_key|NT AUTHORITY\\Authenticated Users|ReadAndExecute, Synchronize|Allow\r\n\
+                 ---PAROLA:path---\r\nC:\\Tools\r\n",
+            );
+        let output = CommandOutput { stdout, stderr: String::new(), exit_code: Some(0) };
+        let report = assemble("h", None, Some(&gather_windows_tier1(&output)), &HashSet::new());
+        let rules: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
+
+        assert!(!rules.contains(&"sshd.permit-root-login"), "Windows has no root: {rules:?}");
+        assert!(rules.contains(&"sshd.password-auth"));
+        assert!(rules.contains(&"files.sshd-config-writable"));
+        assert!(rules.contains(&"files.host-key-readable"));
+        assert!(rules.contains(&"files.world-writable-path"));
+        // Two ACEs for Everyone, one finding; a Deny entry is not a grant.
+        assert_eq!(rules.iter().filter(|rule| **rule == "files.admin-keys-writable").count(), 1);
+        assert!(!rules.contains(&"files.authorized-keys-writable"));
+        let path = report.findings.iter().find(|f| f.rule_id == "files.world-writable-path").unwrap();
+        assert!(path.instruction.as_deref().unwrap().contains("icacls"));
+    }
+
+    #[test]
+    fn a_standard_windows_user_gets_acls_and_a_note() {
+        let stdout = "Could not load host key\r\n---PAROLA:admin---\r\nFalse\r\n---PAROLA:user---\r\npc\\bob\r\n---PAROLA:acl---\r\n---PAROLA:path---\r\n";
+        let gathered = gather_windows_tier1(&CommandOutput { stdout: stdout.into(), stderr: String::new(), exit_code: Some(0) });
+        assert!(gathered.sshd_config.is_none());
+        assert!(gathered.note.unwrap().contains("needs an administrator"));
+    }
+
+    #[test]
+    fn a_host_without_tier1_reports_tier0_only() {
         let report = assemble("h", Some(&modern_crypto()), None, &HashSet::new());
         assert!(!report.tier1_ran);
         assert!(report.findings.is_empty());

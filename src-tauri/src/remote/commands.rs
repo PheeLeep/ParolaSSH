@@ -819,6 +819,12 @@ pub async fn remote_audit(
             privileged.as_ref(),
             may_elevate,
         ))
+    } else if live.os == OsFamily::Windows {
+        let output = live
+            .session
+            .exec_with_timeout(&audit::windows_tier1_command(), None, Duration::from_secs(60))
+            .await?;
+        Some(audit::gather_windows_tier1(&output))
     } else {
         None
     };
@@ -846,14 +852,12 @@ pub async fn remote_audit(
         );
     }
 
-    // A Windows host runs no tier-1 commands; say so rather than show a
-    // half-report.
-    if !live.os.is_unix() {
-        report.tier1_note = Some(
-            "Posture checks are implemented for Unix sshd; Windows posture checks \
-             are planned."
-                .to_string(),
-        );
+    // macOS and BSD are Unix; anything else runs no tier-1 commands.
+    if report.tier1_note.is_none() && !report.tier1_ran {
+        report.tier1_note = Some(format!(
+            "Posture checks cover Unix and Windows sshd; this host is {}.",
+            live.os.label().to_lowercase()
+        ));
     }
 
     Ok(report)

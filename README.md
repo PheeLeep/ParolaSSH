@@ -39,12 +39,14 @@ sends a credential you did not choose.
 **Per-host panes**
 | Pane | What it does |
 |---|---|
-| Overview | OS, elevation, host key, uptime, heartbeat |
+| Overview | OS, elevation, host key, uptime, heartbeat, container and init system |
 | Terminal | Real PTY, multi-shell tabs (max 8), renameable, persistent scrollback |
-| Services | `systemctl` / `sc query` - start, stop, restart, plus journal or SCM events with live follow |
-| Performance | CPU, memory, load, disks; user-set 1–30 s sampling |
-| Audit | Handshake crypto, `sshd -T` posture, key permissions - with per-host dismissals |
+| Services | systemd, OpenRC, SysV or the Windows SCM - start, stop, restart, plus history with live follow |
+| Performance | CPU, memory, load, disks, network and disk I/O; user-set 0.5–30 s sampling |
+| Tasks | Built-in and your own one-click commands, danger-checked before they run |
+| Security | Handshake crypto, `sshd -T` posture, listening ports, firewall, logged-in users |
 | Files | SFTP browser - upload, download (files *and* folders), rename, move, copy, delete; symlinks shown but never followed |
+| Tunnels | Local (`-L`) and remote (`-R`) port forwarding |
 
 **File operations**
 - Rename and move are one SFTP request; neither will ever land on an existing name
@@ -82,6 +84,27 @@ sends a credential you did not choose.
 - One session, many channels - extra shells and polling share a single handshake
 - Sessions view across every host, sudo/UAC elevation handled per platform
 - Light / dark / system themes, motion controls, single-instance launch
+
+## Install
+
+Download the latest build from
+[Releases](https://github.com/PheeLeep/ParolaSSH/releases) and check it against
+`SHA256SUMS.txt`:
+
+| Platform | File |
+|---|---|
+| Windows 10/11 | `.msi` or `-setup.exe` |
+| Debian, Ubuntu, Kali | `.deb` |
+| Fedora, openSUSE | `.rpm` |
+| Any other Linux | `.AppImage` (`chmod +x`, then run it) |
+
+**Windows will warn on first run.** The installers are not code-signed, so
+SmartScreen shows "Windows protected your PC": choose **More info → Run anyway**.
+The checksum file is how you confirm the download is the one this repository
+built.
+
+There are no automatic updates yet; new versions appear on the Releases page.
+See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Build it yourself
 
@@ -143,4 +166,4 @@ does; reports welcome.
 
 ---
 
-Status: **early** - v0.1.0. See [ROADMAP.md](docs/ROADMAP.md) for the current state.
+Status: **v1.0.0** - Linux and Windows. See [CHANGELOG.md](CHANGELOG.md) for releases and [ROADMAP.md](docs/ROADMAP.md) for the current state.

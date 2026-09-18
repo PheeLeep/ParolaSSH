@@ -663,7 +663,7 @@ fn parse_windows_firewall(output: &CommandOutput, command: String) -> SshResult<
         .map_err(|error| SshError::Io(format!("Unexpected firewall output from PowerShell: {error}")))?;
 
     let mut rules: Vec<WindowsRule> = json_list(parsed.rules);
-    rules.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    rules.sort_by_key(|rule| rule.name.to_lowercase());
 
     let backends = json_list::<WindowsProfile>(parsed.profiles)
         .into_iter()

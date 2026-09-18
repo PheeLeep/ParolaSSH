@@ -1,6 +1,6 @@
 [package]
 name = "parolassh"
-version = "0.1.0"
+version = "1.0.0"
 description = "GUI SSH remote console and server manager"
 authors = ["PheeLeep"]
 license = "MIT"

@@ -20,8 +20,10 @@ depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'libsoup3' 'cairo' 'gdk-pixbuf2' 'dbus'
 provides=('parolassh')
 conflicts=('parolassh')
 source=("ParolaSSH_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/ParolaSSH_${pkgver}_amd64.deb"
-        "LICENSE-${pkgver}::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/LICENSE")
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/LICENSE"
+        "parolassh-${pkgver}.desktop::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/packaging/parolassh.desktop")
 sha256sums=('18f539b9dd6be4ad7c27475ac2a1fd5f7925561475ce5358422842d639953aac'
+            'SKIP'
             'SKIP')
 noextract=("ParolaSSH_${pkgver}_amd64.deb")
 
@@ -41,9 +43,9 @@ package() {
   install -Dm644 "deb/usr/share/icons/hicolor/256x256@2/apps/parolassh.png" \
     "$pkgdir/usr/share/icons/hicolor/256x256/apps/parolassh.png"
 
-  # Named after the Wayland app_id, so the dock matches the window to its icon.
-  install -Dm644 deb/usr/share/applications/ParolaSSH.desktop \
-    "$pkgdir/usr/share/applications/parolassh.desktop"
+  # The repo's launcher (Network category, search keywords), named after the
+  # Wayland app_id so the dock matches the window to its icon.
+  install -Dm644 "parolassh-${pkgver}.desktop" "$pkgdir/usr/share/applications/parolassh.desktop"
 
   install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

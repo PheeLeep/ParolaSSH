@@ -28,7 +28,9 @@ the code has macOS branches, but no Mac has ever run them.
 - **Performance** - CPU, memory, load, disks, network and disk I/O, sampled
   every 0.5-30 s
 - **Tasks** - built-in and your own one-click commands, with a danger check
-  before anything destructive
+  before anything destructive. Settings › Advanced › **Block dangerous tasks**
+  (on by default) refuses destructive tasks outright, or everything the check
+  flags; turned off, a typed confirmation is asked instead
 - **Security** - handshake crypto, `sshd -T` posture, listening ports,
   firewall state and logged-in users. On Windows the posture audit also
   checks who can write sshd_config and the authorized_keys files, who can read

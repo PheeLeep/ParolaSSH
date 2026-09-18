@@ -1,5 +1,5 @@
 import * as api from "../hosts/api";
-import type { TransferPriority } from "../hosts/types";
+import type { DangerLevel, TransferPriority } from "../hosts/types";
 
 /** Which pane opens on launch. */
 export type StartupView = "welcome" | "hosts";
@@ -316,4 +316,36 @@ export function writeUpdateCheck(enabled: boolean): void {
   } catch {
     // non-fatal: the preference just won't survive a restart
   }
+}
+
+/* ── Dangerous tasks ───────────────────────────────────────────────────── */
+
+export const TASK_BLOCKING_STORAGE_KEY = "parolassh:block-dangerous-tasks";
+
+/** Off, block destructive tasks, or block anything the danger check flags. */
+export type TaskBlocking = "off" | "destructive" | "caution";
+
+/** Destructive tasks are blocked unless the operator turns this off. */
+export function readTaskBlocking(): TaskBlocking {
+  try {
+    const stored = localStorage.getItem(TASK_BLOCKING_STORAGE_KEY);
+    return stored === "off" || stored === "caution" ? stored : "destructive";
+  } catch {
+    // localStorage can be unavailable (private mode, embedded webview policy)
+    return "destructive";
+  }
+}
+
+export function writeTaskBlocking(blocking: TaskBlocking): void {
+  try {
+    localStorage.setItem(TASK_BLOCKING_STORAGE_KEY, blocking);
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+}
+
+/** Whether a task at this danger level may not run under this setting. */
+export function isBlocked(level: DangerLevel, blocking: TaskBlocking): boolean {
+  if (blocking === "off" || level === "none") return false;
+  return blocking === "caution" || level === "destructive";
 }

@@ -17,6 +17,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { bindTerminalClipboard } from "../../lib/terminalClipboard";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { readTaskBlocking } from "../settings/preferences";
 import * as api from "./api";
 import { THEMES } from "./terminalStore";
 import { readTerminalFont } from "../settings/preferences";
@@ -205,7 +206,7 @@ export async function start(
   );
 
   try {
-    const streamId = await api.startTask(hostId, taskId, plan.elevated, password);
+    const streamId = await api.startTask(hostId, taskId, plan.elevated, password, readTaskBlocking());
     run.streamId = streamId;
 
     for (const chunk of pending.get(streamId) ?? []) run.terminal.write(chunk);

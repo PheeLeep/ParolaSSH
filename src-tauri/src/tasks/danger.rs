@@ -6,8 +6,9 @@
 //! patterns changes that. The operator writes these commands and holds the
 //! credentials to run them by hand; the threat being defended against is the
 //! stray `/`, the pasted line from a forum, the task written for the wrong
-//! host. It never blocks: it raises the cost of pressing the button, and says
-//! exactly why, and the operator decides.
+//! host. It raises the cost of pressing the button and says exactly why. It
+//! blocks only when Settings › Advanced › Block dangerous tasks says to (on by
+//! default, for destructive tasks); `refusal` is that gate.
 //!
 //! That framing decides the tuning. A rule earns its place by catching a
 //! plausible *mistake*; rules that only fire on deliberate misuse are noise,
@@ -16,12 +17,12 @@
 //! Matching is on a normalised copy - lowercased, whitespace collapsed - while
 //! every message quotes the operator's original wording.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::remote::OsFamily;
 
 /// How much a command deserves to be stopped at.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DangerLevel {
     /// Nothing matched. Not a claim that the command is safe.
@@ -65,6 +66,25 @@ impl DangerAssessment {
             reasons: Vec::new(),
         }
     }
+}
+
+/// Why a task may not run under the blocking setting, if it may not.
+/// `block_from` is the lowest level blocked; `None` means blocking is off.
+pub fn refusal(assessment: &DangerAssessment, block_from: Option<DangerLevel>) -> Option<String> {
+    let threshold = block_from.filter(|level| !level.is_none())?;
+    if assessment.level.is_none() || assessment.level < threshold {
+        return None;
+    }
+    let what = match assessment.level {
+        DangerLevel::Destructive => "destructive",
+        _ => "worth a second look",
+    };
+    let reasons: Vec<&str> = assessment.reasons.iter().map(|reason| reason.label.as_str()).collect();
+    Some(format!(
+        "Blocked: this task is rated {what} ({}). Settings › Advanced › Block dangerous \
+         tasks stops it from running.",
+        reasons.join(", ")
+    ))
 }
 
 /// Paths whose recursive deletion takes the machine, not just some files.
@@ -624,6 +644,22 @@ mod tests {
             .iter()
             .map(|reason| reason.label.clone())
             .collect()
+    }
+
+    #[test]
+    fn blocking_stops_at_the_chosen_level_and_names_why() {
+        let wipe = linux("rm -rf /");
+        let restart = linux("systemctl restart sshd");
+        assert_eq!(restart.level, DangerLevel::Caution);
+
+        let message = refusal(&wipe, Some(DangerLevel::Destructive)).unwrap();
+        assert!(message.contains("destructive"), "{message}");
+        assert!(refusal(&restart, Some(DangerLevel::Destructive)).is_none());
+        assert!(refusal(&restart, Some(DangerLevel::Caution)).is_some());
+
+        assert!(refusal(&wipe, None).is_none(), "off means off");
+        assert!(refusal(&wipe, Some(DangerLevel::None)).is_none());
+        assert!(refusal(&linux("uptime"), Some(DangerLevel::Caution)).is_none());
     }
 
     #[test]

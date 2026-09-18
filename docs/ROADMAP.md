@@ -729,10 +729,10 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 
 | Suite | Command | Count |
 |---|---|---|
-| Rust unit | `cargo test --lib` | 354 |
+| Rust unit | `cargo test --lib` | 355 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 23, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
-| Frontend unit + component | `npm test` | 115 |
+| Frontend unit + component | `npm test` | 119 |
 | Frontend types | `npx tsc --noEmit` | - |
 
 Frontend tests run on Vitest in jsdom. The backend is never real: Tauri's

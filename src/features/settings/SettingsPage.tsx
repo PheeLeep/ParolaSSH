@@ -16,6 +16,8 @@ import {
   Plus,
   Power,
   Server,
+  ShieldBan,
+  SlidersHorizontal,
   ScrollText,
   Sparkles,
   SquareTerminal,
@@ -46,6 +48,7 @@ import {
   readMaxConcurrentTransfers,
   readNavLayout,
   readStartupView,
+  readTaskBlocking,
   readTerminalFont,
   readUpdateCheck,
   writeAutoAudit,
@@ -54,10 +57,12 @@ import {
   writeMaxConcurrentTransfers,
   writeNavLayout,
   writeStartupView,
+  writeTaskBlocking,
   writeTerminalFont,
   writeUpdateCheck,
   type NavLayout,
   type StartupView,
+  type TaskBlocking,
   type TerminalFont,
 } from "./preferences";
 import { hostNavStyle } from "../../lib/appWindow";
@@ -71,6 +76,7 @@ type SettingsTab =
   | "transfers"
   | "terminal"
   | "files"
+  | "advanced"
   | "logs";
 
 const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
@@ -80,6 +86,7 @@ const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
   { id: "transfers", label: "Transfers", Icon: ArrowUpDown },
   { id: "terminal", label: "Terminal", Icon: SquareTerminal },
   { id: "files", label: "Files", Icon: FolderOpen },
+  { id: "advanced", label: "Advanced", Icon: SlidersHorizontal },
   { id: "logs", label: "Logs", Icon: ScrollText },
 ];
 
@@ -102,6 +109,11 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const [startup, setStartup] = useState<StartupView>(readStartupView);
   const [autoAudit, setAutoAudit] = useState<boolean>(readAutoAudit);
   const [updateCheck, setUpdateCheck] = useState<boolean>(readUpdateCheck);
+  const [taskBlocking, setTaskBlocking] = useState<TaskBlocking>(readTaskBlocking);
+  // What "on" means is kept while the switch is off, so turning it back on restores it.
+  const [blockLevel, setBlockLevel] = useState<Exclude<TaskBlocking, "off">>(() =>
+    readTaskBlocking() === "caution" ? "caution" : "destructive",
+  );
   const [connectDetails, setConnectDetails] = useState<boolean>(readConnectDetails);
   const [font, setFont] = useState<TerminalFont>(readTerminalFont);
   const [concurrency, setConcurrency] = useState(readMaxConcurrentTransfers);
@@ -129,6 +141,12 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
   const changeNavLayout = (next: NavLayout) => {
     setNavLayout(next);
     writeNavLayout(next);
+  };
+
+  const changeTaskBlocking = (next: TaskBlocking) => {
+    setTaskBlocking(next);
+    writeTaskBlocking(next);
+    if (next !== "off") setBlockLevel(next);
   };
 
   const changeUpdateCheck = (next: boolean) => {
@@ -478,6 +496,46 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
               <Spinner animation="border" size="sm" />
             )}
           </SettingRow>
+        </Card.Body>
+      </Card>
+      )}
+
+      {tab === "advanced" && (
+      <Card className="mb-3">
+        <Card.Body>
+          <h2 className="section-title mb-3">Advanced</h2>
+
+          <SettingRow
+            title="Block dangerous tasks"
+            hint="Refuses to run a task the danger check flags, instead of asking for a typed confirmation. The check reads the command's text, so it catches mistakes, not a command written to hide what it does. Terminals are never filtered."
+            last={taskBlocking === "off"}
+          >
+            <Form.Check
+              type="switch"
+              id="block-dangerous-tasks"
+              aria-label="Block dangerous tasks"
+              checked={taskBlocking !== "off"}
+              onChange={(event) => changeTaskBlocking(event.target.checked ? blockLevel : "off")}
+            />
+          </SettingRow>
+
+          {taskBlocking !== "off" && (
+            <SettingRow
+              title="What to block"
+              hint="Destructive: wiping disks, deleting system folders, and the like. Anything flagged also blocks tasks marked worth a second look, such as restarting the SSH service."
+              last
+            >
+              <Segmented<Exclude<TaskBlocking, "off">>
+                label="What to block"
+                value={taskBlocking}
+                onChange={changeTaskBlocking}
+                options={[
+                  { value: "destructive", label: "Destructive", Icon: ShieldBan },
+                  { value: "caution", label: "Anything flagged", Icon: ShieldBan },
+                ]}
+              />
+            </SettingRow>
+          )}
         </Card.Body>
       </Card>
       )}

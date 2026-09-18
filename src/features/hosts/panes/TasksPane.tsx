@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Form, Modal, Spinner } from "react-bootstrap";
 import {
   AlertTriangle,
+  Ban,
   ListChecks,
   Pencil,
   Play,
@@ -18,6 +19,7 @@ import { useHosts } from "../HostsProvider";
 import * as taskStore from "../taskStore";
 import { useStoreSubscription } from "../../../lib/useStoreSubscription";
 import { useTheme } from "../../../theme/ThemeProvider";
+import { isBlocked, readTaskBlocking } from "../../settings/preferences";
 import type {
   BuiltinTask,
   DangerAssessment,
@@ -344,8 +346,9 @@ function PlanDialog({
   onConfirm: () => void;
 }) {
   const [typed, setTyped] = useState("");
+  const [blocked] = useState(() => isBlocked(plan.danger.level, readTaskBlocking()));
   const destructive = plan.danger.level === "destructive";
-  const armed = !destructive || typed.trim().toUpperCase() === CONFIRM_WORD;
+  const armed = !blocked && (!destructive || typed.trim().toUpperCase() === CONFIRM_WORD);
 
   return (
     <Modal show onHide={onCancel} centered backdrop="static" size="lg">
@@ -381,7 +384,18 @@ function PlanDialog({
 
         <DangerNotice danger={plan.danger} />
 
-        {destructive && (
+        {blocked && (
+          <Alert variant="secondary" className="d-flex gap-2 mb-0" role="status">
+            <Ban className="icon-sm flex-shrink-0 mt-1" aria-hidden="true" />
+            <div>
+              <strong>Blocked by your settings.</strong> Settings › Advanced › Block
+              dangerous tasks stops this task from running. Turn it off there, or run the
+              command in a terminal, if you mean it.
+            </div>
+          </Alert>
+        )}
+
+        {destructive && !blocked && (
           <Form.Group controlId="task-confirm">
             <Form.Label className="small mb-1">
               Type <strong>{CONFIRM_WORD}</strong> to enable the button.

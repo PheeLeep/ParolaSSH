@@ -171,6 +171,7 @@ pub async fn start_task(
     task_id: String,
     elevated: Option<bool>,
     password: Option<String>,
+    block_from: Option<super::danger::DangerLevel>,
 ) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
     let (command, default_elevated) = resolve(&app, &host_id, &task_id, live.os)?;
@@ -180,6 +181,12 @@ pub async fn start_task(
         &command,
         elevated.unwrap_or(default_elevated),
     )?;
+
+    // Enforced here, not only in the dialog, so no UI path can skip it.
+    if let Some(reason) = super::danger::refusal(&plan.danger, block_from) {
+        logging::info("tasks", format!("Task {task_id} on host {host_id} blocked by setting"));
+        return Err(SshError::invalid(reason));
+    }
 
     // `sudo -S` reads a line from stdin either way; a NOPASSWD rule ignores
     // it, so the empty line keeps one code path.

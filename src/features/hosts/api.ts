@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { TaskBlocking } from "../settings/preferences";
 import type {
   ConnectionInfo,
   ConnectProgress,
@@ -365,12 +366,15 @@ export const startTask = (
   taskId: string,
   elevated?: boolean,
   password?: string | null,
+  blocking: TaskBlocking = "destructive",
 ) =>
   invoke<number>("start_task", {
     hostId,
     taskId,
     elevated: elevated ?? null,
     password: password ?? null,
+    // The backend enforces this too, so the dialog is not the only gate.
+    blockFrom: blocking === "off" ? null : blocking,
   });
 
 /* ── Files (SFTP) ──────────────────────────────────────────────────────── */

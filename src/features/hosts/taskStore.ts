@@ -51,14 +51,9 @@ export type TaskRun = {
   refit: (() => void) | null;
 };
 
-/** Each host's runs, one tab per task. A task has at most one tab: running it
- *  again reruns it there rather than opening a second copy. */
-type HostRuns = { runs: TaskRun[]; active: string | null };
-
-/** Same ceiling as terminal tabs. */
-export const MAX_TABS = 8;
-
-const hosts = new Map<string, HostRuns>();
+/** Each host's runs, one per task: the latest run of a task replaces the one
+ *  before, so reopening a task always shows its last result. */
+const hosts = new Map<string, TaskRun[]>();
 const listeners = new Set<() => void>();
 let version = 0;
 
@@ -76,22 +71,8 @@ export function getVersion(): number {
   return version;
 }
 
-/** This host's tabs in order, and which one is showing. */
-export function list(hostId: string): { runs: TaskRun[]; active: TaskRun | undefined } {
-  const entry = hosts.get(hostId);
-  if (!entry) return { runs: [], active: undefined };
-  return { runs: entry.runs, active: entry.runs.find((run) => run.taskId === entry.active) };
-}
-
 export function find(hostId: string, taskId: string): TaskRun | undefined {
-  return hosts.get(hostId)?.runs.find((run) => run.taskId === taskId);
-}
-
-export function select(hostId: string, taskId: string): void {
-  const entry = hosts.get(hostId);
-  if (!entry || entry.active === taskId || !find(hostId, taskId)) return;
-  entry.active = taskId;
-  notify();
+  return hosts.get(hostId)?.find((run) => run.taskId === taskId);
 }
 
 function makeTerminal(theme: "light" | "dark"): {
@@ -127,9 +108,9 @@ function makeTerminal(theme: "light" | "dark"): {
   return { terminal, fit, node };
 }
 
-/** Start a task in its tab, reusing the tab when it already has one. Throws
- *  when that task is still running or every tab is taken - a button that does
- *  nothing and says nothing is indistinguishable from a broken one. */
+/** Start a task, replacing its previous result. Throws when that task is
+ *  still running - a button that does nothing and says nothing is
+ *  indistinguishable from a broken one. */
 export async function start(
   hostId: string,
   taskId: string,
@@ -138,17 +119,12 @@ export async function start(
   theme: "light" | "dark",
   password?: string | null,
 ): Promise<void> {
-  const entry = hosts.get(hostId) ?? { runs: [], active: null };
-  const index = entry.runs.findIndex((run) => run.taskId === taskId);
-  const existing = index >= 0 ? entry.runs[index] : undefined;
+  const runs = hosts.get(hostId) ?? [];
+  const index = runs.findIndex((run) => run.taskId === taskId);
+  const existing = index >= 0 ? runs[index] : undefined;
 
   if (existing?.state === "running") {
-    entry.active = taskId;
-    notify();
     throw new Error(`“${existing.taskName}” is still running. Wait for it, or stop it first.`);
-  }
-  if (!existing && entry.runs.length >= MAX_TABS) {
-    throw new Error(`${MAX_TABS} task tabs are open. Close a finished one first.`);
   }
 
   const { terminal, fit, node } = makeTerminal(theme);
@@ -171,15 +147,14 @@ export async function start(
     refit: null,
   };
 
-  // A rerun takes the old run's place in the strip; its output has been seen.
+  // The last result is replaced by the new run; it has been seen.
   if (existing) {
     disposeRun(existing);
-    entry.runs[index] = run;
+    runs[index] = run;
   } else {
-    entry.runs.push(run);
+    runs.push(run);
   }
-  entry.active = taskId;
-  hosts.set(hostId, entry);
+  hosts.set(hostId, runs);
   notify();
 
   // The command is echoed into the feed before anything runs, so the log is
@@ -339,32 +314,13 @@ function disposeRun(run: TaskRun) {
   run.node.remove();
 }
 
-/** Close one tab, stopping its run first if it is still going. */
-export async function close(hostId: string, taskId: string): Promise<void> {
-  const entry = hosts.get(hostId);
-  const run = find(hostId, taskId);
-  if (!entry || !run) return;
-
-  if (run.state === "running") await stop(hostId, taskId);
-  disposeRun(run);
-
-  const index = entry.runs.indexOf(run);
-  entry.runs.splice(index, 1);
-  if (entry.active === taskId) {
-    // The neighbour the eye lands on: the next tab, or the last one.
-    entry.active = entry.runs[Math.min(index, entry.runs.length - 1)]?.taskId ?? null;
-  }
-  if (entry.runs.length === 0) hosts.delete(hostId);
-  notify();
-}
-
 /** Everything this host had. Called on disconnect, reap, delete and app exit. */
 export async function closeHost(hostId: string): Promise<void> {
-  const entry = hosts.get(hostId);
-  if (!entry) return;
+  const runs = hosts.get(hostId);
+  if (!runs) return;
   hosts.delete(hostId);
 
-  for (const run of entry.runs) {
+  for (const run of runs) {
     if (run.state === "running" && run.streamId !== null) {
       await api.closeStream(hostId, run.streamId).catch(() => undefined);
     }
@@ -375,7 +331,7 @@ export async function closeHost(hostId: string): Promise<void> {
 
 /** Follow the app's theme, like the terminals do. */
 export function applyTheme(theme: "light" | "dark"): void {
-  for (const entry of hosts.values()) {
-    for (const run of entry.runs) run.terminal.options.theme = THEMES[theme];
+  for (const runs of hosts.values()) {
+    for (const run of runs) run.terminal.options.theme = THEMES[theme];
   }
 }

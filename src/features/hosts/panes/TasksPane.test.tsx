@@ -1,15 +1,27 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { connectionInfo } from "../../../test/connection";
 import { TASK_BLOCKING_STORAGE_KEY, isBlocked } from "../../settings/preferences";
 import type { DangerLevel, HostTasks, TaskPlan } from "../types";
+import * as taskStore from "../taskStore";
 import { TasksPane } from "./TasksPane";
 
 vi.mock("../HostsProvider", () => ({ useHosts: () => ({ getConnection: () => connectionInfo() }) }));
 vi.mock("../ElevationProvider", () => ({ useElevation: () => vi.fn() }));
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    options: Record<string, unknown> = {};
+    loadAddon() {}
+    open() {}
+    write() {}
+    writeln() {}
+    dispose() {}
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({ FitAddon: class { fit() {} } }));
 vi.mock("../../../lib/terminalClipboard", () => ({ bindTerminalClipboard: () => () => {} }));
 vi.mock("../../../theme/ThemeProvider", () => ({ useTheme: () => ({ resolved: "dark" }) }));
 
@@ -28,6 +40,13 @@ const plan = (level: DangerLevel): TaskPlan => ({
   danger: { level, reasons: level === "none" ? [] : [{ label: "Recursive delete", detail: "Gone.", level }] },
 });
 
+// jsdom has no layout, so nothing to observe.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  disconnect() {}
+  unobserve() {}
+} as unknown as typeof ResizeObserver;
+
 let level: DangerLevel;
 let saved: Record<string, unknown> | null;
 
@@ -39,6 +58,7 @@ beforeEach(() => {
     if (cmd === "list_host_tasks") return catalog;
     if (cmd === "plan_task") return plan(level);
     if (cmd === "assess_task_command") return plan(level).danger;
+    if (cmd === "start_task") return 7;
     if (cmd === "save_task") {
       saved = args as Record<string, unknown>;
       return { id: "t-1" };
@@ -114,5 +134,37 @@ describe("the task editor", () => {
       hostId: "h1",
       blockFrom: "destructive",
     });
+  });
+});
+
+describe("run results", () => {
+  afterEach(async () => {
+    await taskStore.closeHost("h1");
+  });
+
+  it("opens the output in a dialog, and Show brings it back while running", async () => {
+    level = "none";
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: "Run" }));
+
+    const output = await screen.findByRole("dialog");
+    expect(within(output).getByText("Wipe")).toBeInTheDocument();
+    expect(within(output).getByRole("button", { name: /stop watching/i })).toBeInTheDocument();
+
+    // The header's × and the footer button are both "Close".
+    await user.click(within(output).getAllByRole("button", { name: "Close" })[0]);
+    await user.click(await screen.findByRole("button", { name: "Show" }));
+    expect(await screen.findByRole("button", { name: /stop watching/i })).toBeInTheDocument();
+  });
+
+  it("offers the last result once a run has finished", async () => {
+    level = "none";
+    const { user, dialog } = await openDialog();
+    await user.click(within(dialog).getByRole("button", { name: "Run" }));
+    await user.click((await screen.findAllByRole("button", { name: "Close" }))[0]);
+
+    await taskStore.stop("h1", "wipe");
+    await user.click(await screen.findByRole("button", { name: /last result/i }));
+    expect(await screen.findByText("Stopped watching")).toBeInTheDocument();
   });
 });

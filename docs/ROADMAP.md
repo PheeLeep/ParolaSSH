@@ -732,7 +732,7 @@ Logs shows the tail with a level filter, text filter, copy, reveal, and clear.
 | Rust unit | `cargo test --lib` | 356 |
 | Rust fixtures | `cargo test --test audit_fixtures` | 40 |
 | Rust live (needs a VM) | see below | 23, all `#[ignore]`d · green on Ubuntu, Windows 10 and a Docker container |
-| Frontend unit + component | `npm test` | 126 |
+| Frontend unit + component | `npm test` | 127 |
 | Frontend types | `npx tsc --noEmit` | - |
 
 Frontend tests run on Vitest in jsdom. The backend is never real: Tauri's

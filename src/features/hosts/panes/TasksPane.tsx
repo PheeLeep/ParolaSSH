@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Form, Modal, Spinner } from "react-bootstrap";
 import {
   AlertTriangle,
@@ -10,7 +10,6 @@ import {
   ShieldAlert,
   Square,
   Trash2,
-  X,
 } from "lucide-react";
 import * as api from "../api";
 import { errorMessage } from "../api";
@@ -51,7 +50,8 @@ export function TasksPane({ hostId }: { hostId: string }) {
   const [editing, setEditing] = useState<TaskRecord | "new" | null>(null);
 
   useStoreSubscription(taskStore.subscribe);
-  const { runs } = taskStore.list(hostId);
+  /** The task whose output dialog is open. */
+  const [viewing, setViewing] = useState<string | null>(null);
 
   useEffect(() => {
     taskStore.applyTheme(theme);
@@ -78,12 +78,10 @@ export function TasksPane({ hostId }: { hostId: string }) {
   // show the real command before the run exists.
   const preview = async (id: string, name: string) => {
     setError(null);
-    // Already running: show it rather than start a second copy. Finished: its
-    // tab comes forward and the rerun lands there once approved.
-    const open = taskStore.find(hostId, id);
-    if (open) {
-      taskStore.select(hostId, id);
-      if (open.state === "running") return;
+    // Already running: show it rather than start a second copy.
+    if (taskStore.find(hostId, id)?.state === "running") {
+      setViewing(id);
+      return;
     }
     try {
       setPending({ id, name, plan: await api.planTask(hostId, id) });
@@ -109,10 +107,16 @@ export function TasksPane({ hostId }: { hostId: string }) {
 
     const target = pending;
     setPending(null);
+    // The run is registered before `start` first awaits, so the dialog opens
+    // on it and shows output from the first byte.
+    const started = taskStore.start(hostId, target.id, target.name, plan, theme, password);
+    setViewing(target.id);
     try {
-      await taskStore.start(hostId, target.id, target.name, plan, theme, password);
+      await started;
     } catch (caught) {
-      setError(errorMessage(caught));
+      // The dialog already shows the failure in the output; this covers a
+      // refusal before any run existed.
+      if (!taskStore.find(hostId, target.id)) setError(errorMessage(caught));
     }
   };
 
@@ -136,7 +140,6 @@ export function TasksPane({ hostId }: { hostId: string }) {
         </Alert>
       )}
 
-      {runs.length > 0 && <RunTabs hostId={hostId} />}
 
       {loading ? (
         <div className="d-flex align-items-center gap-2 text-body-secondary">
@@ -178,6 +181,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
                     task={task}
                     run={taskStore.find(hostId, task.id)}
                     onRun={() => void preview(task.id, task.name)}
+                    onShow={() => setViewing(task.id)}
                   />
                 ))}
                 {catalog.saved.map((task) => (
@@ -186,6 +190,7 @@ export function TasksPane({ hostId }: { hostId: string }) {
                     task={task}
                     run={taskStore.find(hostId, task.id)}
                     onRun={() => void preview(task.id, task.name)}
+                    onShow={() => setViewing(task.id)}
                     onEdit={() => setEditing(task)}
                     onDelete={() => void remove(task)}
                   />
@@ -212,6 +217,10 @@ export function TasksPane({ hostId }: { hostId: string }) {
         />
       )}
 
+      {viewing && taskStore.find(hostId, viewing) && (
+        <RunDialog run={taskStore.find(hostId, viewing)!} onClose={() => setViewing(null)} />
+      )}
+
       {editing && (
         <TaskEditor
           hostId={hostId}
@@ -230,14 +239,38 @@ export function TasksPane({ hostId }: { hostId: string }) {
 
 /* ── The list ──────────────────────────────────────────────────────────── */
 
-/** Run, or Show when this task's tab is still running. */
-function RunButton({ run, onRun }: { run: taskStore.TaskRun | undefined; onRun: () => void }) {
-  const running = run?.state === "running";
+/** Run, or Show while this task is still running; once it has finished, a
+ *  link reopens its last result. */
+function RunButton({
+  run,
+  onRun,
+  onShow,
+}: {
+  run: taskStore.TaskRun | undefined;
+  onRun: () => void;
+  onShow: () => void;
+}) {
+  if (run?.state === "running") {
+    return (
+      <Button size="sm" variant="outline-primary" onClick={onShow}>
+        <Eye className="icon-sm" aria-hidden="true" />
+        Show
+      </Button>
+    );
+  }
   return (
-    <Button size="sm" variant="outline-primary" onClick={onRun}>
-      {running ? <Eye className="icon-sm" aria-hidden="true" /> : <Play className="icon-sm" aria-hidden="true" />}
-      {running ? "Show" : "Run"}
-    </Button>
+    <span className="d-inline-flex align-items-center gap-3">
+      <Button size="sm" variant="outline-primary" onClick={onRun}>
+        <Play className="icon-sm" aria-hidden="true" />
+        Run
+      </Button>
+      {run && (
+        <Button size="sm" variant="link" className="p-0 text-decoration-none d-inline-flex align-items-center gap-1" onClick={onShow}>
+          <RunDot run={run} />
+          Last result
+        </Button>
+      )}
+    </span>
   );
 }
 
@@ -245,10 +278,12 @@ function BuiltinCard({
   task,
   run,
   onRun,
+  onShow,
 }: {
   task: BuiltinTask;
   run: taskStore.TaskRun | undefined;
   onRun: () => void;
+  onShow: () => void;
 }) {
   return (
     <article className="task-card">
@@ -264,7 +299,7 @@ function BuiltinCard({
         </Badge>
       </div>
       <p className="task-card__detail">{task.description}</p>
-      <RunButton run={run} onRun={onRun} />
+      <RunButton run={run} onRun={onRun} onShow={onShow} />
     </article>
   );
 }
@@ -273,12 +308,14 @@ function SavedCard({
   task,
   run,
   onRun,
+  onShow,
   onEdit,
   onDelete,
 }: {
   task: TaskRecord;
   run: taskStore.TaskRun | undefined;
   onRun: () => void;
+  onShow: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -302,7 +339,7 @@ function SavedCard({
       <code className="task-card__command">{task.command}</code>
 
       <div className="task-card__actions">
-        <RunButton run={run} onRun={onRun} />
+        <RunButton run={run} onRun={onRun} onShow={onShow} />
         <Button size="sm" variant="link" className="p-0 text-decoration-none" onClick={onEdit}>
           Edit
         </Button>
@@ -466,69 +503,54 @@ function DangerNotice({
 
 /* ── The run ───────────────────────────────────────────────────────────── */
 
-/** Every run on this host as a tab, like the terminals. Output keeps
- *  collecting in the hidden ones. */
-function RunTabs({ hostId }: { hostId: string }) {
-  const mount = useRef<HTMLDivElement>(null);
-  const { runs, active } = taskStore.list(hostId);
+/** A run's output. Closing it only hides the dialog: the task keeps running,
+ *  and its card's Show or Last result brings it back. */
+function RunDialog({ run, onClose }: { run: taskStore.TaskRun; onClose: () => void }) {
+  const [mount, setMount] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!mount.current || !active) return;
-    return taskStore.attach(hostId, active.taskId, mount.current);
-  }, [hostId, active, active?.startedAt]);
+    if (!mount) return;
+    return taskStore.attach(run.hostId, run.taskId, mount);
+  }, [mount, run]);
 
   return (
-    <div className="terminal-pane task-runs">
-      <div className="terminal-pane__bar">
-        <div className="terminal-pane__tabs" role="tablist" aria-label="Task runs">
-          {runs.map((run) => (
-            <div
-              key={run.taskId}
-              className={`shell-tab${run === active ? " is-active" : ""}`}
+    <Modal show onHide={onClose} centered size="xl">
+      <Modal.Header closeButton>
+        <Modal.Title className="h6 d-flex align-items-center gap-2 me-3 flex-grow-1">
+          {run.taskName}
+          <RunBadge run={run} />
+          {run.state === "running" && (
+            <Button
+              size="sm"
+              variant="outline-danger"
+              className="ms-auto"
+              onClick={() => void taskStore.stop(run.hostId, run.taskId)}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={run === active}
-                className="shell-tab__label"
-                onClick={() => taskStore.select(hostId, run.taskId)}
-                title={run.taskName}
-              >
-                <RunDot run={run} />
-                {run.taskName}
-              </button>
-              <button
-                type="button"
-                className="shell-tab__close"
-                onClick={() => void taskStore.close(hostId, run.taskId)}
-                aria-label={`Close ${run.taskName}`}
-              >
-                <X aria-hidden="true" />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {active && (
-          <div className="terminal-pane__actions">
-            <RunBadge run={active} />
-            {active.state === "running" && (
-              <Button size="sm" variant="outline-danger" onClick={() => void taskStore.stop(hostId, active.taskId)}>
-                <Square className="icon-sm" aria-hidden="true" />
-                Stop watching
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Owned by the store, which appends the run's terminal here. */}
-      <div className="task-feed" ref={mount} />
-    </div>
+              <Square className="icon-sm" aria-hidden="true" />
+              Stop watching
+            </Button>
+          )}
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="p-0">
+        {/* Owned by the store, which appends the run's terminal here. */}
+        <div className="task-feed" ref={setMount} />
+      </Modal.Body>
+      <Modal.Footer className="justify-content-between">
+        <span className="text-body-secondary small">
+          {run.state === "running"
+            ? "Closing this keeps the task running; Show on its card brings it back."
+            : `Finished ${new Date(run.finishedAt ?? run.startedAt).toLocaleTimeString()}`}
+        </span>
+        <Button variant="outline-secondary" onClick={onClose}>
+          Close
+        </Button>
+      </Modal.Footer>
+    </Modal>
   );
 }
 
-/** A tab's state at a glance: pulsing while running, coloured once done. */
+/** A run's state at a glance: pulsing while running, coloured once done. */
 function RunDot({ run }: { run: taskStore.TaskRun }) {
   const tone =
     run.state === "running" ? "running" : run.state === "finished" ? "ok" : run.state === "failed" ? "bad" : "idle";

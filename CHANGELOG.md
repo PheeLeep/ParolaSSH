@@ -27,9 +27,9 @@ the code has macOS branches, but no Mac has ever run them.
   manager: start, stop, restart, history and live follow
 - **Performance** - CPU, memory, load, disks, network and disk I/O, sampled
   every 0.5-30 s
-- **Tasks** - built-in and your own one-click commands in one list, each run
-  in its own tab (running one again shows or reruns its tab), with a danger
-  check before anything destructive. Settings › Advanced › **Block dangerous tasks**
+- **Tasks** - built-in and your own one-click commands in one list. Output
+  opens in a dialog; closing it keeps the task running, and each task keeps
+  its last result to reopen. A danger check comes before anything destructive. Settings › Advanced › **Block dangerous tasks**
   (on by default) refuses destructive tasks outright, or everything the check
   flags; turned off, a typed confirmation is asked instead
 - **Security** - handshake crypto, `sshd -T` posture, listening ports,

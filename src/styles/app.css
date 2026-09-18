@@ -1540,23 +1540,10 @@ code,
 /* A run's output feed: an xterm, because a real command emits cursor and
    colour escapes that only a terminal renders. */
 .task-feed {
-  height: 20rem;
+  height: min(28rem, 60vh);
   overflow: auto;
   /* No padding: xterm paints its own background, and a gutter in a different
      colour would frame it in the wrong one. */
-}
-
-/* Run tabs share the terminal pane's frame but keep a fixed height: the
-   task list sits below them. */
-.task-runs {
-  flex: 0 0 auto;
-}
-
-.task-runs .terminal-pane__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
 }
 
 .task-dot {

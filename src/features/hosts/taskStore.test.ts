@@ -48,48 +48,36 @@ beforeEach(() => {
 
 const run = (taskId: string) => store.start("h", taskId, taskId.toUpperCase(), plan, "dark");
 const finish = (streamId: number) => emit("stream://closed", { hostId: "h", streamId, exitCode: 0 });
-const tabs = () => store.list("h").runs.map((entry) => entry.taskId);
+const ids = () => ["disk", "ports"].filter((id) => store.find("h", id));
 
-describe("task tabs", () => {
-  it("opens one tab per task and shows the newest", async () => {
+describe("task results", () => {
+  it("keeps one run per task", async () => {
     await run("disk");
     await run("ports");
-    expect(tabs()).toEqual(["disk", "ports"]);
-    expect(store.list("h").active?.taskId).toBe("ports");
-  });
-
-  it("switches to a task that is still running instead of starting it again", async () => {
-    await run("disk");
-    await run("ports");
-    await expect(run("disk")).rejects.toThrow(/still running/);
-    expect(tabs()).toEqual(["disk", "ports"]);
-    expect(store.list("h").active?.taskId).toBe("disk");
-  });
-
-  it("reruns a finished task in its own tab", async () => {
-    await run("disk");
-    await run("ports");
-    await finish(1);
-    expect(store.find("h", "disk")?.state).toBe("finished");
-
-    await run("disk");
-    expect(tabs()).toEqual(["disk", "ports"]);
+    expect(ids()).toEqual(["disk", "ports"]);
     expect(store.find("h", "disk")?.state).toBe("running");
-    expect(store.list("h").active?.taskId).toBe("disk");
   });
 
-  it("lands on the neighbouring tab when the shown one closes", async () => {
-    await run("a");
-    await run("b");
-    await run("c");
-    store.select("h", "b");
-    await store.close("h", "b");
-    expect(tabs()).toEqual(["a", "c"]);
-    expect(store.list("h").active?.taskId).toBe("c");
+  it("refuses to start a task that is still running", async () => {
+    await run("disk");
+    await expect(run("disk")).rejects.toThrow(/still running/);
   });
 
-  it("caps the strip at the terminal's limit", async () => {
-    for (let index = 0; index < store.MAX_TABS; index += 1) await run(`t${index}`);
-    await expect(run("one-more")).rejects.toThrow(/tabs are open/);
+  it("replaces a finished run with the rerun", async () => {
+    await run("disk");
+    await finish(1);
+    const first = store.find("h", "disk");
+    expect(first?.state).toBe("finished");
+
+    await run("disk");
+    const second = store.find("h", "disk");
+    expect(second).not.toBe(first);
+    expect(second?.state).toBe("running");
+  });
+
+  it("drops everything when the host goes", async () => {
+    await run("disk");
+    await store.closeHost("h");
+    expect(store.find("h", "disk")).toBeUndefined();
   });
 });

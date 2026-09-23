@@ -9,7 +9,7 @@
 # the checksum (from the release's SHA256SUMS.txt), then run makepkg again.
 
 pkgname=parolassh-bin
-pkgver=1.0.3
+pkgver=1.0.4
 pkgrel=1
 pkgdesc="GUI SSH remote console and server manager"
 arch=('x86_64')
@@ -22,7 +22,7 @@ conflicts=('parolassh')
 source=("ParolaSSH_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/ParolaSSH_${pkgver}_amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/LICENSE"
         "parolassh-${pkgver}.desktop::https://raw.githubusercontent.com/PheeLeep/ParolaSSH/v${pkgver}/packaging/parolassh.desktop")
-sha256sums=('18f539b9dd6be4ad7c27475ac2a1fd5f7925561475ce5358422842d639953aac'
+sha256sums=('ff7413c74a459de511b6fa4c41add23d619c0ba20f803a8ccce3cc89bd664e16'
             'SKIP'
             'SKIP')
 noextract=("ParolaSSH_${pkgver}_amd64.deb")

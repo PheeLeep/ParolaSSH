@@ -3666,7 +3666,7 @@ dependencies = [
 
 [[package]]
 name = "parolassh"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "base64 0.22.1",
  "dirs",

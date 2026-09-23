@@ -6,6 +6,8 @@ All notable changes to ParolaSSH. The format follows
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-23
+
 ### Added
 - A PKGBUILD in `packaging/arch` for Arch-based systems, running on the
   system WebKitGTK instead of the AppImage's bundled copy
@@ -112,6 +114,7 @@ the code has macOS branches, but no Mac has ever run them.
 - FIDO security keys work through the SSH agent only
 - `.deb` and `.rpm` installs are told about updates but download them by hand
 
+[1.0.4]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.4
 [1.0.3]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.3
 [1.0.2]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.2
 [1.0.1]: https://github.com/PheeLeep/ParolaSSH/releases/tag/v1.0.1

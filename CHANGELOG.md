@@ -10,6 +10,11 @@ All notable changes to ParolaSSH. The format follows
 - A PKGBUILD in `packaging/arch` for Arch-based systems, running on the
   system WebKitGTK instead of the AppImage's bundled copy
 
+### Security
+- russh updated to 0.62.7 for CVE-2026-68930 (server-side channel handling;
+  ParolaSSH only uses the client side)
+- Tauri updated to 2.11.6
+
 ## [1.0.3] - 2026-09-18
 
 ### Fixed

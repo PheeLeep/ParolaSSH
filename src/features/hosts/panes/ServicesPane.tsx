@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Form, Modal, Spinner, Table } from "react-bootstrap";
 import {
   CircleCheck,
@@ -11,6 +11,7 @@ import {
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "../api";
 import { errorMessage } from "../api";
+import { parseServiceLog, type LogLevel } from "../serviceLog";
 import { useElevation } from "../ElevationProvider";
 import { useHosts } from "../HostsProvider";
 import {
@@ -33,6 +34,13 @@ const STATE_BADGE: Record<ServiceEntry["state"], string> = {
   stopped: "status-badge",
   failed: "status-badge status-badge--offline",
   other: "status-badge status-badge--reachable",
+};
+
+const LEVEL_LABELS: Record<Exclude<LogLevel, "none">, string> = {
+  error: "ERR",
+  warn: "WRN",
+  info: "INF",
+  debug: "DBG",
 };
 
 export function ServicesPane({ hostId }: { hostId: string }) {
@@ -137,7 +145,6 @@ export function ServicesPane({ hostId }: { hostId: string }) {
                 <tr
                   key={service.name}
                   role="button"
-                  className={selected?.name === service.name ? "table-active" : undefined}
                   onClick={() => setSelected(service)}
                 >
                   <td>
@@ -194,10 +201,13 @@ export function ServicesPane({ hostId }: { hostId: string }) {
       )}
 
       {selected && (
-        <ServiceHistory
+        <ServiceDetailDialog
           hostId={hostId}
-          service={selected}
+          service={(services ?? []).find((s) => s.name === selected.name) ?? selected}
           canFollow={connection?.os === "linux"}
+          dimmed={pending !== null}
+          onAction={(action) => setPending({ action, unit: selected.name })}
+          onClose={() => setSelected(null)}
         />
       )}
 
@@ -208,6 +218,66 @@ export function ServicesPane({ hostId }: { hostId: string }) {
         onDone={() => void refresh()}
       />
     </div>
+  );
+}
+
+/** Large dialog for the selected service: state, start/stop/restart, history. */
+function ServiceDetailDialog({
+  hostId,
+  service,
+  canFollow,
+  dimmed,
+  onAction,
+  onClose,
+}: {
+  hostId: string;
+  service: ServiceEntry;
+  canFollow: boolean;
+  dimmed: boolean;
+  onAction: (action: ServiceAction) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      show
+      onHide={onClose}
+      size="xl"
+      scrollable
+      centered
+      className={dimmed ? "modal-dimmed" : undefined}
+    >
+      <Modal.Header closeButton>
+        <Modal.Title className="h5 font-monospace">{service.name}</Modal.Title>
+        <span className={`${STATE_BADGE[service.state]} ms-2`} title={service.detail}>
+          {SERVICE_STATE_LABELS[service.state]}
+        </span>
+      </Modal.Header>
+      <Modal.Body>
+        {service.description && (
+          <p className="text-body-secondary mb-3">{service.description}</p>
+        )}
+        <div className="d-flex flex-wrap gap-2 mb-4">
+          <Button
+            variant="outline-secondary"
+            disabled={service.state === "running"}
+            onClick={() => onAction("start")}
+          >
+            <Play className="icon-sm" aria-hidden="true" /> Start
+          </Button>
+          <Button
+            variant="outline-secondary"
+            disabled={service.state === "stopped"}
+            onClick={() => onAction("stop")}
+          >
+            <Square className="icon-sm" aria-hidden="true" /> Stop
+          </Button>
+          <Button variant="outline-secondary" onClick={() => onAction("restart")}>
+            <RotateCcw className="icon-sm" aria-hidden="true" /> Restart
+          </Button>
+        </div>
+        <ServiceHistory hostId={hostId} service={service} canFollow={canFollow} />
+      </Modal.Body>
+    </Modal>
   );
 }
 
@@ -227,6 +297,7 @@ function ServiceHistory({
   const [loading, setLoading] = useState(false);
   const [follow, setFollow] = useState(false);
   const [followText, setFollowText] = useState("");
+  const [raw, setRaw] = useState(false);
 
   // Leaving the service or the pane always stops following: a follow holds a
   // remote process and a stream slot, so nothing keeps it alive off screen.
@@ -315,7 +386,7 @@ function ServiceHistory({
   // The newest line is the last one, so the view opens at the bottom and a
   // follow behaves like `tail -f` - unless the reader scrolled up to read
   // something, which wins until they come back down.
-  const logRef = useRef<HTMLPreElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
 
   const onLogScroll = () => {
@@ -333,6 +404,10 @@ function ServiceHistory({
     if (node && pinned.current) node.scrollTop = node.scrollHeight;
   }, [followText, log, follow, loading]);
 
+  const empty = follow ? "Waiting for output…" : "No recent entries for this service.";
+  const text = follow ? followText : (log?.lines ?? []).join("\n");
+  const rows = useMemo(() => parseServiceLog(text.split("\n")), [text]);
+
   return (
     <div>
       <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -340,6 +415,13 @@ function ServiceHistory({
         <span className="text-body-secondary small me-auto">
           {canFollow ? "journal" : "Service Control Manager events"}
         </span>
+        <Form.Check
+          type="switch"
+          id="service-log-raw"
+          label="Raw"
+          checked={raw}
+          onChange={(event) => setRaw(event.target.checked)}
+        />
         {canFollow && (
           <Form.Check
             type="switch"
@@ -362,17 +444,36 @@ function ServiceHistory({
           Reading history…
         </div>
       ) : (
-        <pre
+        <div
           ref={logRef}
           onScroll={onLogScroll}
-          className="command-output service-log user-select-auto mb-0"
+          className="service-log-view user-select-auto"
         >
-          {follow
-            ? followText || "Waiting for output…"
-            : log && log.lines.length > 0
-              ? log.lines.join("\n")
-              : "No recent entries for this service."}
-        </pre>
+          {raw ? (
+            <pre className="command-output service-log mb-0">{text || empty}</pre>
+          ) : rows.length > 0 ? (
+            <table className="log-table">
+              <tbody>
+                {rows.map((row, index) => (
+                  <tr key={index} className={`log-row log-row--${row.level}`}>
+                    <td className="log-time" title={row.stamp}>{row.time}</td>
+                    <td>
+                      {row.level !== "none" && (
+                        <span className={`log-level log-level--${row.level}`}>
+                          {LEVEL_LABELS[row.level]}
+                        </span>
+                      )}
+                    </td>
+                    <td className="log-source">{row.source}</td>
+                    <td className="log-message">{row.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <pre className="command-output service-log mb-0">{empty}</pre>
+          )}
+        </div>
       )}
     </div>
   );

@@ -27,7 +27,8 @@
     "lucide-react": "^1.26.0",
     "react": "^19.1.0",
     "react-bootstrap": "^2.10.10",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-hotkeys-hook": "^5.3.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
+import { chordsFor, HOST_SLOTS, hostChord, NAV_ACTIONS, useKeybindings } from "./lib/keybindings";
 import { AppNavbar } from "./components/AppNavbar";
 import { CloseGuard } from "./components/CloseGuard";
 import { HostSidebar } from "./components/HostSidebar";
@@ -7,7 +9,7 @@ import { clearConnectPending } from "./features/hosts/api";
 import { ElevationProvider } from "./features/hosts/ElevationProvider";
 import { HostDetail } from "./features/hosts/HostDetail";
 import { HostsPage } from "./features/hosts/HostsPage";
-import { HostsProvider } from "./features/hosts/HostsProvider";
+import { HostsProvider, useHosts } from "./features/hosts/HostsProvider";
 import { AuditPage } from "./features/keys/AuditPage";
 import { KeyDetail } from "./features/keys/KeyDetail";
 import { KeysPage } from "./features/keys/KeysPage";
@@ -62,12 +64,37 @@ function paneKey(view: View): string {
   return view.kind;
 }
 
+/** One hook per chord; the chord list is static but hooks can't loop. */
+function NavHotkey({ chord, onFire }: { chord: string; onFire: () => void }) {
+  useHotkeys(chord, onFire, { enableOnFormTags: true, preventDefault: true });
+  return null;
+}
+
+function HostHotkeys({ onOpen }: { onOpen: (hostId: string) => void }) {
+  useKeybindings();
+  const { groups } = useHosts();
+  const hosts = groups.flatMap((group) => group.hosts);
+  return (
+    <>
+      {hosts.slice(0, HOST_SLOTS).map((host, index) => (
+        <NavHotkey
+          key={host.id}
+          chord={hostChord(index + 1)}
+          onFire={() => onOpen(host.id)}
+        />
+      ))}
+    </>
+  );
+}
+
 function AppShell() {
   // Read once: changing the preference later should not yank the current pane.
   const [view, setView] = useState<View>(() => ({ kind: readStartupView() }));
 
   useContextMenuGuard();
   const [sidebarHidden, setSidebarHidden] = useState(false);
+
+  useKeybindings();
 
   // Transfers run whether or not their page is open, so the store listens from
   // launch - otherwise the sidebar badge would only come alive once someone
@@ -84,6 +111,23 @@ function AppShell() {
   return (
     <div className="app-shell">
       <CloseGuard />
+      {NAV_ACTIONS.flatMap((entry) =>
+        chordsFor(entry.id).map((chord) => (
+          <NavHotkey
+            key={`${entry.id}:${chord}`}
+            chord={chord}
+            onFire={() => setView({ kind: entry.view } as View)}
+          />
+        )),
+      )}
+      {chordsFor("sidebar").map((chord) => (
+        <NavHotkey
+          key={`sidebar:${chord}`}
+          chord={chord}
+          onFire={() => setSidebarHidden((hidden) => !hidden)}
+        />
+      ))}
+      <HostHotkeys onOpen={(hostId) => setView({ kind: "host", hostId })} />
       <Toaster />
       <AppNavbar
         sidebarHidden={sidebarHidden}

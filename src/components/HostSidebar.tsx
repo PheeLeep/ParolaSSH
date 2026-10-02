@@ -18,6 +18,8 @@ import { useHostActions } from "../features/hosts/useHostActions";
 import { useHostContextMenu } from "../features/hosts/useHostContextMenu";
 import * as terminals from "../features/hosts/terminalStore";
 import * as transfers from "../features/transfers/transferStore";
+import { HOST_SLOTS } from "../lib/keybindings";
+import { KeyBadge } from "./KeyBadge";
 import { AnimatedValue } from "./AnimatedValue";
 import { useKeys } from "../features/keys/KeysProvider";
 import type { SshHost } from "../features/hosts/types";
@@ -32,6 +34,12 @@ type HostSidebarProps = {
 export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
   const { hosts, groups, connectedCount } = useHosts();
   const { report } = useKeys();
+  const hostOrder = new Map(
+    groups
+      .flatMap((group) => group.hosts)
+      .slice(0, HOST_SLOTS)
+      .map((host, index) => [host.id, index + 1] as const),
+  );
 
   // Shells open and close from the terminal pane, which lives elsewhere in
   // the tree - subscribe to the store rather than lifting its state.
@@ -112,6 +120,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         >
           <House aria-hidden="true" />
           <span className="sidebar-item__label">Home</span>
+          <KeyBadge id="nav.welcome" />
         </button>
 
         <button
@@ -122,6 +131,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
           <Server aria-hidden="true" />
           <span className="sidebar-item__label">All hosts</span>
           <span className="sidebar-item__meta">{hosts.length}</span>
+          <KeyBadge id="nav.hosts" />
         </button>
 
         <div className="sidebar-label">
@@ -182,6 +192,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
                         {host.label}
                         <span className="sidebar-host__sub">{host.hostname}</span>
                       </span>
+                      {hostOrder.has(host.id) && <KeyBadge id="hosts" slot={hostOrder.get(host.id)} />}
                     </button>
                   ))}
                 </div>
@@ -208,6 +219,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
               {keyAlerts}
             </span>
           )}
+          <KeyBadge id="nav.keys" />
         </button>
 
         <button
@@ -217,6 +229,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         >
           <Shield aria-hidden="true" />
           <span className="sidebar-item__label">VPN</span>
+          <KeyBadge id="nav.vpn" />
         </button>
 
         <button
@@ -231,6 +244,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
               <AnimatedValue value={sessionCount} />
             </span>
           )}
+          <KeyBadge id="nav.sessions" />
         </button>
 
         <button
@@ -245,6 +259,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
               <AnimatedValue value={transferCount} />
             </span>
           )}
+          <KeyBadge id="nav.transfers" />
         </button>
 
         <button
@@ -254,6 +269,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         >
           <Settings aria-hidden="true" />
           <span className="sidebar-item__label">Settings</span>
+          <KeyBadge id="nav.settings" />
         </button>
 
         <button
@@ -263,6 +279,7 @@ export function HostSidebar({ view, onNavigate, hidden }: HostSidebarProps) {
         >
           <Info aria-hidden="true" />
           <span className="sidebar-item__label">About</span>
+          <KeyBadge id="nav.about" />
         </button>
       </div>
 

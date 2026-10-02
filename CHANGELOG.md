@@ -6,6 +6,15 @@ All notable changes to ParolaSSH. The format follows
 
 ## [Unreleased]
 
+### Added
+- Keyboard shortcuts: Alt+1 to 8 (Cmd on macOS) switch between Home, Hosts,
+  Keys, VPN, Sessions, Transfers, Settings and About; Ctrl+Alt+1 to 9 open the
+  first nine hosts in sidebar order; Ctrl+Shift+B toggles the sidebar
+- Terminal tab shortcuts: new, close, previous and next tab (Ctrl+Shift+T/W,
+  Ctrl+PageUp/PageDown; Cmd+T/W on macOS)
+- Settings > Keybindings lists every shortcut and lets you rebind them, with
+  conflict checks. Shortcut badges in the sidebar can be switched off there
+
 ## [1.0.4] - 2026-09-23
 
 ### Added

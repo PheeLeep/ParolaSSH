@@ -7,6 +7,7 @@ import {
 } from "react";
 import { Alert, Badge, Button, Dropdown, Form, Spinner } from "react-bootstrap";
 import { Eraser, Minus, Pencil, Plus, Radio, SquareTerminal, Type, X } from "lucide-react";
+import { useHotkeys } from "react-hotkeys-hook";
 import "@xterm/xterm/css/xterm.css";
 import { errorMessage } from "./api";
 import * as store from "./terminalStore";
@@ -15,6 +16,7 @@ import {
   MIN_TERMINAL_FONT_SIZE,
   TERMINAL_FONT_FAMILIES,
 } from "../settings/preferences";
+import { chordsFor, hint, useKeybindings } from "../../lib/keybindings";
 import { useTheme } from "../../theme/ThemeProvider";
 
 
@@ -27,6 +29,7 @@ export function TerminalTabs({
   focusShellId?: number;
 }) {
   const { resolved } = useTheme();
+  useKeybindings();
 
   
   useSyncExternalStore(store.subscribe, store.getVersion);
@@ -135,6 +138,25 @@ export function TerminalTabs({
 
   const active = activeId === null ? undefined : store.get(activeId);
 
+  // xterm's hidden textarea holds focus, so form tags must be enabled.
+  const hotkeyOptions = { enableOnFormTags: true, preventDefault: true } as const;
+  const cycle = (step: number) => {
+    if (terminals.length < 2 || activeId === null) return;
+    const index = terminals.findIndex((entry) => entry.shellId === activeId);
+    const next = terminals[(index + step + terminals.length) % terminals.length];
+    setActiveId(next.shellId);
+  };
+  useHotkeys(chordsFor("term.new"), () => void openTerminal(), hotkeyOptions);
+  useHotkeys(
+    chordsFor("term.close"),
+    () => {
+      if (activeId !== null) void store.close(activeId);
+    },
+    hotkeyOptions,
+  );
+  useHotkeys(chordsFor("term.prev"), () => cycle(-1), hotkeyOptions);
+  useHotkeys(chordsFor("term.next"), () => cycle(1), hotkeyOptions);
+
   return (
     <div className="terminal-pane">
       <div className="terminal-pane__bar">
@@ -190,6 +212,7 @@ export function TerminalTabs({
                 className="shell-tab__close"
                 onClick={() => void store.close(entry.shellId)}
                 aria-label={`Close ${entry.title}`}
+                title={`Close${entry.shellId === activeId ? hint("term.close") : ""}`}
               >
                 <X aria-hidden="true" />
               </button>
@@ -202,7 +225,7 @@ export function TerminalTabs({
             onClick={() => void openTerminal()}
             disabled={busy}
             aria-label="New terminal"
-            title="New terminal on this host"
+            title={`New terminal on this host${hint("term.new")}`}
           >
             {busy ? (
               <Spinner animation="border" size="sm" aria-hidden="true" />

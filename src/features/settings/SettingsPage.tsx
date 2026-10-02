@@ -15,6 +15,7 @@ import {
   Plug,
   Plus,
   Power,
+  Keyboard,
   Server,
   ShieldBan,
   SlidersHorizontal,
@@ -27,6 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Segmented } from "../../components/Segmented";
+import { KeybindingsPanel } from "./KeybindingsPanel";
 import { LogsPanel } from "./LogsPanel";
 import { useStoreSubscription } from "../../lib/useStoreSubscription";
 import * as updates from "../updates/updateStore";
@@ -76,6 +78,7 @@ type SettingsTab =
   | "transfers"
   | "terminal"
   | "files"
+  | "keybindings"
   | "advanced"
   | "logs";
 
@@ -86,6 +89,7 @@ const TABS: { id: SettingsTab; label: string; Icon: LucideIcon }[] = [
   { id: "transfers", label: "Transfers", Icon: ArrowUpDown },
   { id: "terminal", label: "Terminal", Icon: SquareTerminal },
   { id: "files", label: "Files", Icon: FolderOpen },
+  { id: "keybindings", label: "Keybindings", Icon: Keyboard },
   { id: "advanced", label: "Advanced", Icon: SlidersHorizontal },
   { id: "logs", label: "Logs", Icon: ScrollText },
 ];
@@ -499,6 +503,8 @@ export function SettingsPage({ onNavigate }: { onNavigate: Navigate }) {
         </Card.Body>
       </Card>
       )}
+
+      {tab === "keybindings" && <KeybindingsPanel />}
 
       {tab === "advanced" && (
       <Card className="mb-3">

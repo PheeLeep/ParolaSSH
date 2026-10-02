@@ -1,4 +1,5 @@
 import { PanelLeft } from "lucide-react";
+import { hint, useKeybindings } from "../lib/keybindings";
 import { VpnIndicator } from "../features/vpn/VpnIndicator";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { isMacOS } from "../lib/appWindow";
@@ -30,6 +31,7 @@ export function AppNavbar({
   onToggleSidebar: () => void;
   onNavigate: Navigate;
 }) {
+  useKeybindings();
   const navStyle = useNavStyle();
   const nativeLights = isMacOS && navStyle === "macos";
 
@@ -48,7 +50,7 @@ export function AppNavbar({
         onClick={onToggleSidebar}
         aria-pressed={!sidebarHidden}
         aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
-        title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+        title={`${sidebarHidden ? "Show sidebar" : "Hide sidebar"}${hint("sidebar")}`}
       >
         <PanelLeft aria-hidden="true" />
       </button>

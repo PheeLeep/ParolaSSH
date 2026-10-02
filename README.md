@@ -40,7 +40,8 @@ sends a credential you did not choose.
 | Pane | What it does |
 |---|---|
 | Overview | OS, elevation, host key, uptime, heartbeat, container and init system |
-| Terminal | Real PTY, multi-shell tabs (max 8), renameable, persistent scrollback |
+| Terminal | Real PTY, multi-shell tabs (max 8), renameable, persistent scrollback, keyboard shortcuts for tabs |
+| Keybindings | Navigate hosts and pages from the keyboard; rebind in Settings › Keybindings |
 | Services | systemd, OpenRC, SysV or the Windows SCM - start, stop, restart, plus history with live follow |
 | Performance | CPU, memory, load, disks, network and disk I/O; user-set 0.5–30 s sampling |
 | Tasks | Built-in and your own one-click commands, danger-checked before they run |

@@ -6,7 +6,10 @@ import { isTerminalHotkey } from "./keybindings";
 /** Ctrl+Shift+C/V (Cmd+C/V on macOS) copy and paste instead of reaching the
  *  shell as ^C/^V. Goes through the native clipboard because WebKitGTK can
  *  refuse or prompt on `navigator.clipboard.readText`. */
-export function bindTerminalClipboard(terminal: Terminal): void {
+export function bindTerminalClipboard(
+  terminal: Terminal,
+  paste: (text: string) => void = (text) => terminal.paste(text),
+): void {
   terminal.attachCustomKeyEventHandler((event) => {
     // App shortcuts reach the document listener but never the shell.
     if (isTerminalHotkey(event)) return false;
@@ -25,7 +28,7 @@ export function bindTerminalClipboard(terminal: Terminal): void {
       if (selection) void writeText(selection).catch(() => undefined);
     } else if (!terminal.options.disableStdin) {
       void readText()
-        .then((text) => text && terminal.paste(text))
+        .then((text) => text && paste(text))
         .catch(() => undefined);
     }
     return false;

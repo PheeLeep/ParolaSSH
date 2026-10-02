@@ -494,7 +494,7 @@ function DangerNotice({
 
       <div className="small text-body-secondary mt-2 mb-0">
         {blocked
-          ? "Settings › Advanced › Block dangerous tasks does not allow it. Turn that off, or use a terminal, if you mean it."
+          ? "Settings › Advanced › Safeguard mode does not allow it. Turn that off, or use a terminal, if you mean it."
           : "This is a check on the text of the command - it catches common mistakes, not a command written to hide what it does. Read the command above; it is the one that runs."}
       </div>
     </Alert>

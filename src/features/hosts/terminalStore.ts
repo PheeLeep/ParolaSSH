@@ -4,10 +4,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as api from "./api";
+import type { DangerAssessment } from "./types";
 import { bindTerminalClipboard } from "../../lib/terminalClipboard";
 import {
   clampFontSize,
+  isBlocked,
   readTerminalFont,
+  readTerminalGuard,
   subscribeTerminalFont,
   type TerminalFont,
 } from "../settings/preferences";
@@ -59,6 +62,99 @@ const listeners = new Set<() => void>();
 // Broadcast: type once, send to every selected shell.
 let broadcastTargets = new Set<string>();
 let broadcastEnabled = false;
+
+/** Text held back because the danger check flagged it: a multi-line paste, or
+ *  a typed line waiting on Enter. */
+export type PendingPaste = {
+  kind: "paste" | "command";
+  hostId: string;
+  text: string;
+  danger: DangerAssessment;
+  send: () => void;
+  cancel?: () => void;
+  focus: () => void;
+};
+
+let pendingPaste: PendingPaste | null = null;
+
+export function getPendingPaste(): PendingPaste | null {
+  return pendingPaste;
+}
+
+/** Let the held text through (`allow`) or drop it. */
+export function resolvePaste(allow: boolean): void {
+  const held = pendingPaste;
+  pendingPaste = null;
+  if (allow) held?.send();
+  else held?.cancel?.();
+  held?.focus();
+  emit();
+}
+
+/** Only text with a line break can run on arrival; a single line waits for Enter. */
+function runsOnArrival(text: string): boolean {
+  return /[\r\n]/.test(text);
+}
+
+/** The assessment, when it is flagged at or above the setting's level. A failed
+ *  check lets the text through: this is a typo catcher, not a gate. */
+async function flagged(hostId: string, text: string): Promise<DangerAssessment | null> {
+  const guard = readTerminalGuard();
+  if (guard === "off") return null;
+  try {
+    const danger = await api.assessTaskCommand(text, hostId);
+    return isBlocked(danger.level, guard) ? danger : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Paste `text`, asking first when it would run and the danger check flags it. */
+async function guardedPaste(hostId: string, terminal: Terminal, text: string) {
+  const send = () => terminal.paste(text);
+  const danger = runsOnArrival(text) ? await flagged(hostId, text) : null;
+  if (!danger) return send();
+
+  pendingPaste = { kind: "paste", hostId, text, danger, send, focus: () => terminal.focus() };
+  emit();
+}
+
+/** The command line under the cursor, read back from the screen so history,
+ *  tab completion and arrow edits count. It still holds the prompt, which the
+ *  danger rules read straight past. */
+function screenLine(terminal: Terminal): string {
+  const buffer = terminal.buffer.active;
+  let row = buffer.baseY + buffer.cursorY;
+  let text = "";
+  // A wrapped command spans rows; walk up to where it began.
+  for (let i = 0; i < 20; i += 1) {
+    const line = buffer.getLine(row);
+    if (!line) break;
+    text = line.translateToString(true) + text;
+    if (!line.isWrapped) break;
+    row -= 1;
+  }
+  return text.trim();
+}
+
+/** Whether a typed line may be sent, asking first when it is flagged. */
+async function guardedCommand(hostId: string, terminal: Terminal, line: string): Promise<boolean> {
+  const danger = await flagged(hostId, line);
+  if (!danger) return true;
+
+  return new Promise((resolve) => {
+    pendingPaste = {
+      kind: "command",
+      hostId,
+      text: line,
+      danger,
+      send: () => resolve(true),
+      cancel: () => resolve(false),
+      focus: () => terminal.focus(),
+    };
+    emit();
+  });
+}
 
 let version = 0;
 
@@ -125,11 +221,25 @@ export async function open(
 
   const fit = new FitAddon();
   terminal.loadAddon(fit);
-  bindTerminalClipboard(terminal);
+  bindTerminalClipboard(terminal, (text) => void guardedPaste(hostId, terminal, text));
 
   const node = document.createElement("div");
   node.className = "terminal-host";
   terminal.open(node);
+
+  // Capture phase: xterm's own paste listener sits on its inner textarea, so
+  // this runs first and can hold the text back.
+  node.addEventListener(
+    "paste",
+    (event) => {
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (readTerminalGuard() === "off" || !runsOnArrival(text)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void guardedPaste(hostId, terminal, text);
+    },
+    true,
+  );
 
   const unlisteners: UnlistenFn[] = [];
   let shellId: number | null = null;
@@ -163,7 +273,7 @@ export async function open(
     throw error;
   }
 
-  terminal.onData((data) => {
+  const send = (data: string) => {
     if (broadcastEnabled && broadcastTargets.has(broadcastKey(hostId, shellId!))) {
       const targets = [...broadcastTargets].map((key) => {
         const [h, s] = key.split(":");
@@ -173,6 +283,32 @@ export async function open(
     } else {
       void api.writeShell(hostId, shellId!, data).catch(() => {});
     }
+  };
+
+  // Enter on a flagged line is held until the operator decides; keys arriving
+  // meanwhile wait behind it so the order the shell sees never changes.
+  let queued: string[] | null = null;
+
+  terminal.onData((data) => {
+    if (queued) {
+      queued.push(data);
+      return;
+    }
+    // A full-screen program owns the keyboard; its lines are not commands.
+    const line =
+      data === "\r" && terminal.buffer.active.type !== "alternate" && readTerminalGuard() !== "off"
+        ? screenLine(terminal)
+        : "";
+    if (!line) return send(data);
+
+    queued = [];
+    void guardedCommand(hostId, terminal, line).then((allow) => {
+      const waiting = queued ?? [];
+      queued = null;
+      // Ctrl+U drops the line the shell is still holding.
+      send(allow ? data : "\x15");
+      waiting.forEach(send);
+    });
   });
 
   const defaultTitle = title ?? `shell ${countForHost(hostId) + 1}`;

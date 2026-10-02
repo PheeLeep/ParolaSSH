@@ -5,7 +5,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Alert, Badge, Button, Dropdown, Form, Spinner } from "react-bootstrap";
+import { Alert, Badge, Button, Dropdown, Form, Modal, Spinner } from "react-bootstrap";
 import { Eraser, Minus, Pencil, Plus, Radio, SquareTerminal, Type, X } from "lucide-react";
 import { useHotkeys } from "react-hotkeys-hook";
 import "@xterm/xterm/css/xterm.css";
@@ -34,6 +34,7 @@ export function TerminalTabs({
   
   useSyncExternalStore(store.subscribe, store.getVersion);
   const terminals = store.forHost(hostId);
+  const held = store.getPendingPaste();
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -159,6 +160,7 @@ export function TerminalTabs({
 
   return (
     <div className="terminal-pane">
+      {held && held.hostId === hostId && <PasteDialog held={held} />}
       <div className="terminal-pane__bar">
         <div className="terminal-pane__tabs">
           {terminals.map((entry) => (
@@ -423,5 +425,42 @@ function FontMenu({ shellId }: { shellId: number }) {
         </Dropdown.Item>
       </Dropdown.Menu>
     </Dropdown>
+  );
+}
+
+/** Shown when a paste or a typed line would run something the danger check flags. */
+function PasteDialog({ held }: { held: store.PendingPaste }) {
+  const destructive = held.danger.level === "destructive";
+  const close = (allow: boolean) => store.resolvePaste(allow);
+
+  return (
+    <Modal show onHide={() => close(false)} centered backdrop="static" size="lg">
+      <Modal.Header closeButton>
+        <Modal.Title className="h6">
+          {held.kind === "paste" ? "Paste into the terminal?" : "Run this command?"}
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body className="d-flex flex-column gap-3">
+        <pre className="task-command mb-0">{held.text}</pre>
+        <Alert variant={destructive ? "danger" : "warning"} className="mb-0">
+          <strong>{destructive ? "This destroys data or the machine" : "Worth a second look"}</strong>
+          <ul className="task-danger__list mb-0 mt-2">
+            {held.danger.reasons.map((reason) => (
+              <li key={reason.label}>
+                <strong>{reason.label}.</strong> {reason.detail}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      </Modal.Body>
+      <Modal.Footer>
+        <Button variant="outline-secondary" autoFocus onClick={() => close(false)}>
+          Cancel
+        </Button>
+        <Button variant={destructive ? "danger" : "primary"} onClick={() => close(true)}>
+          {held.kind === "paste" ? "Paste anyway" : "Run anyway"}
+        </Button>
+      </Modal.Footer>
+    </Modal>
   );
 }

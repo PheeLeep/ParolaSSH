@@ -7,7 +7,7 @@
 //! credentials to run them by hand; the threat being defended against is the
 //! stray `/`, the pasted line from a forum, the task written for the wrong
 //! host. It raises the cost of pressing the button and says exactly why. It
-//! blocks only when Settings › Advanced › Block dangerous tasks says to (on by
+//! blocks only when Settings › Advanced › Safeguard mode says to (on by
 //! default, for destructive tasks); `refusal` is that gate.
 //!
 //! That framing decides the tuning. A rule earns its place by catching a
@@ -81,8 +81,8 @@ pub fn refusal(assessment: &DangerAssessment, block_from: Option<DangerLevel>) -
     };
     let reasons: Vec<&str> = assessment.reasons.iter().map(|reason| reason.label.as_str()).collect();
     Some(format!(
-        "Blocked: this task is rated {what} ({}). Settings › Advanced › Block dangerous \
-         tasks does not allow it.",
+        "Blocked: this task is rated {what} ({}). Settings › Advanced › Safeguard mode \
+         does not allow it.",
         reasons.join(", ")
     ))
 }

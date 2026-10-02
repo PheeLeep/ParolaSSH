@@ -318,33 +318,47 @@ export function writeUpdateCheck(enabled: boolean): void {
   }
 }
 
-/* ── Dangerous tasks ───────────────────────────────────────────────────── */
+/* ── Safeguard mode ────────────────────────────────────────────────────── */
 
+export const SAFEGUARD_STORAGE_KEY = "parolassh:safeguard-mode";
+/** Before safeguard mode, tasks had their own switch; honour it until the new one is set. */
 export const TASK_BLOCKING_STORAGE_KEY = "parolassh:block-dangerous-tasks";
 
-/** Off, block destructive tasks, or block anything the danger check flags. */
+/** Off, block destructive commands, or block anything the danger check flags. */
 export type TaskBlocking = "off" | "destructive" | "caution";
 
-/** Destructive tasks are blocked unless the operator turns this off. */
-export function readTaskBlocking(): TaskBlocking {
+/** One switch for tasks and terminals. On unless turned off. */
+export function readSafeguard(): boolean {
   try {
-    const stored = localStorage.getItem(TASK_BLOCKING_STORAGE_KEY);
-    return stored === "off" || stored === "caution" ? stored : "destructive";
+    const stored = localStorage.getItem(SAFEGUARD_STORAGE_KEY);
+    if (stored !== null) return stored !== "off";
+    return localStorage.getItem(TASK_BLOCKING_STORAGE_KEY) !== "off";
   } catch {
     // localStorage can be unavailable (private mode, embedded webview policy)
-    return "destructive";
+    return true;
   }
 }
 
-export function writeTaskBlocking(blocking: TaskBlocking): void {
+export function writeSafeguard(enabled: boolean): void {
   try {
-    localStorage.setItem(TASK_BLOCKING_STORAGE_KEY, blocking);
+    localStorage.setItem(SAFEGUARD_STORAGE_KEY, enabled ? "on" : "off");
   } catch {
     // non-fatal: the preference just won't survive a restart
   }
 }
 
-/** Whether a task at this danger level may not run under this setting. */
+/** What safeguard mode blocks in tasks. */
+export function readTaskBlocking(): TaskBlocking {
+  return readSafeguard() ? "destructive" : "off";
+}
+
+/** What safeguard mode asks about in terminals: anything flagged, as a task's
+ *  confirmation warns. Asking, unlike blocking, still lets the operator proceed. */
+export function readTerminalGuard(): TaskBlocking {
+  return readSafeguard() ? "caution" : "off";
+}
+
+/** Whether a command at this danger level may not run under this setting. */
 export function isBlocked(level: DangerLevel, blocking: TaskBlocking): boolean {
   if (blocking === "off" || level === "none") return false;
   return blocking === "caution" || level === "destructive";

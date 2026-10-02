@@ -18,7 +18,23 @@ vi.mock("@xterm/xterm", () => ({
     write(chunk: string) {
       this.written.push(chunk);
     }
-    onData() {}
+    pasted: string[] = [];
+    paste(text: string) {
+      this.pasted.push(text);
+    }
+    screen = "";
+    buffer = {
+      active: {
+        type: "normal",
+        baseY: 0,
+        cursorY: 0,
+        getLine: () => ({ isWrapped: false, translateToString: () => this.screen }),
+      },
+    };
+    handler: ((data: string) => void) | null = null;
+    onData(handler: (data: string) => void) {
+      this.handler = handler;
+    }
     attachCustomKeyEventHandler() {}
     focus() {}
     clear() {}
@@ -38,11 +54,13 @@ globalThis.ResizeObserver ??= class {
 let nextShell: number;
 let openFails: string | null;
 let closed: number[];
+let sent: string[];
 
 beforeEach(() => {
   nextShell = 1;
   openFails = null;
   closed = [];
+  sent = [];
   mockIPC(
     (cmd, args) => {
       const a = args as Record<string, number>;
@@ -51,6 +69,13 @@ beforeEach(() => {
         return nextShell++;
       }
       if (cmd === "close_shell") closed.push(a.shellId);
+      if (cmd === "write_shell") sent.push(String((args as Record<string, unknown>).data));
+      if (cmd === "assess_task_command") {
+        const command = String((args as Record<string, unknown>).command);
+        return command.includes("rm -rf /")
+          ? { level: "destructive", reasons: [{ label: "Recursive delete", detail: "x", level: "destructive" }] }
+          : { level: "none", reasons: [] };
+      }
     },
     { shouldMockEvents: true },
   );
@@ -183,5 +208,84 @@ describe("TerminalTabs", () => {
 
     await user.click(screen.getByRole("button", { name: "Use the default" }));
     expect(store.hasFontOverride(1)).toBe(false);
+  });
+
+  describe("paste guard", () => {
+    const pasteInto = async (text: string) => {
+      const { TerminalTabs, store } = await load();
+      render(<TerminalTabs hostId="h" />);
+      await screen.findByText("shell 1");
+      const entry = store.get(1)!;
+      const event = new Event("paste", { bubbles: true, cancelable: true });
+      Object.assign(event, { clipboardData: { getData: () => text } });
+      act(() => {
+        entry.node.dispatchEvent(event);
+      });
+      return { entry, event };
+    };
+
+    it("holds back a flagged multi-line paste until confirmed", async () => {
+      const user = userEvent.setup();
+      const { entry, event } = await pasteInto("rm -rf /\n");
+      expect(event.defaultPrevented).toBe(true);
+      await user.click(await screen.findByRole("button", { name: "Paste anyway" }));
+      expect((entry.terminal as unknown as { pasted: string[] }).pasted).toEqual(["rm -rf /\n"]);
+    });
+
+    it("drops the paste on cancel", async () => {
+      const user = userEvent.setup();
+      const { entry } = await pasteInto("rm -rf /\n");
+      await user.click(await screen.findByRole("button", { name: "Cancel" }));
+      expect((entry.terminal as unknown as { pasted: string[] }).pasted).toEqual([]);
+    });
+
+    it("pastes a harmless multi-line paste without asking", async () => {
+      const { entry } = await pasteInto("ls -la\n");
+      await waitFor(() =>
+        expect((entry.terminal as unknown as { pasted: string[] }).pasted).toEqual(["ls -la\n"]),
+      );
+      expect(screen.queryByRole("button", { name: "Paste anyway" })).toBeNull();
+    });
+
+    it("leaves a single pasted line to xterm", async () => {
+      const { event } = await pasteInto("rm -rf /");
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    describe("typed commands", () => {
+      const typeLine = async (text: string) => {
+        const { TerminalTabs, store } = await load();
+        render(<TerminalTabs hostId="h" />);
+        await screen.findByText("shell 1");
+        const terminal = store.get(1)!.terminal as unknown as {
+          handler: (data: string) => void;
+          screen: string;
+        };
+        // What the shell echoed, however the line got there (typed, history, Tab).
+        terminal.screen = `me@host:~$ ${text}`;
+        act(() => terminal.handler("\r"));
+      };
+
+      it("holds Enter on a flagged line, then sends it once allowed", async () => {
+        const user = userEvent.setup();
+        await typeLine("rm -rf /etc");
+        await user.click(await screen.findByRole("button", { name: "Run anyway" }));
+        await waitFor(() => expect(sent[sent.length - 1]).toBe("\r"));
+      });
+
+      it("clears the line instead of running it on cancel", async () => {
+        const user = userEvent.setup();
+        await typeLine("rm -rf /etc");
+        await user.click(await screen.findByRole("button", { name: "Cancel" }));
+        await waitFor(() => expect(sent[sent.length - 1]).toBe("\x15"));
+        expect(sent).not.toContain("\r");
+      });
+
+      it("sends a harmless line straight away", async () => {
+        await typeLine("ls");
+        await waitFor(() => expect(sent[sent.length - 1]).toBe("\r"));
+        expect(screen.queryByRole("button", { name: "Run anyway" })).toBeNull();
+      });
+    });
   });
 });

@@ -114,7 +114,10 @@ function TransferRow({
       </td>
 
       <td>
-        <div className="fw-medium">{row.name}</div>
+        <div className="fw-medium">
+          {row.name}
+          {row.elevated && <span className="status-badge status-badge--warning ms-2">root</span>}
+        </div>
         <div className="text-body-secondary small font-monospace text-truncate">
           {row.direction === "download" ? row.remotePath : row.localPath}
         </div>

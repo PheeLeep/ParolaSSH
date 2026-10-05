@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { Alert, Button, Form, Spinner, Table } from "react-bootstrap";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -34,18 +34,36 @@ import { formatBytes } from "./format";
 import { readDefaultTransferPriority } from "../settings/preferences";
 import * as toast from "../../lib/toast";
 
+/** What the local pane can ask of the remote one. */
+export interface FilesPaneHandle {
+  /** Upload local files and folders into the folder on screen. */
+  uploadFrom: (entries: RemoteEntry[]) => Promise<void>;
+}
+
 /** Browse a host's filesystem over SFTP.
  *
- *  Two things are deliberately absent. There is no elevation button: SFTP runs
- *  as the user who signed in and the subsystem has no sudo, so a denied path
- *  stays denied until you reconnect as someone else - the error says exactly
- *  that rather than offering a prompt that cannot work.
- *
- *  And symlinks are shown but never opened. A link is the cheapest way for a
- *  host to point a download somewhere it should not go, so rows for links are
- *  inert and say why.
+ *  `elevated` routes every call through the root session that "Run as sudo"
+ *  opened. Symlinks are shown but never opened: a link is the cheapest way for
+ *  a host to point a download somewhere it should not go, so rows for links
+ *  are inert and say why.
  */
-export function FilesPane({ hostId }: { hostId: string }) {
+export function FilesPane({
+  hostId,
+  elevated = false,
+  localDir = null,
+  reloadKey = 0,
+  onPathChange,
+  ref,
+}: {
+  hostId: string;
+  elevated?: boolean;
+  /** The local pane's folder. Downloads land here instead of asking. */
+  localDir?: string | null;
+  /** Bumped to reload the folder on screen, e.g. once an upload lands. */
+  reloadKey?: number;
+  onPathChange?: (path: string | null) => void;
+  ref?: Ref<FilesPaneHandle>;
+}) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [path, setPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,6 +156,11 @@ export function FilesPane({ hostId }: { hostId: string }) {
    *  paint. Without this, double-clicking into a deep tree can land you back in
    *  a parent when the slower request resolves last. */
   const requestId = useRef(0);
+  /** Read through refs so toggling sudo reloads in place rather than going home. */
+  const elevatedRef = useRef(elevated);
+  elevatedRef.current = elevated;
+  const pathRef = useRef(path);
+  pathRef.current = path;
 
   const load = useCallback(
     async (target: string) => {
@@ -145,7 +168,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
       setLoading(true);
       setError(null);
       try {
-        const next = await api.listRemoteDir(hostId, target);
+        const next = await api.listRemoteDir(hostId, target, elevatedRef.current);
         if (id !== requestId.current) return;
         setListing(next);
         setPath(next.path);
@@ -184,6 +207,19 @@ export function FilesPane({ hostId }: { hostId: string }) {
     };
   }, [hostId, load]);
 
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    if (pathRef.current) void load(pathRef.current);
+  }, [elevated, reloadKey, load]);
+
+  useEffect(() => {
+    onPathChange?.(path);
+  }, [path, onPathChange]);
+
   const open = (entry: RemoteEntry) => {
     if (entry.kind !== "dir") return;
     void load(entry.path);
@@ -200,14 +236,16 @@ export function FilesPane({ hostId }: { hostId: string }) {
     const usable = entries.filter((entry) => !INERT_REASON[entry.kind]);
     if (usable.length === 0) return;
 
-    const dir = await openDialog({
-      directory: true,
-      multiple: false,
-      title:
-        usable.length === 1
-          ? `Download ${usable[0].name} to…`
-          : `Download ${usable.length} items to…`,
-    });
+    const dir =
+      localDir ||
+      (await openDialog({
+        directory: true,
+        multiple: false,
+        title:
+          usable.length === 1
+            ? `Download ${usable[0].name} to…`
+            : `Download ${usable.length} items to…`,
+      }));
     if (typeof dir !== "string") return;
 
     setBusy(true);
@@ -225,7 +263,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
           planned.push({ remotePath: entry.path, relative: entry.name });
           continue;
         }
-        const tree = await api.listRemoteTree(hostId, entry.path);
+        const tree = await api.listRemoteTree(hostId, entry.path, elevated);
         skipped.push(...tree.skipped);
         truncated = truncated || tree.truncated;
         for (const file of tree.files) {
@@ -267,6 +305,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
           relative: item.relative,
           onConflict,
           priority,
+          elevated,
         });
       }
       await transfers.refresh();
@@ -299,6 +338,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
     try {
       await api.enqueueUpload(hostId, chosen, path, {
         priority: readDefaultTransferPriority(),
+        elevated,
       });
       await transfers.refresh();
       toast.success("Upload queued", chosen.split(/[/\\]/).pop());
@@ -314,13 +354,90 @@ export function FilesPane({ hostId }: { hostId: string }) {
     }
   };
 
+  /** Upload from the local pane: folders are walked first, then every file is
+   *  checked against the remote folder before anything is queued. */
+  const uploadFrom = async (entries: RemoteEntry[]) => {
+    const target = path;
+    const usable = entries.filter((entry) => entry.kind === "file" || entry.kind === "dir");
+    if (!target || usable.length === 0) return;
+
+    setBusy(true);
+    setError(null);
+    const walking = toast.progress("Preparing upload…");
+
+    try {
+      const planned: { localPath: string; relative: string }[] = [];
+      const skipped: string[] = [];
+      let truncated = false;
+
+      for (const entry of usable) {
+        if (entry.kind === "file") {
+          planned.push({ localPath: entry.path, relative: entry.name });
+          continue;
+        }
+        const tree = await api.listLocalTree(entry.path);
+        skipped.push(...tree.skipped);
+        truncated = truncated || tree.truncated;
+        for (const file of tree.files) {
+          planned.push({ localPath: file.path, relative: `${entry.name}/${file.relative}` });
+        }
+      }
+
+      if (planned.length === 0) {
+        walking.fail("Nothing to upload", "That folder holds no regular files.");
+        return;
+      }
+
+      const taken = new Set(
+        await api.remoteConflicts(hostId, target, planned.map((item) => item.relative), elevated),
+      );
+      walking.dismiss();
+
+      const plan = await planAgainstConflicts(planned, (item) => item.relative, taken, target, true);
+      if (!plan) return;
+      if (plan.length === 0) {
+        toast.success("Nothing queued", "Every file was skipped.");
+        return;
+      }
+
+      const priority = readDefaultTransferPriority();
+      for (const { item, onConflict } of plan) {
+        await api.enqueueUpload(hostId, item.localPath, target, {
+          relative: item.relative,
+          onConflict,
+          priority,
+          elevated,
+        });
+      }
+      await transfers.refresh();
+
+      const notes: string[] = [];
+      if (skipped.length > 0) notes.push(`${skipped.length} item${skipped.length === 1 ? "" : "s"} skipped.`);
+      if (truncated) notes.push("The folder was too large to list in full.");
+      toast.success(
+        `Queued ${plan.length} upload${plan.length === 1 ? "" : "s"}`,
+        notes.join(" ") || undefined,
+      );
+      // Folders are created as uploads are queued, so they can show now.
+      void load(target);
+    } catch (caught) {
+      const message = errorMessage(caught);
+      setError(message);
+      walking.fail("Could not queue that upload", message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useImperativeHandle(ref, () => ({ uploadFrom }));
+
   const makeDirectory = async (name: string) => {
     if (!path) return;
 
     setBusy(true);
     setNewFolderError(null);
     try {
-      await api.createRemoteDir(hostId, path, name);
+      await api.createRemoteDir(hostId, path, name, elevated);
       setNewFolderOpen(false);
       toast.success("Folder created", name);
       void load(path);
@@ -355,7 +472,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
     const failed: string[] = [];
     for (const entry of targets) {
       try {
-        await api.deleteRemoteEntry(hostId, entry.path, entry.kind === "dir");
+        await api.deleteRemoteEntry(hostId, entry.path, entry.kind === "dir", elevated);
       } catch (caught) {
         failed.push(`${entry.name}: ${errorMessage(caught)}`);
       }
@@ -422,7 +539,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
     setBusy(true);
     setRenameError(null);
     try {
-      await api.renameRemoteEntry(hostId, renaming.path, target);
+      await api.renameRemoteEntry(hostId, renaming.path, target, elevated);
       setRenaming(null);
       toast.success("Renamed", `${renaming.name} → ${name}`);
       if (path) void load(path);
@@ -452,7 +569,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
 
     try {
       const taken = new Set(
-        await api.remoteConflicts(hostId, path, entries.map((entry) => entry.name)),
+        await api.remoteConflicts(hostId, path, entries.map((entry) => entry.name), elevated),
       );
       // Rename and the server's copy both refuse an existing target, so a
       // paste can skip or keep both, never overwrite.
@@ -484,8 +601,8 @@ export function FilesPane({ hostId }: { hostId: string }) {
             : item.name;
         const target = `${path}/${name}`.replace("//", "/");
         try {
-          if (mode === "copy") await api.copyRemoteEntry(hostId, item.path, target);
-          else await api.renameRemoteEntry(hostId, item.path, target);
+          if (mode === "copy") await api.copyRemoteEntry(hostId, item.path, target, elevated);
+          else await api.renameRemoteEntry(hostId, item.path, target, elevated);
           occupied.add(name);
         } catch (caught) {
           failed.push(`${item.name}: ${errorMessage(caught)}`);
@@ -532,7 +649,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
           <ArrowUp className="icon-sm" aria-hidden="true" />
         </Button>
 
-        <Breadcrumbs path={path} onNavigate={(next) => void load(next)} />
+        <Breadcrumbs crumbs={path ? posixCrumbs(path) : null} onNavigate={(next) => void load(next)} />
 
         <Form.Control
           size="sm"
@@ -691,8 +808,8 @@ export function FilesPane({ hostId }: { hostId: string }) {
                 </th>
                 <th>Name</th>
                 <th className="text-end">Size</th>
-                <th>Modified</th>
-                <th>Mode</th>
+                <th className="files-table__modified">Modified</th>
+                <th className="files-table__mode">Mode</th>
                 <th className="text-center datatable__sticky datatable__sticky--right">
                   Actions
                 </th>
@@ -707,6 +824,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
                   selected={selected.has(entry.path)}
                   onToggle={() => toggleOne(entry)}
                   onOpen={() => open(entry)}
+                  downloadHint={localDir ? `Download to ${localDir}` : undefined}
                   onDownload={() => void downloadEntries([entry])}
                   onRename={() => { setRenameError(null); setRenaming(entry); }}
                   onDelete={() => askDelete([entry])}
@@ -730,7 +848,7 @@ export function FilesPane({ hostId }: { hostId: string }) {
 /** A link or a device file is listed but cannot be acted on. The reason rides
  *  on the row rather than appearing as an error after a click, so the refusal
  *  is visible before anyone tries. */
-const INERT_REASON: Record<string, string> = {
+export const INERT_REASON: Record<string, string> = {
   symlink: "Symbolic link - ParolaSSH does not follow links.",
   other: "Not a regular file - device files, sockets and pipes are skipped.",
 };
@@ -744,12 +862,14 @@ function FileRow({
   onDownload,
   onRename,
   onDelete,
+  downloadHint,
 }: {
   entry: RemoteEntry;
   busy: boolean;
   selected: boolean;
   onToggle: () => void;
   onOpen: () => void;
+  downloadHint?: string;
   onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -787,8 +907,8 @@ function FileRow({
       <td className="text-end font-monospace small">
         {isDir ? "-" : formatBytes(entry.size)}
       </td>
-      <td className="text-body-secondary small">{formatModified(entry.modified)}</td>
-      <td className="font-monospace small text-body-secondary">
+      <td className="text-body-secondary small files-table__modified">{formatModified(entry.modified)}</td>
+      <td className="font-monospace small text-body-secondary files-table__mode">
         {entry.mode === null ? "-" : entry.mode.toString(8).padStart(4, "0")}
       </td>
       <td className="text-center datatable__sticky datatable__sticky--right">
@@ -803,7 +923,7 @@ function FileRow({
             variant="outline-secondary"
             onClick={onDownload}
             disabled={busy || !!inert}
-            title={inert ?? (isDir ? "Download this folder" : "Download")}
+            title={inert ?? downloadHint ?? (isDir ? "Download this folder" : "Download")}
           >
             <Download className="icon-sm" aria-hidden="true" />
           </Button>
@@ -831,7 +951,7 @@ function FileRow({
   );
 }
 
-function RowCheck({
+export function RowCheck({
   checked,
   indeterminate = false,
   disabled = false,
@@ -865,38 +985,49 @@ function RowCheck({
   );
 }
 
-function EntryIcon({ kind }: { kind: RemoteEntry["kind"] }) {
+export function EntryIcon({ kind }: { kind: RemoteEntry["kind"] }) {
   if (kind === "dir") return <Folder className="icon-sm text-primary" aria-hidden="true" />;
   if (kind === "symlink") return <Link2 className="icon-sm text-body-secondary" aria-hidden="true" />;
   return <FileIcon className="icon-sm text-body-secondary" aria-hidden="true" />;
 }
 
-function Breadcrumbs({
-  path,
+export interface Crumb {
+  label: string;
+  path: string;
+  /** Draw a separator before this crumb. */
+  sep: boolean;
+}
+
+/** `/var/log` as `/`, `var`, `log`. */
+export function posixCrumbs(path: string): Crumb[] {
+  const parts = path.split("/").filter(Boolean);
+  return [
+    { label: "/", path: "/", sep: false },
+    ...parts.map((part, index) => ({
+      label: part,
+      path: `/${parts.slice(0, index + 1).join("/")}`,
+      sep: index > 0,
+    })),
+  ];
+}
+
+export function Breadcrumbs({
+  crumbs,
   onNavigate,
 }: {
-  path: string | null;
+  crumbs: Crumb[] | null;
   onNavigate: (path: string) => void;
 }) {
-  if (!path) return <span className="files-pane__path text-body-secondary">…</span>;
-
-  const parts = path.split("/").filter(Boolean);
+  if (!crumbs) return <span className="files-pane__path text-body-secondary">…</span>;
 
   return (
     <nav className="files-pane__path" aria-label="Current folder">
-      <button type="button" className="files-crumb" onClick={() => onNavigate("/")}>
-        /
-      </button>
-      {parts.map((part, index) => (
-        <span key={`${part}-${index}`} className="d-inline-flex align-items-center">
-          <button
-            type="button"
-            className="files-crumb"
-            onClick={() => onNavigate(`/${parts.slice(0, index + 1).join("/")}`)}
-          >
-            {part}
+      {crumbs.map((crumb, index) => (
+        <span key={`${crumb.path}-${index}`} className="d-inline-flex align-items-center">
+          {crumb.sep && <span className="files-crumb__sep">/</span>}
+          <button type="button" className="files-crumb" onClick={() => onNavigate(crumb.path)}>
+            {crumb.label}
           </button>
-          {index < parts.length - 1 && <span className="files-crumb__sep">/</span>}
         </span>
       ))}
     </nav>
@@ -922,7 +1053,7 @@ function freeName(name: string, taken: Set<string>): string {
   return `${stem} (${Date.now()})${extension}`;
 }
 
-function formatModified(seconds: number | null): string {
+export function formatModified(seconds: number | null): string {
   if (seconds === null) return "-";
   return new Date(seconds * 1000).toLocaleString(undefined, {
     dateStyle: "medium",

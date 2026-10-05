@@ -1153,17 +1153,69 @@ pub async fn list_remote_dir(
     registry: State<'_, SessionRegistry>,
     host_id: String,
     path: String,
+    elevated: Option<bool>,
 ) -> SshResult<DirListing> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let elevated = elevated.unwrap_or(false);
+    let sftp = live.sftp(elevated).await?;
 
     match sftp::list_dir(&sftp, &path).await {
         Ok(listing) => Ok(listing),
         Err(error) => {
-            live.browse.reset().await;
+            live.reset_sftp(elevated).await;
             Err(error)
         }
     }
+}
+
+/// Turn on "Run as sudo" for the file browser: check the password with sudo,
+/// keep it on the session for transfers, and open the root SFTP session.
+#[tauri::command]
+pub async fn enable_elevated_files(
+    registry: State<'_, SessionRegistry>,
+    vault: State<'_, SecretVault>,
+    host_id: String,
+    password: Option<String>,
+) -> SshResult<()> {
+    let live = registry.require(&host_id)?;
+    if !live.os.is_unix() {
+        return Err(SshError::unsupported(
+            "Running the file browser as root needs sudo, which Windows does not have.",
+        ));
+    }
+
+    if live.elevation.needs_password() {
+        let password = resolve_sudo_password(&live, &vault, &host_id, password)
+            .await?
+            .ok_or_else(|| SshError::invalid("This host needs your account password for sudo."))?;
+        // A login or remembered password has not been through sudo yet.
+        let stdin = Zeroizing::new(format!("{}\n", password.as_str()).into_bytes());
+        let check = live.session.exec(power::SUDO_VALIDATE_COMMAND, Some(&stdin)).await?;
+        if !check.succeeded() {
+            return Err(SshError::invalid(format!(
+                "sudo did not accept that password: {}",
+                check.failure_text()
+            )));
+        }
+        live.keep_sudo_password(password);
+    }
+
+    live.reset_sftp(true).await;
+    live.sftp(true).await?;
+    logging::info("sftp", format!("Host {host_id}: file browser elevated with sudo"));
+    Ok(())
+}
+
+/// Close the root SFTP session. Transfers already queued as root keep going.
+#[tauri::command]
+pub async fn disable_elevated_files(
+    registry: State<'_, SessionRegistry>,
+    host_id: String,
+) -> SshResult<()> {
+    if let Some(live) = registry.get(&host_id) {
+        live.reset_sftp(true).await;
+    }
+    Ok(())
 }
 
 /// Where a fresh file browser should open.
@@ -1173,12 +1225,12 @@ pub async fn remote_home_dir(
     host_id: String,
 ) -> SshResult<String> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(false).await?;
 
     match sftp::home_dir(&sftp).await {
         Ok(path) => Ok(path),
         Err(error) => {
-            live.browse.reset().await;
+            live.reset_sftp(false).await;
             Err(error)
         }
     }
@@ -1191,13 +1243,14 @@ pub async fn create_remote_dir(
     host_id: String,
     path: String,
     name: String,
+    elevated: Option<bool>,
 ) -> SshResult<String> {
     // The name is the user's, but it still must not be a path: a "folder"
     // called `../..` would create somewhere they are not looking.
     sftp::safe_local_name(&name)?;
 
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
     let target = sftp::join(&path, &name);
 
     sftp.create_dir(target.clone())
@@ -1218,9 +1271,10 @@ pub async fn delete_remote_entry(
     host_id: String,
     path: String,
     is_dir: bool,
+    elevated: Option<bool>,
 ) -> SshResult<()> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
 
     let metadata = sftp
         .symlink_metadata(path.clone())
@@ -1252,9 +1306,10 @@ pub async fn rename_remote_entry(
     host_id: String,
     from: String,
     to: String,
+    elevated: Option<bool>,
 ) -> SshResult<String> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
 
     let from = sftp::normalize(&from);
     let to = sftp::normalize(&to);
@@ -1297,9 +1352,10 @@ pub async fn copy_remote_entry(
     host_id: String,
     from: String,
     to: String,
+    elevated: Option<bool>,
 ) -> SshResult<String> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
 
     let from = sftp::normalize(&from);
     let to = sftp::normalize(&to);
@@ -1329,12 +1385,19 @@ pub async fn copy_remote_entry(
         )));
     }
 
-    let command = copy_command(live.os, &from, &to)?;
+    let mut command = copy_command(live.os, &from, &to)?;
+    let mut stdin = None;
+    if elevated.unwrap_or(false) {
+        if let sftp::Launch::Sudo { password } = live.elevated_launch()? {
+            command = power::sudo_sh(&command);
+            stdin = password.map(|password| Zeroizing::new(format!("{}\n", password.as_str()).into_bytes()));
+        }
+    }
     // A large copy is disk-bound on the server and easily outlives the default
     // thirty seconds, so this is one of the few commands given real headroom.
     let output = live
         .session
-        .exec_with_timeout(&command, None, Duration::from_secs(3600))
+        .exec_with_timeout(&command, stdin.as_deref().map(|v| v.as_slice()), Duration::from_secs(3600))
         .await?;
 
     if !output.succeeded() {
@@ -1388,9 +1451,10 @@ pub async fn list_remote_tree(
     registry: State<'_, SessionRegistry>,
     host_id: String,
     path: String,
+    elevated: Option<bool>,
 ) -> SshResult<sftp::TreeListing> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
     sftp::walk(&sftp, &path).await
 }
 
@@ -1425,9 +1489,10 @@ pub async fn remote_conflicts(
     host_id: String,
     remote_dir: String,
     names: Vec<String>,
+    elevated: Option<bool>,
 ) -> SshResult<Vec<String>> {
     let live = registry.require(&host_id)?;
-    let sftp = live.browse.get_or_open(&live.session).await?;
+    let sftp = live.sftp(elevated.unwrap_or(false)).await?;
 
     let mut taken = Vec::new();
     for name in names {
@@ -1457,6 +1522,7 @@ pub async fn enqueue_download(
     relative: Option<String>,
     on_conflict: Option<OnConflict>,
     priority: Option<Priority>,
+    elevated: Option<bool>,
 ) -> SshResult<u64> {
     registry.require(&host_id)?;
 
@@ -1498,6 +1564,7 @@ pub async fn enqueue_download(
         name: safe_name,
         priority: priority.unwrap_or_default(),
         bytes_total: None,
+        elevated: elevated.unwrap_or(false),
     });
 
     pump_transfers(&app, &registry, &transfers).await;
@@ -1505,6 +1572,9 @@ pub async fn enqueue_download(
 }
 
 /// Queue an upload of a local file into a remote directory.
+///
+/// `relative` places the file under `remote_dir`, so a folder upload mirrors
+/// its tree; the folders on the way are created now, before it is queued.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn enqueue_upload(
@@ -1514,10 +1584,13 @@ pub async fn enqueue_upload(
     host_id: String,
     local_path: String,
     remote_dir: String,
+    relative: Option<String>,
     on_conflict: Option<OnConflict>,
     priority: Option<Priority>,
+    elevated: Option<bool>,
 ) -> SshResult<u64> {
     let live = registry.require(&host_id)?;
+    let elevated = elevated.unwrap_or(false);
 
     let source = PathBuf::from(&local_path);
     let metadata = std::fs::metadata(&source)
@@ -1533,13 +1606,28 @@ pub async fn enqueue_upload(
         .map(|name| name.to_string_lossy().to_string())
         .ok_or_else(|| SshError::invalid("That file has no name to upload it under."))?;
 
+    // Each folder segment is held to the same rule as a new folder's name.
+    let mut target_dir = sftp::normalize(&remote_dir);
+    let folders: Vec<&str> = relative
+        .as_deref()
+        .map(|relative| relative.split('/').filter(|segment| !segment.is_empty()).collect())
+        .unwrap_or_default();
+    if let Some((_, parents)) = folders.split_last() {
+        let sftp = live.sftp(elevated).await?;
+        for segment in parents {
+            sftp::safe_local_name(segment)?;
+            target_dir = sftp::join(&target_dir, segment);
+            ensure_remote_dir(&sftp, &target_dir).await?;
+        }
+    }
+
     // Uploading opens the destination with CREATE|TRUNCATE, so without this an
     // upload silently replaces whatever was already there.
     let remote_path = match on_conflict.unwrap_or_default() {
-        OnConflict::Overwrite => sftp::join(&remote_dir, &name),
+        OnConflict::Overwrite => sftp::join(&target_dir, &name),
         OnConflict::KeepBoth => {
-            let sftp = live.browse.get_or_open(&live.session).await?;
-            available_remote_path(&sftp, &remote_dir, &name).await?
+            let sftp = live.sftp(elevated).await?;
+            available_remote_path(&sftp, &target_dir, &name).await?
         }
     };
 
@@ -1552,10 +1640,32 @@ pub async fn enqueue_upload(
         name,
         priority: priority.unwrap_or_default(),
         bytes_total: Some(metadata.len()),
+        elevated,
     });
 
     pump_transfers(&app, &registry, &transfers).await;
     Ok(id)
+}
+
+/// Create `path` unless it is already a directory. A link in its place is
+/// refused rather than written through.
+async fn ensure_remote_dir(sftp: &russh_sftp::client::SftpSession, path: &str) -> SshResult<()> {
+    match sftp.symlink_metadata(path.to_string()).await {
+        Ok(existing) => {
+            let kind = sftp::EntryKind::from(existing.file_type());
+            if let Some(refusal) = sftp::refuse_unless_regular(kind, path) {
+                return Err(refusal);
+            }
+            if kind != sftp::EntryKind::Dir {
+                return Err(SshError::invalid(format!("{path} exists and is not a folder.")));
+            }
+            Ok(())
+        }
+        Err(_) => sftp
+            .create_dir(path.to_string())
+            .await
+            .map_err(|error| sftp::explain_error(&format!("Could not create {path}"), &error.to_string())),
+    }
 }
 
 /// A remote path that is free, disambiguating as `name (1).ext` - the same
@@ -1688,6 +1798,7 @@ pub async fn pump_transfers(
             order.id,
             order.host_id,
             order.direction,
+            order.elevated,
             order.remote_path,
             order.local_path,
             order.cancel,

@@ -168,6 +168,25 @@ export function subscribeNavLayout(
 
 /* ── Transfers ─────────────────────────────────────────────────────────── */
 
+export const FILES_LOCAL_PANE_STORAGE_KEY = "parolassh:files-local-pane";
+
+/** Whether the Files tab shows this computer beside the host. On by default. */
+export function readShowLocalPane(): boolean {
+  try {
+    return localStorage.getItem(FILES_LOCAL_PANE_STORAGE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+export function writeShowLocalPane(show: boolean): void {
+  try {
+    localStorage.setItem(FILES_LOCAL_PANE_STORAGE_KEY, show ? "on" : "off");
+  } catch {
+    // non-fatal: the preference just won't survive a restart
+  }
+}
+
 export const MAX_CONCURRENT_STORAGE_KEY = "parolassh:max-concurrent-transfers";
 
 export const DEFAULT_MAX_CONCURRENT_TRANSFERS = 3;

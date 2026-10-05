@@ -12,7 +12,7 @@ import { ServicesPane } from "./panes/ServicesPane";
 import { TasksPane } from "./panes/TasksPane";
 import { TunnelsPane } from "./panes/TunnelsPane";
 import { useHostActions } from "./useHostActions";
-import { FilesPane } from "../transfers/FilesPane";
+import { FilesWorkspace } from "../transfers/FilesWorkspace";
 import { VpnGlyph } from "../vpn/VpnGlyph";
 import { PaneBoundary } from "../../components/PaneBoundary";
 import type { Navigate } from "../../navigation";
@@ -168,7 +168,7 @@ export function HostDetail({
           ) : feature === "security" ? (
             <SecurityPane hostId={hostId} />
           ) : feature === "files" ? (
-            <FilesPane hostId={hostId} />
+            <FilesWorkspace hostId={hostId} />
           ) : (
             <TunnelsPane hostId={hostId} />
           )}

@@ -14,6 +14,10 @@ All notable changes to ParolaSSH. The format follows
   Ctrl+PageUp/PageDown; Cmd+T/W on macOS)
 - Settings > Keybindings lists every shortcut and lets you rebind them, with
   conflict checks. Shortcut badges in the sidebar can be switched off there
+- Files shows this computer beside the host. Upload files or whole folders
+  from the left pane, and downloads land in the folder open there
+- "Run as sudo" in Files browses and transfers as root through `sftp-server`
+  under sudo, using the same password prompt as other elevated actions
 
 ## [1.0.4] - 2026-09-23
 

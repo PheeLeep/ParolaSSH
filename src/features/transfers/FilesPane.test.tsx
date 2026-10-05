@@ -1,10 +1,12 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { createRef } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import type { RemoteEntry } from "../hosts/types";
-import { FilesPane } from "./FilesPane";
+import { FilesPane, type FilesPaneHandle } from "./FilesPane";
+import { localCrumbs } from "./LocalPane";
 
 /** A fake remote filesystem with the backend's rules: rename and copy never
  *  land on an existing path. Keys are absolute paths; dirs list their children. */
@@ -64,7 +66,14 @@ beforeEach(() => {
       case "local_conflicts":
         return [];
       case "enqueue_download":
+      case "enqueue_upload":
         return 1;
+      case "list_local_tree":
+        return {
+          files: [{ path: `${args.path}/conf/a.conf`, relative: "conf/a.conf", size: 1 }],
+          skipped: [],
+          truncated: false,
+        };
       case "list_transfers":
         return [];
       case "transfer_summary":
@@ -248,5 +257,61 @@ describe("FilesPane", () => {
         onConflict: "overwrite",
       }),
     );
+  });
+
+  it("downloads straight into the local pane's folder without asking", async () => {
+    seed({ [HOME]: "dir", [`${HOME}/notes.txt`]: "file" });
+    const user = userEvent.setup();
+    render(<FilesPane hostId="h" localDir="/home/me/Downloads" />);
+    await screen.findByText("notes.txt");
+
+    await user.click(within(row("notes.txt")).getByTitle("Download to /home/me/Downloads"));
+    await waitFor(() => expect(made("enqueue_download")).toHaveLength(1));
+    expect(made("plugin:dialog|open")).toHaveLength(0);
+    expect(made("enqueue_download")[0]).toMatchObject({
+      localDir: "/home/me/Downloads",
+      elevated: false,
+    });
+  });
+
+  it("routes every call through the root session when elevated", async () => {
+    seed({ [HOME]: "dir", [`${HOME}/notes.txt`]: "file" });
+    render(<FilesPane hostId="h" elevated />);
+    await screen.findByText("notes.txt");
+    expect(made("list_remote_dir").every((args) => args.elevated === true)).toBe(true);
+  });
+
+  it("uploads a local folder into the open folder, keeping its tree", async () => {
+    seed({ [HOME]: "dir" });
+    const ref = createRef<FilesPaneHandle>();
+    render(<FilesPane hostId="h" ref={ref} />);
+    await screen.findByText("This folder is empty.");
+
+    await act(() =>
+      ref.current!.uploadFrom([
+        { name: "app", path: "/local/app", kind: "dir", size: 0, modified: null, mode: null, target: null },
+        { name: "a.txt", path: "/local/a.txt", kind: "file", size: 1, modified: null, mode: null, target: null },
+      ]),
+    );
+
+    expect(made("enqueue_upload")).toEqual([
+      expect.objectContaining({ localPath: "/local/app/conf/a.conf", remoteDir: HOME, relative: "app/conf/a.conf" }),
+      expect.objectContaining({ localPath: "/local/a.txt", remoteDir: HOME, relative: "a.txt" }),
+    ]);
+  });
+});
+
+describe("localCrumbs", () => {
+  it("puts Windows drives under This PC", () => {
+    expect(localCrumbs("C:\\Users\\me").map((crumb) => [crumb.label, crumb.path])).toEqual([
+      ["This PC", ""],
+      ["C:", "C:\\"],
+      ["Users", "C:\\Users"],
+      ["me", "C:\\Users\\me"],
+    ]);
+  });
+
+  it("keeps POSIX paths as the remote side shows them", () => {
+    expect(localCrumbs("/home/me").map((crumb) => crumb.path)).toEqual(["/", "/home", "/home/me"]);
   });
 });

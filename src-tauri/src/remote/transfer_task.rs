@@ -101,6 +101,7 @@ pub async fn run(
     id: u64,
     host_id: String,
     direction: Direction,
+    elevated: bool,
     remote_path: String,
     local_path: String,
     cancel: Arc<AtomicBool>,
@@ -129,11 +130,19 @@ pub async fn run(
     };
 
     let session = &live.session;
-    let outcome = match direction {
-        Direction::Download => {
-            download(session, &remote_path, &local_path, &cancel, &progress).await
+    let launch = if elevated {
+        live.elevated_launch()
+    } else {
+        Ok(sftp::Launch::Subsystem)
+    };
+    let outcome = match (launch, direction) {
+        (Err(error), _) => Err(error),
+        (Ok(launch), Direction::Download) => {
+            download(session, &launch, &remote_path, &local_path, &cancel, &progress).await
         }
-        Direction::Upload => upload(session, &remote_path, &local_path, &cancel, &progress).await,
+        (Ok(launch), Direction::Upload) => {
+            upload(session, &launch, &remote_path, &local_path, &cancel, &progress).await
+        }
     };
 
     // One last emit so the bar always lands on its true final value, however
@@ -152,6 +161,7 @@ pub async fn run(
 /// of a LAN transfer waiting on round trips rather than moving bytes.
 pub async fn download(
     session: &Session,
+    launch: &sftp::Launch,
     remote_path: &str,
     local_path: &str,
     cancel: &AtomicBool,
@@ -162,7 +172,7 @@ pub async fn download(
 
     // Every failure below must leave nothing behind, so the cleanup lives in
     // one place rather than on each `?`.
-    let outcome = download_into(session, remote_path, &part_path, cancel, progress).await;
+    let outcome = download_into(session, launch, remote_path, &part_path, cancel, progress).await;
     if outcome.is_err() {
         let _ = std::fs::remove_file(&part_path);
         return outcome.map(|_| ());
@@ -180,6 +190,7 @@ pub async fn download(
 /// Fetch into the staging file. The caller owns the rename and the cleanup.
 async fn download_into(
     session: &Session,
+    launch: &sftp::Launch,
     remote_path: &str,
     part_path: &Path,
     cancel: &AtomicBool,
@@ -187,7 +198,7 @@ async fn download_into(
 ) -> SshResult<()> {
     // Opening also re-checks the kind on the handle we are about to read,
     // rather than trusting a listing that may be minutes old.
-    let reader = sftp::RemoteReader::open(session, remote_path).await?;
+    let reader = sftp::RemoteReader::open(session, launch, remote_path).await?;
     let total = reader.len;
     progress(0, Some(total));
 
@@ -235,12 +246,13 @@ fn verify_length(done: u64, expected: u64, stray: Option<&Path>) -> SshResult<()
 /// second permission the user may not have.
 pub async fn upload(
     session: &Session,
+    launch: &sftp::Launch,
     remote_path: &str,
     local_path: &str,
     cancel: &AtomicBool,
     progress: ProgressSink<'_>,
 ) -> SshResult<()> {
-    let sftp = sftp::connect(session).await?;
+    let sftp = sftp::connect(session, launch).await?;
 
     // Refuse to write through a link that already exists at the destination.
     // `symlink_metadata` does not resolve the final component, so this sees the

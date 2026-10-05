@@ -19,7 +19,7 @@ use super::client::{NegotiatedCrypto, Session};
 use super::metrics::Readings;
 use super::platform::Platform;
 use super::power::Elevation;
-use super::sftp::BrowseSession;
+use super::sftp::{BrowseSession, Launch};
 use super::shell::ShellHandle;
 use super::stream::StreamHandle;
 use super::tunnel::{self, RemoteForwardMap, TunnelHandle};
@@ -78,6 +78,8 @@ pub struct LiveSession {
     /// The SFTP channel the file browser listens on, opened on first use.
     /// Transfers deliberately do not share it - see `sftp::BrowseSession`.
     pub browse: BrowseSession,
+    /// The same, with `sftp-server` running under sudo. Opened by "Run as sudo".
+    pub browse_root: BrowseSession,
 }
 
 impl LiveSession {
@@ -113,6 +115,43 @@ impl LiveSession {
             windows_sampler: tokio::sync::Mutex::new(None),
             missed_beats: AtomicU8::new(0),
             browse: BrowseSession::default(),
+            browse_root: BrowseSession::default(),
+        }
+    }
+
+    /// How to start an SFTP server as root, from the password sudo last
+    /// accepted. Turning on "Run as sudo" validates and keeps one first.
+    pub fn elevated_launch(&self) -> SshResult<Launch> {
+        match &self.elevation {
+            Elevation::NotNeeded => Ok(Launch::Subsystem),
+            Elevation::SudoNoPassword => Ok(Launch::Sudo { password: None }),
+            Elevation::SudoPassword => self
+                .kept_sudo_password()
+                .map(|password| Launch::Sudo { password: Some(password) })
+                .ok_or_else(|| {
+                    SshError::invalid("The sudo password was forgotten. Turn on \"Run as sudo\" again.")
+                }),
+            Elevation::WindowsAdminToken | Elevation::Unavailable { .. } => Err(SshError::unsupported(
+                "Running the file browser as root needs sudo, which this host does not offer.",
+            )),
+        }
+    }
+
+    /// The file browser's SFTP session, as root when `elevated`.
+    pub async fn sftp(&self, elevated: bool) -> SshResult<Arc<russh_sftp::client::SftpSession>> {
+        if elevated {
+            self.browse_root.get_or_open(&self.session, &self.elevated_launch()?).await
+        } else {
+            self.browse.get_or_open(&self.session, &Launch::Subsystem).await
+        }
+    }
+
+    /// Drop a browse session so the next call reopens it.
+    pub async fn reset_sftp(&self, elevated: bool) {
+        if elevated {
+            self.browse_root.reset().await;
+        } else {
+            self.browse.reset().await;
         }
     }
 

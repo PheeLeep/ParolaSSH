@@ -19,6 +19,7 @@ const record = (overrides: Partial<TransferRecord>): TransferRecord => ({
   bytesDone: 0,
   bytesTotal: 1000,
   queuePosition: null,
+  elevated: false,
   error: null,
   queuedAt: "2026-09-17T12:00:00Z",
   startedAt: null,

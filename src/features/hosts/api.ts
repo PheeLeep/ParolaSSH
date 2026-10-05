@@ -11,6 +11,7 @@ import type {
   ConnectProgress,
   DangerAssessment,
   DirListing,
+  LocalListing,
   HostTasks,
   TaskDraft,
   TaskPlan,
@@ -387,39 +388,66 @@ export const startTask = (
 
 /* ── Files (SFTP) ──────────────────────────────────────────────────────── */
 
-export const listRemoteDir = (hostId: string, path: string) =>
-  invoke<DirListing>("list_remote_dir", { hostId, path });
+/** `elevated` routes a call through the root SFTP session ("Run as sudo"). */
+export const listRemoteDir = (hostId: string, path: string, elevated = false) =>
+  invoke<DirListing>("list_remote_dir", { hostId, path, elevated });
+
+/** Check the sudo password and open a root SFTP session. Null password means
+ *  the kept or login one, which never crosses the webview. */
+export const enableElevatedFiles = (hostId: string, password: string | null) =>
+  invoke<void>("enable_elevated_files", { hostId, password });
+
+export const disableElevatedFiles = (hostId: string) =>
+  invoke<void>("disable_elevated_files", { hostId });
 
 /** Where a fresh browser opens - the subsystem's own answer, not a guess. */
 export const remoteHomeDir = (hostId: string) =>
   invoke<string>("remote_home_dir", { hostId });
 
-export const createRemoteDir = (hostId: string, path: string, name: string) =>
-  invoke<string>("create_remote_dir", { hostId, path, name });
+export const createRemoteDir = (hostId: string, path: string, name: string, elevated = false) =>
+  invoke<string>("create_remote_dir", { hostId, path, name, elevated });
 
-export const deleteRemoteEntry = (hostId: string, path: string, isDir: boolean) =>
-  invoke<void>("delete_remote_entry", { hostId, path, isDir });
+export const deleteRemoteEntry = (
+  hostId: string,
+  path: string,
+  isDir: boolean,
+  elevated = false,
+) => invoke<void>("delete_remote_entry", { hostId, path, isDir, elevated });
 
 /** Rename or move - the same SFTP request, differing only in whether the
  *  destination's parent is the one it is already in. Never overwrites. */
-export const renameRemoteEntry = (hostId: string, from: string, to: string) =>
-  invoke<string>("rename_remote_entry", { hostId, from, to });
+export const renameRemoteEntry = (hostId: string, from: string, to: string, elevated = false) =>
+  invoke<string>("rename_remote_entry", { hostId, from, to, elevated });
 
 /** Copy within one host, done by the server so the bytes never cross the wire. */
-export const copyRemoteEntry = (hostId: string, from: string, to: string) =>
-  invoke<string>("copy_remote_entry", { hostId, from, to });
+export const copyRemoteEntry = (hostId: string, from: string, to: string, elevated = false) =>
+  invoke<string>("copy_remote_entry", { hostId, from, to, elevated });
 
 /** Every regular file under a folder, for a recursive transfer. */
-export const listRemoteTree = (hostId: string, path: string) =>
-  invoke<TreeListing>("list_remote_tree", { hostId, path });
+export const listRemoteTree = (hostId: string, path: string, elevated = false) =>
+  invoke<TreeListing>("list_remote_tree", { hostId, path, elevated });
+
+/* ── This machine ──────────────────────────────────────────────────────── */
+
+export const localHomeDir = () => invoke<string>("local_home_dir");
+
+/** One local folder; `""` lists the drives on Windows. */
+export const listLocalDir = (path: string) => invoke<LocalListing>("list_local_dir", { path });
+
+/** Every regular file under a local folder, for a folder upload. */
+export const listLocalTree = (path: string) => invoke<TreeListing>("list_local_tree", { path });
 
 /** Which of `names` already exist, so the user is asked before anything is
  *  queued rather than after something is lost. */
 export const localConflicts = (localDir: string, names: string[]) =>
   invoke<string[]>("local_conflicts", { localDir, names });
 
-export const remoteConflicts = (hostId: string, remoteDir: string, names: string[]) =>
-  invoke<string[]>("remote_conflicts", { hostId, remoteDir, names });
+export const remoteConflicts = (
+  hostId: string,
+  remoteDir: string,
+  names: string[],
+  elevated = false,
+) => invoke<string[]>("remote_conflicts", { hostId, remoteDir, names, elevated });
 
 /* ── Transfers ─────────────────────────────────────────────────────────── */
 
@@ -432,6 +460,7 @@ export const enqueueDownload = (
     relative?: string | null;
     onConflict?: OnConflict | null;
     priority?: TransferPriority | null;
+    elevated?: boolean;
   } = {},
 ) =>
   invoke<number>("enqueue_download", {
@@ -441,20 +470,29 @@ export const enqueueDownload = (
     relative: options.relative ?? null,
     onConflict: options.onConflict ?? null,
     priority: options.priority ?? null,
+    elevated: options.elevated ?? false,
   });
 
 export const enqueueUpload = (
   hostId: string,
   localPath: string,
   remoteDir: string,
-  options: { onConflict?: OnConflict | null; priority?: TransferPriority | null } = {},
+  options: {
+    /** Sub-path under `remoteDir`, so a folder upload mirrors the tree. */
+    relative?: string | null;
+    onConflict?: OnConflict | null;
+    priority?: TransferPriority | null;
+    elevated?: boolean;
+  } = {},
 ) =>
   invoke<number>("enqueue_upload", {
     hostId,
     localPath,
     remoteDir,
+    relative: options.relative ?? null,
     onConflict: options.onConflict ?? null,
     priority: options.priority ?? null,
+    elevated: options.elevated ?? false,
   });
 
 export const listTransfers = () => invoke<TransferRecord[]>("list_transfers");

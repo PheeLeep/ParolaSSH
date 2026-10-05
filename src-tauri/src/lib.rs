@@ -1,6 +1,7 @@
 mod app_paths;
 mod commands;
 pub mod hosts;
+mod local_fs;
 pub mod logging;
 mod private_file;
 pub mod remote;
@@ -182,6 +183,11 @@ pub fn run() {
             // Files (SFTP)
             remote::commands::list_remote_dir,
             remote::commands::remote_home_dir,
+            remote::commands::enable_elevated_files,
+            remote::commands::disable_elevated_files,
+            local_fs::list_local_dir,
+            local_fs::local_home_dir,
+            local_fs::list_local_tree,
             remote::commands::create_remote_dir,
             remote::commands::delete_remote_entry,
             remote::commands::rename_remote_entry,

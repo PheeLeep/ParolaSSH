@@ -239,6 +239,16 @@ export interface DirListing {
   truncated: boolean;
 }
 
+/** A folder on this machine. `path` is native (`C:\\Users\\me` on Windows);
+ *  an empty path is the Windows drive list. */
+export interface LocalListing {
+  path: string;
+  /** Null at the top. */
+  parent: string | null;
+  entries: RemoteEntry[];
+  truncated: boolean;
+}
+
 /** One file found by a recursive walk. `relative` mirrors the tree under the
  *  folder the walk started at. */
 export interface TreeFile {
@@ -281,6 +291,8 @@ export interface TransferRecord {
   localPath: string;
   name: string;
   priority: TransferPriority;
+  /** Ran through `sftp-server` under sudo. */
+  elevated: boolean;
   state: TransferState;
   bytesDone: number;
   bytesTotal: number | null;

@@ -16,9 +16,8 @@
 //!   * **Paths are normalized here, before the wire.** The server's idea of
 //!     `..` is not ours to rely on.
 //!
-//! SFTP authenticates as the login user and has no sudo: there is no subsystem
-//! equivalent of `power.rs`'s elevation. A permission denial is final, and
-//! `explain_error` says so rather than leaving the user to wonder.
+//! The `sftp` subsystem runs as the login user. "Run as sudo" instead execs
+//! OpenSSH's `sftp-server` under `sudo` on the channel - see `Launch`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -28,7 +27,12 @@ use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::{FileAttributes, FileType, OpenFlags, StatusCode};
 use serde::Serialize;
 
+use russh::client::Msg;
+use russh::ChannelStream;
+use zeroize::Zeroizing;
+
 use super::client::Session;
+use super::power::single_quote;
 use crate::ssh::{SshError, SshResult};
 
 /// Ceiling on one directory listing. A directory with a million entries would
@@ -85,25 +89,117 @@ pub struct DirListing {
     pub truncated: bool,
 }
 
+/// How the SFTP server is started on a channel.
+#[derive(Clone)]
+pub enum Launch {
+    /// The `sftp` subsystem, as the login user.
+    Subsystem,
+    /// `sftp-server` under `sudo`. A password, when sudo wants one, is the
+    /// first line on stdin; sudo reads it byte by byte, so the SFTP packets
+    /// after it reach the server untouched.
+    Sudo { password: Option<Zeroizing<String>> },
+}
+
+/// Where distributions keep OpenSSH's `sftp-server`, after whatever sshd's own
+/// `Subsystem` line names (unless that is `internal-sftp`, which is not a file).
+const SFTP_SERVER_PATHS: &[&str] = &[
+    "/usr/lib/openssh/sftp-server",
+    "/usr/libexec/openssh/sftp-server",
+    "/usr/lib/ssh/sftp-server",
+    "/usr/libexec/sftp-server",
+    "/usr/lib/sftp-server",
+    "/usr/local/libexec/sftp-server",
+    "/usr/sbin/sftp-server",
+];
+
+/// How long sudo plus the SFTP handshake may take before we call it stuck.
+const SUDO_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// The command that starts `sftp-server` as root. `-k` ignores cached
+/// credentials, so sudo always reads the password line when it wants one and
+/// never leaves it for `sftp-server` to choke on. Pure.
+pub fn sudo_sftp_command() -> String {
+    let candidates = SFTP_SERVER_PATHS.join(" ");
+    let script = format!(
+        "p=$(awk 'tolower($1) == \"subsystem\" && $2 == \"sftp\" {{ print $3; exit }}' \
+         /etc/ssh/sshd_config 2>/dev/null); \
+         for c in \"$p\" {candidates}; do [ -n \"$c\" ] && [ -x \"$c\" ] && exec \"$c\"; done; \
+         echo 'OpenSSH sftp-server was not found on this host.' >&2; exit 127"
+    );
+    format!("sudo -k -S -p '' sh -c {}", single_quote(&script))
+}
+
+/// A channel with an SFTP server on the far end, started as `launch` says.
+async fn open_stream(session: &Session, launch: &Launch) -> SshResult<ChannelStream<Msg>> {
+    let channel = session.open_channel().await?;
+    match launch {
+        Launch::Subsystem => {
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|error| {
+                    SshError::Io(format!(
+                        "This server would not start its SFTP subsystem: {error}. \
+                         Check that sshd has a Subsystem sftp line."
+                    ))
+                })?;
+        }
+        Launch::Sudo { password } => {
+            channel
+                .exec(true, sudo_sftp_command())
+                .await
+                .map_err(|error| SshError::Io(format!("Could not start sftp-server under sudo: {error}")))?;
+            if let Some(password) = password {
+                let line = Zeroizing::new(format!("{}\n", password.as_str()).into_bytes());
+                channel
+                    .data_bytes(line.to_vec())
+                    .await
+                    .map_err(|error| SshError::Io(format!("Could not send the sudo password: {error}")))?;
+            }
+        }
+    }
+    Ok(channel.into_stream())
+}
+
+/// Why a sudo launch produced no SFTP server. Reruns the command with stdin
+/// closed after the password, so sudo's own complaint (wrong password,
+/// `requiretty`, no `sftp-server`) lands on stderr where we can read it.
+async fn explain_sudo_failure(session: &Session, launch: &Launch, fallback: String) -> SshError {
+    let Launch::Sudo { password } = launch else {
+        return SshError::Io(fallback);
+    };
+    let stdin = password
+        .as_ref()
+        .map(|password| Zeroizing::new(format!("{}\n", password.as_str()).into_bytes()));
+    let reason = match session.exec(&sudo_sftp_command(), stdin.as_deref().map(|v| v.as_slice())).await {
+        Ok(output) if !output.succeeded() => output.failure_text(),
+        _ => fallback,
+    };
+    SshError::invalid(format!("Could not browse as root: {}", reason.trim()))
+}
+
 /// Open an SFTP session on its own channel.
 ///
 /// Every caller gets its own: browsing must stay responsive while a transfer
 /// saturates the link, and the subsystem serialises requests per channel.
-pub async fn connect(session: &Session) -> SshResult<SftpSession> {
-    let channel = session.open_channel().await?;
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .map_err(|error| {
-            SshError::Io(format!(
-                "This server would not start its SFTP subsystem: {error}. \
-                 Check that sshd has a Subsystem sftp line."
-            ))
-        })?;
-
-    SftpSession::new(channel.into_stream())
-        .await
-        .map_err(|error| SshError::Io(format!("Could not start an SFTP session: {error}")))
+pub async fn connect(session: &Session, launch: &Launch) -> SshResult<SftpSession> {
+    let stream = open_stream(session, launch).await?;
+    let started = tokio::time::timeout(SUDO_START_TIMEOUT, SftpSession::new(stream)).await;
+    match started {
+        Ok(Ok(sftp)) => Ok(sftp),
+        Ok(Err(error)) => Err(explain_sudo_failure(
+            session,
+            launch,
+            format!("Could not start an SFTP session: {error}"),
+        )
+        .await),
+        Err(_) => Err(explain_sudo_failure(
+            session,
+            launch,
+            "The SFTP server did not answer in time.".to_string(),
+        )
+        .await),
+    }
 }
 
 /// The directory to open a fresh browser in. `canonicalize(".")` is the
@@ -308,17 +404,12 @@ fn to_unix_seconds(time: SystemTime) -> Option<u64> {
 }
 
 /// Turn a protocol error into something a person can act on.
-///
-/// Permission denied is the one worth special-casing: the natural next thought
-/// is "run it with sudo", and over SFTP that option does not exist. Saying so
-/// here saves the user hunting for an elevation button that cannot be built.
 pub fn explain_error(context: &str, error: &str) -> SshError {
     let lowered = error.to_lowercase();
 
     if lowered.contains("permission denied") || lowered.contains("permissiondenied") {
         return SshError::invalid(format!(
-            "{context}: permission denied. SFTP runs as the user you signed in as \
-             and cannot elevate - reconnect as a user with access to this path."
+            "{context}: permission denied. Turn on \"Run as sudo\" to browse as root."
         ));
     }
     if lowered.contains("no such file") || lowered.contains("nosuchfile") {
@@ -463,22 +554,19 @@ pub struct RemoteReader {
 impl RemoteReader {
     /// Open `path`, refusing anything that is not a regular file. Checked here
     /// rather than trusted from a listing that may be minutes old.
-    pub async fn open(session: &Session, path: &str) -> SshResult<Self> {
-        let channel = session.open_channel().await?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|error| {
-                SshError::Io(format!(
-                    "This server would not start its SFTP subsystem: {error}. \
-                     Check that sshd has a Subsystem sftp line."
-                ))
-            })?;
-
-        let mut raw = RawSftpSession::new(channel.into_stream());
-        raw.init()
-            .await
-            .map_err(|error| SshError::Io(format!("Could not start an SFTP session: {error}")))?;
+    pub async fn open(session: &Session, launch: &Launch, path: &str) -> SshResult<Self> {
+        let mut raw = RawSftpSession::new(open_stream(session, launch).await?);
+        match tokio::time::timeout(SUDO_START_TIMEOUT, raw.init()).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                let fallback = format!("Could not start an SFTP session: {error}");
+                return Err(explain_sudo_failure(session, launch, fallback).await);
+            }
+            Err(_) => {
+                let fallback = "The SFTP server did not answer in time.".to_string();
+                return Err(explain_sudo_failure(session, launch, fallback).await);
+            }
+        }
 
         // `limits@openssh.com` where offered, so we never ask for a packet the
         // server will refuse.
@@ -644,12 +732,12 @@ pub struct BrowseSession {
 
 impl BrowseSession {
     /// The open session, opening one if this is the first call.
-    pub async fn get_or_open(&self, session: &Session) -> SshResult<Arc<SftpSession>> {
+    pub async fn get_or_open(&self, session: &Session, launch: &Launch) -> SshResult<Arc<SftpSession>> {
         let mut slot = self.session.lock().await;
         if let Some(existing) = slot.as_ref() {
             return Ok(Arc::clone(existing));
         }
-        let opened = Arc::new(connect(session).await?);
+        let opened = Arc::new(connect(session, launch).await?);
         *slot = Some(Arc::clone(&opened));
         Ok(opened)
     }
@@ -788,11 +876,21 @@ mod tests {
     }
 
     #[test]
-    fn permission_denied_explains_that_sftp_cannot_elevate() {
+    fn permission_denied_points_at_run_as_sudo() {
         let error = explain_error("Could not read /etc/shadow", "Permission denied");
-        let text = error.to_string();
-        assert!(text.contains("cannot elevate"));
-        assert!(text.contains("reconnect as a user"));
+        assert!(error.to_string().contains("Run as sudo"));
+    }
+
+    #[test]
+    fn sudo_sftp_ignores_cached_credentials_and_keeps_stdin() {
+        let command = sudo_sftp_command();
+        // Without `-k` a cached ticket would skip the password line and hand
+        // it to sftp-server as its first packet.
+        assert!(command.starts_with("sudo -k -S -p '' sh -c "));
+        // stdin is the SFTP stream, so it must never be redirected away.
+        assert!(!command.contains("</dev/null"));
+        assert!(command.contains("/usr/lib/openssh/sftp-server"));
+        assert!(command.contains("/usr/libexec/sftp-server"));
     }
 
     #[test]

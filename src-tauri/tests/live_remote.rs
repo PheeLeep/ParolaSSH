@@ -808,7 +808,7 @@ async fn make_link(session: &Session, os: OsFamily, target: &str, link: &str) {
 async fn uploads_and_downloads_a_file_intact() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let dir = scratch_dir(&sftp, "sftp").await;
 
@@ -848,7 +848,7 @@ async fn uploads_and_downloads_a_file_intact() {
 async fn a_symlink_is_reported_as_one_and_refused() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let (os, _) = power::detect_os(&session).await.unwrap();
     let dir = scratch_dir(&sftp, "link").await;
@@ -924,7 +924,7 @@ async fn a_denied_path_says_sftp_cannot_elevate() {
         return;
     }
 
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     // Root-owned, mode 0640, on every Linux box.
     assert!(
@@ -957,7 +957,7 @@ async fn a_denied_path_says_sftp_cannot_elevate() {
 async fn the_home_directory_is_an_absolute_path_we_can_list() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let home = sftp::home_dir(&sftp).await.unwrap();
     assert!(home.starts_with('/'), "home should be absolute, got {home}");
@@ -999,7 +999,7 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     let scratch = tempfile::tempdir().unwrap();
     let source_path = scratch.path().join("payload.bin");
     let returned_path = scratch.path().join("returned.bin");
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
     let (os, _) = power::detect_os(&session).await.unwrap();
     let scratch_remote = scratch_dir(&sftp, "1g").await;
     let remote_path = format!("{scratch_remote}/payload.bin");
@@ -1021,6 +1021,7 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     let started = std::time::Instant::now();
     transfer_task::upload(
         &session,
+        &sftp::Launch::Subsystem,
         &remote_path,
         source_path.to_str().unwrap(),
         &no_cancel,
@@ -1061,6 +1062,7 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
     let started = std::time::Instant::now();
     transfer_task::download(
         &session,
+        &sftp::Launch::Subsystem,
         &remote_path,
         returned_path.to_str().unwrap(),
         &no_cancel,
@@ -1140,7 +1142,7 @@ fn sha256_file(path: &std::path::Path) -> String {
 async fn a_folder_walk_finds_files_and_skips_links() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let (os, _) = power::detect_os(&session).await.unwrap();
     let root = scratch_dir(&sftp, "tree").await;
@@ -1176,7 +1178,7 @@ async fn a_folder_walk_finds_files_and_skips_links() {
 async fn rename_moves_and_never_overwrites() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let root = scratch_dir(&sftp, "mv").await;
     sftp.create_dir(format!("{root}/sub")).await.unwrap();
@@ -1212,7 +1214,7 @@ async fn rename_moves_and_never_overwrites() {
 async fn a_server_side_copy_duplicates_a_tree() {
     let config = config();
     let session = connect(&config).await;
-    let sftp = sftp::connect(&session).await.unwrap();
+    let sftp = sftp::connect(&session, &sftp::Launch::Subsystem).await.unwrap();
 
     let (os, _) = power::detect_os(&session).await.unwrap();
     let root = scratch_dir(&sftp, "cp").await;

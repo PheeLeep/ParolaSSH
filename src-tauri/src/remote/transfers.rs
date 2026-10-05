@@ -91,6 +91,8 @@ pub struct TransferRecord {
     /// What the row is called - the file name, not the whole path.
     pub name: String,
     pub priority: Priority,
+    /// Runs through `sftp-server` under sudo, as the browser did when queued.
+    pub elevated: bool,
     pub state: TransferState,
     pub bytes_done: u64,
     /// `None` until the size is known, which for an upload is immediate and for
@@ -130,6 +132,7 @@ pub struct TransferRequest {
     pub name: String,
     pub priority: Priority,
     pub bytes_total: Option<u64>,
+    pub elevated: bool,
 }
 
 /// A transfer the scheduler has decided should start now.
@@ -137,6 +140,7 @@ pub struct StartOrder {
     pub id: u64,
     pub host_id: String,
     pub direction: Direction,
+    pub elevated: bool,
     pub remote_path: String,
     pub local_path: String,
     pub cancel: Arc<AtomicBool>,
@@ -189,6 +193,7 @@ impl TransferManager {
             local_path: request.local_path,
             name: request.name,
             priority: request.priority,
+            elevated: request.elevated,
             state: TransferState::Queued,
             bytes_done: 0,
             bytes_total: request.bytes_total,
@@ -248,6 +253,7 @@ impl TransferManager {
                 id: record.id,
                 host_id: record.host_id.clone(),
                 direction: record.direction,
+                elevated: record.elevated,
                 remote_path: record.remote_path.clone(),
                 local_path: record.local_path.clone(),
                 cancel: record.cancel_flag(),
@@ -484,6 +490,7 @@ mod tests {
             name: name.to_string(),
             priority,
             bytes_total: Some(1024),
+            elevated: false,
         }
     }
 

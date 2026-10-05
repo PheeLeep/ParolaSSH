@@ -1065,6 +1065,8 @@ async fn a_gigabyte_survives_the_round_trip_intact() {
         &sftp::Launch::Subsystem,
         &remote_path,
         returned_path.to_str().unwrap(),
+        false,
+        None,
         &no_cancel,
         &progress,
     )

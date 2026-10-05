@@ -20,7 +20,7 @@ import {
 
 import * as api from "../hosts/api";
 import { errorMessage } from "../hosts/api";
-import type { DirListing, RemoteEntry } from "../hosts/types";
+import type { DirListing, RemoteEntry, TransferPriority } from "../hosts/types";
 import * as transfers from "./transferStore";
 import {
   ConflictDialog,
@@ -37,7 +37,7 @@ import * as toast from "../../lib/toast";
 /** What the local pane can ask of the remote one. */
 export interface FilesPaneHandle {
   /** Upload local files and folders into the folder on screen. */
-  uploadFrom: (entries: RemoteEntry[]) => Promise<void>;
+  uploadFrom: (entries: RemoteEntry[], priority: TransferPriority) => Promise<void>;
 }
 
 /** Browse a host's filesystem over SFTP.
@@ -70,6 +70,8 @@ export function FilesPane({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Priority for what this pane queues; starts at the Settings default. */
+  const [priority, setPriority] = useState<TransferPriority>(readDefaultTransferPriority);
   /** Batch selection, keyed by remote path so it survives a refresh in place. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -299,7 +301,6 @@ export function FilesPane({
         return;
       }
 
-      const priority = readDefaultTransferPriority();
       for (const { item, onConflict } of plan) {
         await api.enqueueDownload(hostId, item.remotePath, dir, {
           relative: item.relative,
@@ -337,7 +338,7 @@ export function FilesPane({
     setBusy(true);
     try {
       await api.enqueueUpload(hostId, chosen, path, {
-        priority: readDefaultTransferPriority(),
+        priority,
         elevated,
       });
       await transfers.refresh();
@@ -356,7 +357,7 @@ export function FilesPane({
 
   /** Upload from the local pane: folders are walked first, then every file is
    *  checked against the remote folder before anything is queued. */
-  const uploadFrom = async (entries: RemoteEntry[]) => {
+  const uploadFrom = async (entries: RemoteEntry[], uploadPriority: TransferPriority) => {
     const target = path;
     const usable = entries.filter((entry) => entry.kind === "file" || entry.kind === "dir");
     if (!target || usable.length === 0) return;
@@ -400,12 +401,11 @@ export function FilesPane({
         return;
       }
 
-      const priority = readDefaultTransferPriority();
       for (const { item, onConflict } of plan) {
         await api.enqueueUpload(hostId, item.localPath, target, {
           relative: item.relative,
           onConflict,
-          priority,
+          priority: uploadPriority,
           elevated,
         });
       }
@@ -709,6 +709,7 @@ export function FilesPane({
           <span className="fw-medium">
             {selectedRows.length} selected
           </span>
+          <PriorityPicker value={priority} onChange={setPriority} />
           <Button
             size="sm"
             variant="outline-secondary"
@@ -948,6 +949,38 @@ function FileRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+const PRIORITY_OPTIONS: { value: TransferPriority; label: string }[] = [
+  { value: "high", label: "High priority" },
+  { value: "normal", label: "Normal priority" },
+  { value: "low", label: "Low priority" },
+];
+
+/** Which queue level the next transfers from this pane join. */
+export function PriorityPicker({
+  value,
+  onChange,
+}: {
+  value: TransferPriority;
+  onChange: (priority: TransferPriority) => void;
+}) {
+  return (
+    <Form.Select
+      size="sm"
+      className="files-pane__priority"
+      value={value}
+      aria-label="Transfer priority"
+      title="Where these transfers join the queue"
+      onChange={(event) => onChange(event.target.value as TransferPriority)}
+    >
+      {PRIORITY_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </Form.Select>
   );
 }
 

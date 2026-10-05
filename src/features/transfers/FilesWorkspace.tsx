@@ -114,8 +114,8 @@ export function FilesWorkspace({ hostId }: { hostId: string }) {
   };
 
   const uploadFrom = useCallback(
-    async (entries: Parameters<FilesPaneHandle["uploadFrom"]>[0]) => {
-      await remote.current?.uploadFrom(entries);
+    async (...args: Parameters<FilesPaneHandle["uploadFrom"]>) => {
+      await remote.current?.uploadFrom(...args);
     },
     [],
   );

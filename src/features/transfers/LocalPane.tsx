@@ -4,10 +4,12 @@ import { ArrowUp, House, RefreshCw, Upload } from "lucide-react";
 
 import * as api from "../hosts/api";
 import { errorMessage } from "../hosts/api";
-import type { LocalListing, RemoteEntry } from "../hosts/types";
+import type { LocalListing, RemoteEntry, TransferPriority } from "../hosts/types";
+import { readDefaultTransferPriority } from "../settings/preferences";
 import {
   Breadcrumbs,
   EntryIcon,
+  PriorityPicker,
   RowCheck,
   formatModified,
   posixCrumbs,
@@ -27,7 +29,7 @@ export function LocalPane({
   /** False until the remote side has a folder to upload into. */
   canUpload: boolean;
   uploadHint: string;
-  onUpload: (entries: RemoteEntry[]) => Promise<void>;
+  onUpload: (entries: RemoteEntry[], priority: TransferPriority) => Promise<void>;
   /** Bumped to reload the folder on screen, e.g. once a download lands. */
   reloadKey?: number;
   onPathChange?: (path: string | null) => void;
@@ -38,6 +40,7 @@ export function LocalPane({
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [priority, setPriority] = useState<TransferPriority>(readDefaultTransferPriority);
   const requestId = useRef(0);
 
   const load = useCallback(async (target: string) => {
@@ -94,7 +97,7 @@ export function LocalPane({
   const upload = async (entries: RemoteEntry[]) => {
     setBusy(true);
     try {
-      await onUpload(entries);
+      await onUpload(entries, priority);
       setSelected(new Set());
     } finally {
       setBusy(false);
@@ -179,6 +182,7 @@ export function LocalPane({
       {selectedRows.length > 0 && (
         <div className="files-pane__batch">
           <span className="fw-medium">{selectedRows.length} selected</span>
+          <PriorityPicker value={priority} onChange={setPriority} />
           <Button
             size="sm"
             variant="outline-primary"

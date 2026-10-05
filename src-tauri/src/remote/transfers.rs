@@ -93,6 +93,9 @@ pub struct TransferRecord {
     pub priority: Priority,
     /// Runs through `sftp-server` under sudo, as the browser did when queued.
     pub elevated: bool,
+    /// How many times the user has pressed Retry. A retried download resumes
+    /// from its `.part` file.
+    pub retries: u32,
     pub state: TransferState,
     pub bytes_done: u64,
     /// `None` until the size is known, which for an upload is immediate and for
@@ -141,6 +144,10 @@ pub struct StartOrder {
     pub host_id: String,
     pub direction: Direction,
     pub elevated: bool,
+    /// Resume from an existing `.part` - only ever true for a retry.
+    pub resume: bool,
+    /// The size the last attempt saw. A resume needs the file unchanged.
+    pub expected_total: Option<u64>,
     pub remote_path: String,
     pub local_path: String,
     pub cancel: Arc<AtomicBool>,
@@ -194,6 +201,7 @@ impl TransferManager {
             name: request.name,
             priority: request.priority,
             elevated: request.elevated,
+            retries: 0,
             state: TransferState::Queued,
             bytes_done: 0,
             bytes_total: request.bytes_total,
@@ -254,6 +262,8 @@ impl TransferManager {
                 host_id: record.host_id.clone(),
                 direction: record.direction,
                 elevated: record.elevated,
+                resume: record.retries > 0,
+                expected_total: record.bytes_total,
                 remote_path: record.remote_path.clone(),
                 local_path: record.local_path.clone(),
                 cancel: record.cancel_flag(),
@@ -336,6 +346,29 @@ impl TransferManager {
         true
     }
 
+    /// Put a failed or cancelled transfer back in the queue, keeping its place
+    /// in arrival order and its bytes so far.
+    pub fn retry(&self, id: u64) -> bool {
+        let Ok(mut records) = self.records.lock() else {
+            return false;
+        };
+        let Some(record) = records.get_mut(&id) else {
+            return false;
+        };
+        if !matches!(record.state, TransferState::Failed | TransferState::Canceled) {
+            return false;
+        }
+        record.state = TransferState::Queued;
+        record.error = None;
+        record.started_at = None;
+        record.finished_at = None;
+        record.retries += 1;
+        // The old flag is still set on a cancelled transfer.
+        record.cancel = Arc::new(AtomicBool::new(false));
+        renumber(&mut records);
+        true
+    }
+
     /// Fail everything belonging to a host that has gone away.
     ///
     /// Queued entries are failed rather than left parked: a queue that silently
@@ -363,9 +396,8 @@ impl TransferManager {
         affected
     }
 
-    /// Re-rank a waiting transfer. Running ones are left alone - their slot is
-    /// already spent, so the level would only affect a re-queue that never
-    /// happens.
+    /// Change a transfer's priority. A waiting one is re-ranked now; a running,
+    /// failed or cancelled one keeps it for when Retry puts it back in line.
     pub fn set_priority(&self, id: u64, priority: Priority) -> bool {
         let Ok(mut records) = self.records.lock() else {
             return false;
@@ -373,7 +405,7 @@ impl TransferManager {
         let Some(record) = records.get_mut(&id) else {
             return false;
         };
-        if record.state != TransferState::Queued {
+        if record.state == TransferState::Done {
             return false;
         }
         record.priority = priority;
@@ -415,13 +447,16 @@ impl TransferManager {
     }
 
     /// Drop settled rows. Anything still pending stays.
-    pub fn clear_finished(&self) -> usize {
+    /// Returns what was dropped, so failed downloads' `.part` files - kept for
+    /// a retry that will now never come - can be removed.
+    pub fn clear_finished(&self) -> Vec<TransferRecord> {
         let Ok(mut records) = self.records.lock() else {
-            return 0;
+            return Vec::new();
         };
-        let before = records.len();
-        records.retain(|_, record| record.state.is_pending());
-        before - records.len()
+        let (keep, dropped): (HashMap<_, _>, HashMap<_, _>) =
+            records.drain().partition(|(_, record)| record.state.is_pending());
+        *records = keep;
+        dropped.into_values().collect()
     }
 }
 
@@ -554,13 +589,16 @@ mod tests {
     }
 
     #[test]
-    fn a_running_transfer_cannot_be_reprioritised() {
+    fn a_running_transfer_keeps_a_new_priority_for_its_retry() {
         let manager = TransferManager::new();
         let id = manager.enqueue(request("h1", "busy", Priority::Normal));
         manager.take_ready(&always_connected);
 
-        assert!(!manager.set_priority(id, Priority::High));
-        assert_eq!(manager.get(id).unwrap().priority, Priority::Normal);
+        assert!(manager.set_priority(id, Priority::High));
+        assert_eq!(manager.get(id).unwrap().priority, Priority::High);
+
+        manager.finish(id, None);
+        assert!(!manager.set_priority(id, Priority::Low), "a finished transfer is history");
     }
 
     #[test]
@@ -704,7 +742,7 @@ mod tests {
         manager.take_ready(&always_connected);
         manager.finish(done, None);
 
-        assert_eq!(manager.clear_finished(), 1);
+        assert_eq!(manager.clear_finished().len(), 1);
         let remaining = manager.snapshot();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, waiting);

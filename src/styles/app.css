@@ -2507,6 +2507,10 @@ code,
   max-width: 12rem;
 }
 
+.files-pane__priority {
+  width: auto;
+}
+
 .files-pane__path {
   display: flex;
   align-items: center;
@@ -2585,6 +2589,55 @@ code,
    says so before anyone clicks, rather than after. */
 .files-row--inert {
   opacity: 0.65;
+}
+
+/* A tint and an edge rather than Bootstrap's `table-danger`, whose light fill
+   left the row's own light text unreadable in dark mode. */
+.transfers-row--failed > td {
+  background: rgba(var(--bs-danger-rgb), 0.08);
+}
+
+.transfers-row--failed > td:first-child {
+  box-shadow: inset 3px 0 0 var(--bs-danger);
+}
+
+.transfer-ends {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.5rem;
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.transfer-ends dt {
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  align-self: center;
+}
+
+.transfer-ends dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--bs-font-monospace);
+  color: var(--bs-secondary-color);
+}
+
+.transfer-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--bs-danger-text-emphasis);
+}
+
+.transfer-error .icon-sm {
+  margin-top: 0.15rem;
 }
 
 .transfers-table__progress {

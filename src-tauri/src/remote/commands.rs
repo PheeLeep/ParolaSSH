@@ -26,7 +26,9 @@ use super::services::{
 };
 use super::sftp::{self, DirListing};
 use super::transfer_task;
-use super::transfers::{Direction, Priority, TransferManager, TransferRecord, TransferRequest};
+use super::transfers::{
+    Direction, Priority, TransferManager, TransferRecord, TransferRequest, TransferState,
+};
 use super::{shell, stream, OsFamily};
 use crate::app_paths::config_dir;
 use crate::hosts::model::{AuthMethod, HostRecord};
@@ -1765,8 +1767,35 @@ pub async fn set_max_concurrent_transfers(
 #[tauri::command]
 pub fn clear_finished_transfers(app: AppHandle, transfers: State<'_, Arc<TransferManager>>) -> usize {
     let cleared = transfers.clear_finished();
+    // Failed downloads kept their `.part` for Retry; cleared, they never will.
+    for record in &cleared {
+        if record.direction == Direction::Download && record.state == TransferState::Failed {
+            let _ = std::fs::remove_file(transfer_task::part_path_for(&PathBuf::from(&record.local_path)));
+        }
+    }
     transfer_task::emit_changed(&app);
-    cleared
+    cleared.len()
+}
+
+/// Put a failed or cancelled transfer back in the queue. A download resumes
+/// from what already arrived.
+#[tauri::command]
+pub async fn retry_transfer(
+    app: AppHandle,
+    registry: State<'_, SessionRegistry>,
+    transfers: State<'_, Arc<TransferManager>>,
+    transfer_id: u64,
+) -> SshResult<()> {
+    let record = transfers
+        .get(transfer_id)
+        .ok_or_else(|| SshError::invalid("That transfer is no longer in the list."))?;
+    registry.require(&record.host_id)?;
+    if !transfers.retry(transfer_id) {
+        return Err(SshError::invalid("Only a failed or cancelled transfer can be retried."));
+    }
+    transfer_task::emit_changed(&app);
+    pump_transfers(&app, &registry, &transfers).await;
+    Ok(())
 }
 
 /// Start whatever the queue says should be running.
@@ -1799,6 +1828,8 @@ pub async fn pump_transfers(
             order.host_id,
             order.direction,
             order.elevated,
+            order.resume,
+            order.expected_total,
             order.remote_path,
             order.local_path,
             order.cancel,

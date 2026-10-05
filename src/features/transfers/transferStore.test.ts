@@ -20,6 +20,7 @@ const record = (overrides: Partial<TransferRecord>): TransferRecord => ({
   bytesTotal: 1000,
   queuePosition: null,
   elevated: false,
+  retries: 0,
   error: null,
   queuedAt: "2026-09-17T12:00:00Z",
   startedAt: null,
@@ -157,6 +158,28 @@ describe("progress and rate", () => {
     await progress(1000);
     await settle();
     expect(store.rateOf(1)).toBe(600);
+  });
+
+  it("fades the rate when bytes stop, then reports a stall", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(0);
+    const { store } = await load();
+    backend.records = [record({})];
+    store.start();
+    await settle();
+
+    await progress(0);
+    vi.setSystemTime(1000);
+    await progress(500);
+    await settle();
+    expect(store.rateOf(1, 1000)).toBe(500);
+    expect(store.etaOf(1, 1000)).toBe(1);
+    expect(store.stalledFor(1, 1000)).toBeNull();
+
+    // No events arrive while nothing moves; the clock alone must slow it.
+    expect(store.rateOf(1, 3000)).toBe(250);
+    expect(store.rateOf(1, 4000)).toBe(0);
+    expect(store.stalledFor(1, 6500)).toBe(5);
   });
 
   it("drops the rate once a transfer stops running", async () => {

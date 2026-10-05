@@ -1,11 +1,14 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Badge, Button, Card, Form, ProgressBar, Table } from "react-bootstrap";
-import { Download, Eraser, FolderOpen, Upload, X } from "lucide-react";
+import { CircleAlert, Download, Eraser, FolderOpen, RotateCcw, Upload, X } from "lucide-react";
 
 import type { Navigate } from "../../navigation";
 import type { TransferPriority, TransferRecord } from "../hosts/types";
 import * as transfers from "./transferStore";
-import { formatBytes, formatSpeed, percentOf } from "./format";
+import * as toast from "../../lib/toast";
+import { revealInFileManager } from "../../lib/openExternal";
+import { errorMessage } from "../hosts/api";
+import { formatBytes, formatDuration, formatSpeed, percentOf } from "./format";
 
 /**
  * Every transfer in the app, whichever host started it.
@@ -29,6 +32,15 @@ export function TransfersPage({ onNavigate }: { onNavigate: Navigate }) {
 
   const rows = transfers.all();
   const summary = transfers.counts();
+
+  // Speed and ETA move with the clock, not only with progress events - a
+  // stalled transfer sends none, and must still be seen to slow down.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (summary.running === 0) return;
+    const timer = setInterval(() => setTick((tick) => tick + 1), 1000);
+    return () => clearInterval(timer);
+  }, [summary.running]);
   const finished = rows.filter((row) => !isPending(row)).length;
 
   return (
@@ -104,7 +116,7 @@ function TransferRow({
   const pending = isPending(row);
 
   return (
-    <tr className={row.state === "failed" ? "table-danger" : undefined}>
+    <tr className={row.state === "failed" ? "transfers-row--failed" : undefined}>
       <td>
         {row.direction === "download" ? (
           <Download className="icon-sm text-primary" aria-label="Download" />
@@ -118,10 +130,13 @@ function TransferRow({
           {row.name}
           {row.elevated && <span className="status-badge status-badge--warning ms-2">root</span>}
         </div>
-        <div className="text-body-secondary small font-monospace text-truncate">
-          {row.direction === "download" ? row.remotePath : row.localPath}
-        </div>
-        {row.error && <div className="text-danger small text-prewrap">{row.error}</div>}
+        <TransferEnds row={row} />
+        {row.error && (
+          <div className="transfer-error">
+            <CircleAlert className="icon-sm flex-shrink-0" aria-hidden="true" />
+            <span className="text-prewrap">{row.error}</span>
+          </div>
+        )}
       </td>
 
       <td>
@@ -136,12 +151,11 @@ function TransferRow({
       </td>
 
       <td>
-        {/* Only a waiting transfer can be re-prioritised; a running one has
-            already spent its slot, so the picker would decide nothing. */}
-        {row.state === "queued" ? (
-          <PrioritySelect row={row} />
+        {/* Re-ranks a waiting transfer; anything else keeps it for a retry. */}
+        {row.state === "done" ? (
+          <PriorityBadge priority={row.priority} reason="This transfer is complete." />
         ) : (
-          <PriorityBadge priority={row.priority} />
+          <PrioritySelect row={row} />
         )}
       </td>
 
@@ -150,7 +164,7 @@ function TransferRow({
       </td>
 
       <td className="text-end text-body-secondary small font-monospace text-nowrap">
-        {row.state === "running" ? formatSpeed(transfers.rateOf(row.id)) : "-"}
+        {row.state === "running" ? <Speed row={row} /> : "-"}
       </td>
 
       <td className="text-end">
@@ -165,9 +179,70 @@ function TransferRow({
               <X className="icon-sm" aria-hidden="true" />
             </Button>
           )}
+          {row.state === "done" && row.direction === "download" && (
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              title="Show in folder"
+              aria-label={`Show ${row.name} in its folder`}
+              onClick={() => void revealInFileManager(row.localPath)}
+            >
+              <FolderOpen className="icon-sm" aria-hidden="true" />
+            </Button>
+          )}
+          {(row.state === "failed" || row.state === "canceled") && (
+            <Button
+              size="sm"
+              variant="outline-secondary"
+              title={
+                row.direction === "download" && row.state === "failed" && row.bytesDone > 0
+                  ? `Retry, resuming from ${formatBytes(row.bytesDone)}`
+                  : "Retry"
+              }
+              aria-label={`Retry ${row.name}`}
+              onClick={() =>
+                void transfers
+                  .retry(row.id)
+                  .catch((caught) => toast.error("Could not retry that transfer", errorMessage(caught)))
+              }
+            >
+              <RotateCcw className="icon-sm" aria-hidden="true" />
+            </Button>
+          )}
         </div>
       </td>
     </tr>
+  );
+}
+
+/** Where the bytes come from and where they land, each side named. */
+function TransferEnds({ row }: { row: TransferRecord }) {
+  const remote = { place: row.hostLabel, path: row.remotePath };
+  const local = { place: "This computer", path: row.localPath };
+  const [from, to] = row.direction === "download" ? [remote, local] : [local, remote];
+
+  return (
+    <dl className="transfer-ends">
+      <dt>From</dt>
+      <dd title={`${from.place}: ${from.path}`}>{from.path}</dd>
+      <dt>To</dt>
+      <dd title={`${to.place}: ${to.path}`}>{to.path}</dd>
+    </dl>
+  );
+}
+
+/** Live speed with an ETA under it, or how long it has been stalled. */
+function Speed({ row }: { row: TransferRecord }) {
+  const stalled = transfers.stalledFor(row.id);
+  if (stalled !== null) {
+    return <span className="text-warning">Stalled {formatDuration(stalled)}</span>;
+  }
+  const eta = transfers.etaOf(row.id);
+  return (
+    <>
+      <div>{formatSpeed(transfers.rateOf(row.id))}</div>
+      {eta !== null && <div>{formatDuration(eta)} left</div>}
+    </>
   );
 }
 
@@ -219,6 +294,13 @@ function Progress({ row }: { row: TransferRecord }) {
           {formatBytes(row.bytesDone)}
         </span>
       )}
+      {/* Where it stopped, so a failure near the end reads differently from one at the start. */}
+      {row.state !== "done" && row.bytesDone > 0 && (
+        <span className="text-body-secondary small font-monospace">
+          stopped at {formatBytes(row.bytesDone)}
+          {row.bytesTotal ? ` / ${formatBytes(row.bytesTotal)}` : ""}
+        </span>
+      )}
     </span>
   );
 }
@@ -251,7 +333,14 @@ function PrioritySelect({ row }: { row: TransferRecord }) {
   );
 }
 
-function PriorityBadge({ priority }: { priority: TransferRecord["priority"] }) {
+function PriorityBadge({
+  priority,
+  reason,
+}: {
+  priority: TransferRecord["priority"];
+  /** Why there is no picker here, shown on hover. */
+  reason: string;
+}) {
   const look: Record<string, { bg: string; label: string }> = {
     high: { bg: "warning", label: "High" },
     normal: { bg: "secondary", label: "Normal" },
@@ -260,7 +349,7 @@ function PriorityBadge({ priority }: { priority: TransferRecord["priority"] }) {
   const { bg, label } = look[priority];
 
   return (
-    <Badge bg={bg} text={bg === "light" ? "dark" : undefined} className="priority-badge">
+    <Badge bg={bg} text={bg === "light" ? "dark" : undefined} className="priority-badge" title={reason}>
       {label}
     </Badge>
   );

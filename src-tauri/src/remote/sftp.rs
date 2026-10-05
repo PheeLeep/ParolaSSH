@@ -412,6 +412,14 @@ pub fn explain_error(context: &str, error: &str) -> SshError {
             "{context}: permission denied. Turn on \"Run as sudo\" to browse as root."
         ));
     }
+    // russh-sftp gave up waiting for a reply.
+    if lowered == "timeout" {
+        return SshError::Io(format!(
+            "{context}: the server stopped responding. The connection may have \
+             dropped or the host is overloaded - check the host is still reachable, \
+             then try again."
+        ));
+    }
     if lowered.contains("no such file") || lowered.contains("nosuchfile") {
         return SshError::invalid(format!("{context}: no such file or directory."));
     }
@@ -568,6 +576,8 @@ impl RemoteReader {
             }
         }
 
+        raw.set_timeout(TRANSFER_REQUEST_TIMEOUT_SECS);
+
         // `limits@openssh.com` where offered, so we never ask for a packet the
         // server will refuse.
         let chunk = match raw.limits().await {
@@ -608,13 +618,14 @@ impl RemoteReader {
         })
     }
 
-    /// Copy the file into `out`, several reads in flight. `FuturesOrdered`
-    /// yields replies in issue order, so output stays sequential even though
-    /// the requests are not. Returns bytes written, for the caller's length
-    /// check.
+    /// Copy the file into `out` from byte `start`, several reads in flight.
+    /// `FuturesOrdered` yields replies in issue order, so output stays
+    /// sequential even though the requests are not. Returns the offset reached,
+    /// for the caller's length check; progress is reported the same way.
     pub async fn copy_to<W>(
         &self,
         out: &mut W,
+        start: u64,
         cancel: &AtomicBool,
         progress: &(dyn Fn(u64) + Send + Sync),
     ) -> SshResult<u64>
@@ -625,8 +636,8 @@ impl RemoteReader {
         use tokio::io::AsyncWriteExt;
 
         let mut inflight = FuturesOrdered::new();
-        let mut next_offset: u64 = 0;
-        let mut written: u64 = 0;
+        let mut next_offset: u64 = start;
+        let mut written: u64 = start;
 
         // Tagged with its offset so a short reply can be repaired in place.
         let issue = |offset: u64| {
@@ -641,7 +652,12 @@ impl RemoteReader {
             next_offset += self.chunk as u64;
         }
 
-        while let Some((offset, want, result)) = inflight.next().await {
+        // Any reply resets the watchdog, so a slow link is fine and only
+        // silence fails the transfer.
+        while let Some((offset, want, result)) = tokio::time::timeout(STALL_TIMEOUT, inflight.next())
+            .await
+            .map_err(|_| stalled_error())?
+        {
             if cancel.load(Ordering::Relaxed) {
                 return Err(SshError::invalid("The transfer was cancelled."));
             }
@@ -706,6 +722,24 @@ impl Drop for RemoteReader {
         // Best effort: no async context here, and the channel closes anyway.
         let _ = self.raw.close_session();
     }
+}
+
+/// russh-sftp's own limit is per request and only ten seconds, but a pipelined
+/// request waits behind every reply ahead of it: sixteen 255 KiB reads time out
+/// below ~400 KB/s while data is still flowing. Transfers raise it this far and
+/// rely on `STALL_TIMEOUT` instead.
+pub const TRANSFER_REQUEST_TIMEOUT_SECS: u64 = 300;
+
+/// How long a transfer may go without a single reply before it is given up.
+pub const STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// The error for a transfer that `STALL_TIMEOUT` gave up on.
+pub fn stalled_error() -> SshError {
+    SshError::Io(format!(
+        "The server sent nothing for {} seconds. The connection may have dropped - \
+         check the host is still reachable, then try again.",
+        STALL_TIMEOUT.as_secs()
+    ))
 }
 
 /// What `russh_sftp` assumes when the server offers no `limits` extension.
@@ -891,6 +925,12 @@ mod tests {
         assert!(!command.contains("</dev/null"));
         assert!(command.contains("/usr/lib/openssh/sftp-server"));
         assert!(command.contains("/usr/libexec/sftp-server"));
+    }
+
+    #[test]
+    fn a_request_timeout_says_the_server_went_quiet() {
+        let text = explain_error("Could not read from the server", "Timeout").to_string();
+        assert!(text.contains("stopped responding"), "{text}");
     }
 
     #[test]

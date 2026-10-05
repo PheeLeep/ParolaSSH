@@ -18,6 +18,21 @@ All notable changes to ParolaSSH. The format follows
   from the left pane, and downloads land in the folder open there
 - "Run as sudo" in Files browses and transfers as root through `sftp-server`
   under sudo, using the same password prompt as other elevated actions
+- Transfers show where each file comes from and where it lands, and a
+  finished download can be shown in its folder
+- Retry for failed and cancelled transfers. A failed download resumes from
+  what already arrived instead of starting over
+- Transfer speed updates live with time left, and says when a transfer has
+  stalled
+- Priority can be picked when selecting files to transfer, and changed on any
+  unfinished transfer
+
+### Fixed
+- Downloads over slow links failed with "Timeout" while data was still
+  arriving: each pipelined read had only ten seconds. Transfers now fail only
+  after 30 seconds of silence, and a stalled download resumes itself up to
+  three times
+- Failed transfer rows were unreadable in dark mode
 
 ## [1.0.4] - 2026-09-23
 

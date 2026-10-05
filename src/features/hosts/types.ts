@@ -293,6 +293,8 @@ export interface TransferRecord {
   priority: TransferPriority;
   /** Ran through `sftp-server` under sudo. */
   elevated: boolean;
+  /** Times Retry was pressed; a retried download resumes its `.part`. */
+  retries: number;
   state: TransferState;
   bytesDone: number;
   bytesTotal: number | null;

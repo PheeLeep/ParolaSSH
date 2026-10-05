@@ -52,6 +52,14 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(120);
 /// The suffix a download wears until it is complete.
 const PART_SUFFIX: &str = ".part";
 
+/// How many times a download picks itself back up from its `.part` after the
+/// link drops or stalls, before the failure is left for the user to retry.
+const AUTO_RESUMES: u32 = 3;
+
+/// Pause before an automatic resume, so a link that is mid-reconnect has a
+/// moment to come back.
+const RESUME_DELAY: Duration = Duration::from_secs(2);
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgressEvent {
@@ -102,6 +110,8 @@ pub async fn run(
     host_id: String,
     direction: Direction,
     elevated: bool,
+    resume: bool,
+    expected_total: Option<u64>,
     remote_path: String,
     local_path: String,
     cancel: Arc<AtomicBool>,
@@ -138,7 +148,27 @@ pub async fn run(
     let outcome = match (launch, direction) {
         (Err(error), _) => Err(error),
         (Ok(launch), Direction::Download) => {
-            download(session, &launch, &remote_path, &local_path, &cancel, &progress).await
+            let mut resume = resume;
+            let mut expected = expected_total;
+            let mut attempt = 0;
+            loop {
+                let result = download(
+                    session, &launch, &remote_path, &local_path, resume, expected, &cancel, &progress,
+                )
+                .await;
+                // Only a dropped or silent link is worth another go; a refusal
+                // or a cancel will say the same thing again.
+                let retryable = matches!(result, Err(SshError::Io(_)))
+                    && !cancel.load(Ordering::Relaxed)
+                    && attempt < AUTO_RESUMES;
+                if !retryable {
+                    break result;
+                }
+                attempt += 1;
+                tokio::time::sleep(RESUME_DELAY).await;
+                resume = true;
+                expected = manager.get(id).and_then(|record| record.bytes_total);
+            }
         }
         (Ok(launch), Direction::Upload) => {
             upload(session, &launch, &remote_path, &local_path, &cancel, &progress).await
@@ -159,22 +189,31 @@ pub async fn run(
 ///
 /// Reads are pipelined - see `sftp::RemoteReader`. A serial reader spends most
 /// of a LAN transfer waiting on round trips rather than moving bytes.
+///
+/// `resume` picks up from an existing `.part`, provided the remote file is
+/// still the `expected` size; otherwise the download starts over.
+#[allow(clippy::too_many_arguments)]
 pub async fn download(
     session: &Session,
     launch: &sftp::Launch,
     remote_path: &str,
     local_path: &str,
+    resume: bool,
+    expected: Option<u64>,
     cancel: &AtomicBool,
     progress: ProgressSink<'_>,
 ) -> SshResult<()> {
     let final_path = PathBuf::from(local_path);
     let part_path = part_path_for(&final_path);
 
-    // Every failure below must leave nothing behind, so the cleanup lives in
-    // one place rather than on each `?`.
-    let outcome = download_into(session, launch, remote_path, &part_path, cancel, progress).await;
+    let outcome =
+        download_into(session, launch, remote_path, &part_path, resume, expected, cancel, progress).await;
     if outcome.is_err() {
-        let _ = std::fs::remove_file(&part_path);
+        // A failed `.part` stays for Retry to resume; a cancelled one goes.
+        // Either way it still wears the suffix, so it never looks finished.
+        if cancel.load(Ordering::Relaxed) {
+            let _ = std::fs::remove_file(&part_path);
+        }
         return outcome.map(|_| ());
     }
 
@@ -188,11 +227,14 @@ pub async fn download(
 }
 
 /// Fetch into the staging file. The caller owns the rename and the cleanup.
+#[allow(clippy::too_many_arguments)]
 async fn download_into(
     session: &Session,
     launch: &sftp::Launch,
     remote_path: &str,
     part_path: &Path,
+    resume: bool,
+    expected: Option<u64>,
     cancel: &AtomicBool,
     progress: ProgressSink<'_>,
 ) -> SshResult<()> {
@@ -200,20 +242,30 @@ async fn download_into(
     // rather than trusting a listing that may be minutes old.
     let reader = sftp::RemoteReader::open(session, launch, remote_path).await?;
     let total = reader.len;
-    progress(0, Some(total));
 
     if let Some(parent) = part_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| SshError::io("Could not create the download folder", error))?;
     }
 
+    let start = resume_offset(part_path, resume, expected, total);
+    progress(start, Some(total));
+
     // Owner-only from the moment it exists - a downloaded private key is never
-    // world-readable, not even for the seconds it is arriving.
-    let file = private_file::create_owner_only(part_path)?;
+    // world-readable, not even for the seconds it is arriving. A resume
+    // appends to the `.part` this transfer created earlier.
+    let file = if start > 0 {
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(part_path)
+            .map_err(|error| SshError::io("Could not reopen the partial download", error))?
+    } else {
+        private_file::create_owner_only(part_path)?
+    };
     let mut sink = tokio::io::BufWriter::with_capacity(CHUNK, tokio::fs::File::from_std(file));
 
     let done = reader
-        .copy_to(&mut sink, cancel, &|done| progress(done, Some(total)))
+        .copy_to(&mut sink, start, cancel, &|done| progress(done, Some(total)))
         .await?;
 
     sink.flush()
@@ -223,6 +275,19 @@ async fn download_into(
 
     // Without this a short read would be renamed and look complete.
     verify_length(done, total, None)
+}
+
+/// Where a download picks up: the `.part`'s length when resuming a file whose
+/// size has not changed, otherwise zero. A `.part` longer than the file means
+/// something else wrote it, so that starts over too. Pure apart from the stat.
+fn resume_offset(part_path: &Path, resume: bool, expected: Option<u64>, total: u64) -> u64 {
+    if !resume || expected != Some(total) {
+        return 0;
+    }
+    match std::fs::metadata(part_path) {
+        Ok(meta) if meta.is_file() && meta.len() <= total => meta.len(),
+        _ => 0,
+    }
 }
 
 /// Refuse a transfer whose byte count does not match the size promised.
@@ -253,6 +318,8 @@ pub async fn upload(
     progress: ProgressSink<'_>,
 ) -> SshResult<()> {
     let sftp = sftp::connect(session, launch).await?;
+    // Writes are pipelined too; see `TRANSFER_REQUEST_TIMEOUT_SECS`.
+    sftp.set_timeout(sftp::TRANSFER_REQUEST_TIMEOUT_SECS);
 
     // Refuse to write through a link that already exists at the destination.
     // `symlink_metadata` does not resolve the final component, so this sees the
@@ -295,9 +362,13 @@ pub async fn upload(
             break;
         }
 
-        sink.write_all(&buffer[..read]).await.map_err(|error| {
-            sftp::explain_error(&format!("Could not write {remote_path}"), &error.to_string())
-        })?;
+        // A write only waits when the pipeline is full, so this times silence.
+        tokio::time::timeout(sftp::STALL_TIMEOUT, sink.write_all(&buffer[..read]))
+            .await
+            .map_err(|_| sftp::stalled_error())?
+            .map_err(|error| {
+                sftp::explain_error(&format!("Could not write {remote_path}"), &error.to_string())
+            })?;
 
         done += read as u64;
         progress(done, Some(total));
@@ -384,6 +455,22 @@ mod tests {
         // A file that grew under us is as untrustworthy as one that was cut
         // short - the bytes on disk no longer match anything we checked.
         assert!(verify_length(2048, 1024, None).is_err());
+    }
+
+    #[test]
+    fn a_resume_picks_up_only_from_an_unchanged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("video.mp4.part");
+        std::fs::write(&part, vec![0_u8; 400]).unwrap();
+
+        assert_eq!(resume_offset(&part, true, Some(1000), 1000), 400);
+        // A first attempt never resumes, whatever is lying around.
+        assert_eq!(resume_offset(&part, false, Some(1000), 1000), 0);
+        // The file changed size on the server: the bytes we have are stale.
+        assert_eq!(resume_offset(&part, true, Some(1000), 1200), 0);
+        // Longer than the file itself - not ours to append to.
+        assert_eq!(resume_offset(&part, true, Some(300), 300), 0);
+        assert_eq!(resume_offset(&dir.path().join("missing.part"), true, Some(1000), 1000), 0);
     }
 
     #[test]

@@ -502,6 +502,10 @@ export const transferSummary = () => invoke<TransferSummary>("transfer_summary")
 export const cancelTransfer = (transferId: number) =>
   invoke<void>("cancel_transfer", { transferId });
 
+/** Re-queue a failed or cancelled transfer; a download resumes where it stopped. */
+export const retryTransfer = (transferId: number) =>
+  invoke<void>("retry_transfer", { transferId });
+
 export const setTransferPriority = (
   transferId: number,
   priority: TransferPriority,

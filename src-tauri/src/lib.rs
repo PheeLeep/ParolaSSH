@@ -201,6 +201,7 @@ pub fn run() {
             remote::commands::list_transfers,
             remote::commands::transfer_summary,
             remote::commands::cancel_transfer,
+            remote::commands::retry_transfer,
             remote::commands::set_transfer_priority,
             remote::commands::set_max_concurrent_transfers,
             remote::commands::clear_finished_transfers,

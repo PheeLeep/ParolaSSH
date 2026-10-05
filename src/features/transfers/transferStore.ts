@@ -138,8 +138,12 @@ function applyProgress(id: number, bytesDone: number, bytesTotal: number | null)
 
 /* ── Speed ─────────────────────────────────────────────────────────────── */
 
-/** Last progress sample per transfer, plus the smoothed rate derived from it. */
-type Sample = { bytes: number; at: number; rate: number | null };
+/** Last progress sample per transfer, plus the smoothed rate derived from it.
+ *  `movedAt` is when the byte count last grew. */
+type Sample = { bytes: number; at: number; rate: number | null; seen: number; movedAt: number };
+
+/** Silence after which a transfer reads as stalled rather than slow. */
+export const STALL_MS = 3000;
 
 const samples = new Map<number, Sample>();
 
@@ -147,8 +151,31 @@ const samples = new Map<number, Sample>();
  *  samples far enough apart to divide by. Rust reports bytes, not speed -
  *  timing them here keeps the backend out of the business of guessing what
  *  window a progress bar wants. */
-export function rateOf(id: number): number | null {
-  return samples.get(id)?.rate ?? null;
+export function rateOf(id: number, now = Date.now()): number | null {
+  const sample = samples.get(id);
+  if (!sample || sample.rate === null) return null;
+  // Events stop when bytes stop, so the stored rate would freeze at its last
+  // value. Fade it across the silence instead, down to zero once stalled.
+  const idle = now - sample.movedAt;
+  if (idle >= STALL_MS) return 0;
+  if (idle <= 1000) return sample.rate;
+  return (sample.rate * 1000) / idle;
+}
+
+/** Whole seconds without a new byte, once that counts as stalled. */
+export function stalledFor(id: number, now = Date.now()): number | null {
+  const sample = samples.get(id);
+  if (!sample) return null;
+  const idle = now - sample.movedAt;
+  return idle >= STALL_MS ? Math.floor(idle / 1000) : null;
+}
+
+/** Seconds left at the current rate, or null when it cannot be guessed. */
+export function etaOf(id: number, now = Date.now()): number | null {
+  const record = get(id);
+  const rate = rateOf(id, now);
+  if (!record?.bytesTotal || !rate) return null;
+  return Math.max(0, (record.bytesTotal - record.bytesDone) / rate);
 }
 
 /** Fold a progress sample into the rate. Chunks land irregularly, so short
@@ -159,18 +186,24 @@ function sampleRate(id: number, bytesDone: number) {
   const previous = samples.get(id);
 
   if (!previous) {
-    samples.set(id, { bytes: bytesDone, at: now, rate: null });
+    samples.set(id, { bytes: bytesDone, at: now, rate: null, seen: bytesDone, movedAt: now });
     return;
   }
 
+  const movedAt = bytesDone > previous.seen ? now : previous.movedAt;
   const elapsed = now - previous.at;
-  if (elapsed < 500) return;
+  if (elapsed < 500) {
+    samples.set(id, { ...previous, seen: bytesDone, movedAt });
+    return;
+  }
 
   const instant = Math.max(0, ((bytesDone - previous.bytes) * 1000) / elapsed);
   samples.set(id, {
     bytes: bytesDone,
     at: now,
     rate: previous.rate === null ? instant : previous.rate * 0.6 + instant * 0.4,
+    seen: bytesDone,
+    movedAt,
   });
 }
 
@@ -208,6 +241,10 @@ export function start(): void {
 
 export function cancel(id: number): Promise<void> {
   return api.cancelTransfer(id).then(refresh);
+}
+
+export function retry(id: number): Promise<void> {
+  return api.retryTransfer(id).then(refresh);
 }
 
 export function prioritize(id: number, priority: TransferPriority): Promise<void> {

@@ -271,7 +271,21 @@ describe("FilesPane", () => {
     expect(made("enqueue_download")[0]).toMatchObject({
       localDir: "/home/me/Downloads",
       elevated: false,
+      priority: "normal",
     });
+  });
+
+  it("queues a selection at the priority picked in the batch bar", async () => {
+    seed({ [HOME]: "dir", [`${HOME}/a.mp4`]: "file" });
+    const user = userEvent.setup();
+    render(<FilesPane hostId="h" localDir="/dl" />);
+    await screen.findByText("a.mp4");
+
+    await user.click(screen.getByLabelText("Select a.mp4"));
+    await user.selectOptions(screen.getByLabelText("Transfer priority"), "high");
+    await user.click(screen.getByRole("button", { name: "Download" }));
+    await waitFor(() => expect(made("enqueue_download")).toHaveLength(1));
+    expect(made("enqueue_download")[0]).toMatchObject({ priority: "high" });
   });
 
   it("routes every call through the root session when elevated", async () => {
@@ -288,15 +302,18 @@ describe("FilesPane", () => {
     await screen.findByText("This folder is empty.");
 
     await act(() =>
-      ref.current!.uploadFrom([
+      ref.current!.uploadFrom(
+        [
         { name: "app", path: "/local/app", kind: "dir", size: 0, modified: null, mode: null, target: null },
         { name: "a.txt", path: "/local/a.txt", kind: "file", size: 1, modified: null, mode: null, target: null },
-      ]),
+        ],
+        "high",
+      ),
     );
 
     expect(made("enqueue_upload")).toEqual([
       expect.objectContaining({ localPath: "/local/app/conf/a.conf", remoteDir: HOME, relative: "app/conf/a.conf" }),
-      expect.objectContaining({ localPath: "/local/a.txt", remoteDir: HOME, relative: "a.txt" }),
+      expect.objectContaining({ localPath: "/local/a.txt", remoteDir: HOME, relative: "a.txt", priority: "high" }),
     ]);
   });
 });
